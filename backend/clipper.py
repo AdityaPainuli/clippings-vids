@@ -7,6 +7,7 @@ import uuid
 import base64
 import subprocess
 import tempfile
+import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from dotenv import load_dotenv
@@ -18,15 +19,26 @@ GENAI_API_KEY = os.getenv("GOOGLE_API_KEY")
 if GENAI_API_KEY:
     genai.configure(api_key=GENAI_API_KEY)
 
+# Caption style — override via env vars
+# ASS colours are &HAABBGGRR  (alpha, blue, green, red)
+CAPTION_FONT         = os.getenv("CAPTION_FONT",        "Arial Black")
+CAPTION_FONTSIZE     = int(os.getenv("CAPTION_FONTSIZE",    "72"))
+CAPTION_COLOR        = os.getenv("CAPTION_COLOR",       "&H00FFFFFF")   # default word: white
+CAPTION_HIGHLIGHT    = os.getenv("CAPTION_HIGHLIGHT",   "&H0000FFFF")   # active word: yellow
+CAPTION_OUTLINE_CLR  = os.getenv("CAPTION_OUTLINE_CLR", "&H00000000")   # outline: black
+CAPTION_SHADOW_CLR   = os.getenv("CAPTION_SHADOW_CLR",  "&H66000000")   # soft drop-shadow
+CAPTION_OUTLINE_W    = int(os.getenv("CAPTION_OUTLINE_W",  "4"))         # outline thickness px
+CAPTION_SHADOW_W     = int(os.getenv("CAPTION_SHADOW_W",   "3"))         # shadow depth px
+CAPTION_WORDS        = int(os.getenv("CAPTION_WORDS",      "3"))         # words per line
+CAPTION_MARGIN_V     = int(os.getenv("CAPTION_MARGIN_V",   "320"))       # px from bottom
+
 
 # ---------------------------------------------------------------------------
 # Download
 # ---------------------------------------------------------------------------
 
 def download_video(url, output_path="downloads"):
-    if not os.path.exists(output_path):
-        os.makedirs(output_path)
-
+    os.makedirs(output_path, exist_ok=True)
     ydl_opts = {
         'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best',
         'outtmpl': os.path.join(output_path, '%(id)s.%(ext)s'),
@@ -35,7 +47,6 @@ def download_video(url, output_path="downloads"):
         'quiet': True,
         'no_warnings': True,
     }
-
     print(f"Downloading video from {url} (max 720p)...")
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
@@ -82,31 +93,19 @@ def _extract_keyframes(video_path, n_frames=8):
 def _parse_vtt_to_text(vtt_path):
     if not vtt_path or not os.path.exists(vtt_path):
         return None
-
     lines = []
     with open(vtt_path, encoding="utf-8") as f:
         raw = f.readlines()
-
     current_time = None
     for line in raw:
         line = line.strip()
         if "-->" in line:
             current_time = line.split("-->")[0].strip()[:8]
         elif line and current_time and not line.startswith("WEBVTT") and not line[0].isdigit():
-            clean = ""
-            skip = False
-            for ch in line:
-                if ch == "<":
-                    skip = True
-                elif ch == ">":
-                    skip = False
-                elif not skip:
-                    clean += ch
-            clean = clean.strip()
+            clean = re.sub(r"<[^>]+>", "", line).strip()
             if clean:
                 lines.append(f"[{current_time}] {clean}")
                 current_time = None
-
     return "\n".join(lines) if lines else None
 
 
@@ -116,11 +115,9 @@ def _find_vtt_file(video_path, info):
         candidate = f"{base}.{lang}.vtt"
         if os.path.exists(candidate):
             return candidate
-
     parent = os.path.dirname(video_path)
-    video_stem = os.path.basename(base)
     for fname in os.listdir(parent):
-        if fname.startswith(video_stem) and fname.endswith(".vtt"):
+        if fname.startswith(os.path.basename(base)) and fname.endswith(".vtt"):
             return os.path.join(parent, fname)
     return None
 
@@ -136,7 +133,7 @@ def _parse_gemini_json(text):
 
 
 # ---------------------------------------------------------------------------
-# Analysis — fast path (no video upload to Gemini)
+# Analysis
 # ---------------------------------------------------------------------------
 
 def analyze_video(video_path, user_instructions=None, info=None):
@@ -145,10 +142,7 @@ def analyze_video(video_path, user_instructions=None, info=None):
 
     vtt_path = _find_vtt_file(video_path, info or {})
     transcript_text = _parse_vtt_to_text(vtt_path)
-    if transcript_text:
-        print(f"Found transcript: {len(transcript_text.splitlines())} cue lines")
-    else:
-        print("No transcript available — using keyframes only")
+    print(f"Transcript: {len(transcript_text.splitlines())} lines" if transcript_text else "No transcript — keyframes only")
 
     print("Extracting keyframes...")
     frames, duration = _extract_keyframes(video_path, n_frames=8)
@@ -156,13 +150,11 @@ def analyze_video(video_path, user_instructions=None, info=None):
 
     focus = user_instructions or "High energy moments, key points, or funny/surprising parts"
     transcript_section = (
-        f"\n\nTRANSCRIPT (timestamped):\n{transcript_text}"
-        if transcript_text
+        f"\n\nTRANSCRIPT (timestamped):\n{transcript_text}" if transcript_text
         else "\n\n(No transcript available — use keyframes only)"
     )
 
     prompt = f"""You are a social-media clip editor. The video is {duration:.1f} seconds long.
-
 Below are {len(frames)} evenly-spaced keyframes and a timestamped transcript (if available).
 Use BOTH to identify the best shareable moments.{transcript_section}
 
@@ -173,21 +165,12 @@ Each element must have:
   "description" – one sentence describing why this moment is great
 
 Focus: {focus}
-
-Rules:
-- Clips must not overlap.
-- start_time and end_time must be within [0, {duration:.1f}].
-- Return 3 to 5 clips.
+Rules: clips must not overlap, timestamps within [0, {duration:.1f}], return 3 to 5 clips.
 """
 
     content_parts = [prompt]
     for frame in frames:
-        content_parts.append({
-            "inline_data": {
-                "mime_type": "image/jpeg",
-                "data": frame["data"],
-            }
-        })
+        content_parts.append({"inline_data": {"mime_type": "image/jpeg", "data": frame["data"]}})
         content_parts.append(f"[Keyframe at {frame['timestamp']}s]")
 
     print("Calling Gemini for analysis...")
@@ -199,32 +182,197 @@ Rules:
         print(f"Gemini returned {len(clips)} clips")
         return clips
     except Exception as e:
-        print(f"Error parsing Gemini response: {e}")
-        print(f"Raw response: {response.text}")
+        print(f"Error parsing Gemini response: {e}\nRaw: {response.text}")
         return []
 
 
 # ---------------------------------------------------------------------------
-# Clip rendering — parallel + fast ffmpeg settings
+# Caption generation  (Whisper → ASS subtitle file)
+# ---------------------------------------------------------------------------
+
+def _seconds_to_ass_time(s: float) -> str:
+    """Convert float seconds to ASS timestamp H:MM:SS.cc"""
+    h  = int(s // 3600)
+    m  = int((s % 3600) // 60)
+    sc = s % 60
+    return f"{h}:{m:02d}:{sc:05.2f}"
+
+
+def _build_ass_header() -> str:
+    """
+    Two styles:
+      Caption   – static words, white, thick black outline + drop shadow
+      Highlight – active word, yellow, slightly larger
+    BorderStyle 1 = outline+shadow (cleaner than opaque box).
+    Alignment 2 = bottom-center.
+    """
+    # Build with plain concatenation — no f-string so backslash ASS tags are safe
+    outline_w = str(CAPTION_OUTLINE_W)
+    shadow_w  = str(CAPTION_SHADOW_W)
+    margin_v  = str(CAPTION_MARGIN_V)
+    size      = str(CAPTION_FONTSIZE)
+    big_size  = str(int(CAPTION_FONTSIZE * 1.12))
+
+    fmt = ("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
+           "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
+           "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+           "Alignment, MarginL, MarginR, MarginV, Encoding\n")
+
+    # common tail: Bold=-1, rest 0, ScaleX/Y=100, Spacing=2, Angle=0, BorderStyle=1
+    tail = "-1,0,0,0,100,100,2,0,1," + outline_w + "," + shadow_w + ",2,40,40," + margin_v + ",1\n"
+
+    caption_style   = ("Style: Caption,"   + CAPTION_FONT + "," + size     + ","
+                       + CAPTION_COLOR    + ",&H000000FF,"
+                       + CAPTION_OUTLINE_CLR + "," + CAPTION_SHADOW_CLR + "," + tail)
+    highlight_style = ("Style: Highlight," + CAPTION_FONT + "," + big_size + ","
+                       + CAPTION_HIGHLIGHT + ",&H000000FF,"
+                       + CAPTION_OUTLINE_CLR + "," + CAPTION_SHADOW_CLR + "," + tail)
+
+    return ("[Script Info]\n"
+            "ScriptType: v4.00+\n"
+            "PlayResX: 1080\n"
+            "PlayResY: 1920\n"
+            "WrapStyle: 1\n\n"
+            "[V4+ Styles]\n"
+            + fmt
+            + caption_style
+            + highlight_style
+            + "\n[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
+
+
+def _tag(colour: str, alpha: str, scx: str = "100", scy: str = "100") -> str:
+    """Build an ASS inline override tag string safely (no f-string backslash issues)."""
+    return "{" + "\\c" + colour + "\\alpha" + alpha + "\\fscx" + scx + "\\fscy" + scy + "}"
+
+
+def _whisper_transcribe(audio_path: str, clip_duration: float) -> list:
+    """
+    Run openai-whisper and return word-level segments.
+    Returns: [{"start": float, "end": float, "text": str}, ...]
+    """
+    try:
+        import whisper
+    except ImportError:
+        print("  [captions] whisper not installed — pip install openai-whisper")
+        return []
+
+    print("  [captions] Transcribing with Whisper...")
+    model  = whisper.load_model("base")
+    result = model.transcribe(audio_path, word_timestamps=True, fp16=False, verbose=False)
+
+    words = []
+    for seg in result.get("segments", []):
+        for w in seg.get("words", []):
+            words.append({
+                "start": float(w["start"]),
+                "end":   min(float(w["end"]), clip_duration),
+                "text":  w["word"].strip(),
+            })
+    # Fallback to sentence segments
+    if not words:
+        for seg in result.get("segments", []):
+            words.append({
+                "start": float(seg["start"]),
+                "end":   min(float(seg["end"]), clip_duration),
+                "text":  seg["text"].strip(),
+            })
+    return words
+
+
+def _words_to_ass_events(words: list) -> str:
+    """
+    One Dialogue line per word in each N-word chunk.
+    Past words = white, current word = yellow + bigger, future words = dimmed white.
+    Uses string concatenation for ASS override tags to avoid Python escape issues.
+    """
+    if not words:
+        return ""
+
+    WHITE      = "&H00FFFFFF"
+    YELLOW     = "&H0000FFFF"
+    FULL_ALPHA = "&H00"
+    DIM_ALPHA  = "&HAA"        # ~33% opacity for upcoming words
+
+    event_lines = []
+
+    for i in range(0, len(words), CAPTION_WORDS):
+        chunk       = words[i : i + CAPTION_WORDS]
+        chunk_end   = chunk[-1]["end"]
+        word_texts  = [w["text"].upper().replace("{", "").replace("}", "") for w in chunk]
+
+        for active_idx, active_word in enumerate(chunk):
+            seg_start = active_word["start"]
+            seg_end   = (chunk[active_idx + 1]["start"]
+                         if active_idx + 1 < len(chunk) else chunk_end)
+            if seg_end <= seg_start:
+                seg_end = seg_start + 0.1
+
+            parts = []
+            for j, wt in enumerate(word_texts):
+                if j < active_idx:
+                    parts.append(_tag(WHITE, FULL_ALPHA) + wt)
+                elif j == active_idx:
+                    parts.append(_tag(YELLOW, FULL_ALPHA, "115", "115") + wt
+                                 + _tag(WHITE, FULL_ALPHA, "100", "100"))
+                else:
+                    parts.append(_tag(WHITE, DIM_ALPHA) + wt)
+
+            line_text = (" ".join(parts)
+                         + _tag(WHITE, FULL_ALPHA))  # reset for next chunk
+
+            event_lines.append(
+                "Dialogue: 0,"
+                + _seconds_to_ass_time(seg_start) + ","
+                + _seconds_to_ass_time(seg_end)
+                + ",Caption,,0,0,0,," + line_text
+            )
+
+    return "\n".join(event_lines)
+
+
+def generate_captions_ass(video_path: str, clip_duration: float, output_ass: str) -> bool:
+    """Extract audio, transcribe with Whisper, write .ass file. Returns True on success."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        audio_path = os.path.join(tmpdir, "audio.wav")
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-i", video_path, "-ac", "1", "-ar", "16000", "-vn", audio_path],
+            capture_output=True
+        )
+        if r.returncode != 0 or not os.path.exists(audio_path):
+            print("  [captions] Audio extraction failed")
+            return False
+        words = _whisper_transcribe(audio_path, clip_duration)
+
+    if not words:
+        print("  [captions] No words transcribed")
+        return False
+
+    ass_content = _build_ass_header() + _words_to_ass_events(words)
+    with open(output_ass, "w", encoding="utf-8") as f:
+        f.write(ass_content)
+
+    print(f"  [captions] {len(words)} word(s) written to {os.path.basename(output_ass)}")
+    return True
+
+# ---------------------------------------------------------------------------
+# Clip rendering — parallel, blur-pad background, burned captions
 # ---------------------------------------------------------------------------
 
 def _render_single_clip(args):
     """
-    Worker — runs in its own process so all clips encode simultaneously.
-    Uses ffmpeg directly for the vertical conversion: scales the 16:9 source
-    to fill the 9:16 canvas width, then pads top/bottom with a blurred+darkened
-    version of the same frame so nothing is cropped out.
+    Worker process:
+      1. Render vertical 9:16 clip with blurred background (ffmpeg)
+      2. Transcribe audio with Whisper → write .ass subtitle file
+      3. Burn captions into the clip (second ffmpeg pass)
     """
-    video_path, start, end, output_path = args
+    video_path, start, end, output_path, captions_enabled = args
     try:
         duration = end - start
 
-        # Target canvas: 1080x1920 (9:16)
-        # vf filter breakdown:
-        #   [0:v] split into two streams
-        #   stream 1 (bg): scale to 1080 wide, blur heavily, darken — fills canvas
-        #   stream 2 (fg): scale to fit inside 1080x1920 keeping aspect ratio
-        #   overlay fg centred on bg
+        # ── Pass 1: vertical conversion with blur-pad background ──────────────
+        raw_path = output_path.replace(".mp4", "_raw.mp4")
+
         vf = (
             "[0:v]split=2[bg][fg];"
             "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
@@ -236,36 +384,71 @@ def _render_single_clip(args):
             "[bg_blurred][fg_scaled]overlay=0:0"
         )
 
-        cmd = [
+        cmd1 = [
             "ffmpeg", "-y",
-            "-ss", str(start),
-            "-i", video_path,
+            "-ss", str(start), "-i", video_path,
             "-t", str(duration),
             "-vf", vf,
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-crf", "28",
-            "-c:a", "aac",
-            "-threads", "2",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+            "-c:a", "aac", "-threads", "2",
+            raw_path,
+        ]
+        r1 = subprocess.run(cmd1, capture_output=True, text=True)
+        if r1.returncode != 0:
+            raise RuntimeError(f"Pass 1 failed: {r1.stderr[-400:]}")
+
+        if not captions_enabled:
+            os.rename(raw_path, output_path)
+            return output_path, None
+
+        # ── Pass 2: burn captions ─────────────────────────────────────────────
+        ass_path = output_path.replace(".mp4", ".ass")
+        has_captions = generate_captions_ass(raw_path, duration, ass_path)
+
+        if not has_captions:
+            # Whisper unavailable or no speech — just use the raw clip
+            os.rename(raw_path, output_path)
+            return output_path, None
+
+        # Escape ass_path for ffmpeg filter (Windows backslash + colon issues)
+        safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
+
+        cmd2 = [
+            "ffmpeg", "-y",
+            "-i", raw_path,
+            "-vf", f"ass={safe_ass}",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+            "-c:a", "copy", "-threads", "2",
             output_path,
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr[-500:])
+        r2 = subprocess.run(cmd2, capture_output=True, text=True)
+        if r2.returncode != 0:
+            # Caption burn failed — fall back to raw clip so user still gets something
+            print(f"  [captions] Burn failed, using raw clip: {r2.stderr[-200:]}")
+            os.rename(raw_path, output_path)
+        else:
+            os.remove(raw_path)
+
+        # Clean up .ass file
+        try:
+            os.remove(ass_path)
+        except OSError:
+            pass
+
         return output_path, None
+
     except Exception as e:
         return output_path, str(e)
 
 
-def create_clips(video_path, clips_metadata, output_dir="output"):
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+def create_clips(video_path, clips_metadata, output_dir="output", captions=True):
+    os.makedirs(output_dir, exist_ok=True)
 
     if not clips_metadata:
         print("No clip metadata returned from analysis.")
         return []
 
-    # Probe duration once with ffprobe — faster than opening MoviePy
+    # Probe total duration
     probe = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
          "-of", "default=noprint_wrappers=1:nokey=1", video_path],
@@ -276,28 +459,25 @@ def create_clips(video_path, clips_metadata, output_dir="output"):
     except ValueError:
         total_duration = VideoFileClip(video_path).duration
 
-    # Build task list with clamped timestamps
-    tasks = []
-    meta_map = {}
+    # Build task list
+    tasks, meta_map = [], {}
     for i, metadata in enumerate(clips_metadata):
-        start = float(metadata.get("start_time", 0))
-        end   = float(metadata.get("end_time", 10))
-        start = max(0.0, min(start, total_duration))
-        end   = max(start + 1.0, min(end, total_duration))
+        start = max(0.0, min(float(metadata.get("start_time", 0)), total_duration))
+        end   = max(start + 1.0, min(float(metadata.get("end_time", 10)), total_duration))
 
         output_filename = f"clip_{i}_{uuid.uuid4().hex[:8]}.mp4"
-        output_path = os.path.join(output_dir, output_filename)
-        tasks.append((video_path, start, end, output_path))
+        output_path     = os.path.join(output_dir, output_filename)
+        tasks.append((video_path, start, end, output_path, captions))
         meta_map[output_path] = {
-            "filename": output_filename,
+            "filename":    output_filename,
             "description": metadata.get("description", ""),
-            "start_time": start,
-            "end_time": end,
+            "start_time":  start,
+            "end_time":    end,
+            "captions":    captions,
         }
 
-    # Encode all clips in parallel — cap at 4 workers to avoid I/O saturation
     n_workers = min(len(tasks), 4)
-    print(f"Rendering {len(tasks)} clips in parallel ({n_workers} workers)...")
+    print(f"Rendering {len(tasks)} clip(s) in parallel ({n_workers} workers), captions={'on' if captions else 'off'}...")
 
     created_files = []
     with ProcessPoolExecutor(max_workers=n_workers) as executor:
@@ -310,9 +490,6 @@ def create_clips(video_path, clips_metadata, output_dir="output"):
                 print(f"  + Done:   {os.path.basename(output_path)}")
                 created_files.append(meta_map[output_path])
 
-    # Restore original order (as_completed returns in finish order)
     order = {t[3]: idx for idx, t in enumerate(tasks)}
-    created_files.sort(key=lambda c: order.get(
-        os.path.join(output_dir, c["filename"]), 999
-    ))
+    created_files.sort(key=lambda c: order.get(os.path.join(output_dir, c["filename"]), 999))
     return created_files
