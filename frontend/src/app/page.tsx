@@ -5,19 +5,41 @@ import "./globals.css";
 
 interface Clip {
   url?: string;
-  path?: string; // keeping just in case old cached data still has path
+  path?: string;
   src?: string;
   description?: string;
+  hook?: string;
+  virality_score?: number;
+  clip_type?: string;
 }
+
+const CLIP_STYLES = [
+  { id: "auto", label: "Auto", icon: "🎯", desc: "Let AI decide" },
+  { id: "funny", label: "Funny", icon: "😂", desc: "Comedy gold" },
+  { id: "educational", label: "Educational", icon: "🧠", desc: "Key insights" },
+  { id: "emotional", label: "Emotional", icon: "💫", desc: "Powerful moments" },
+  { id: "controversial", label: "Controversial", icon: "🔥", desc: "Hot takes" },
+  { id: "highlights", label: "Highlights", icon: "⚡", desc: "Peak action" },
+];
+
+const CAPTION_STYLES = [
+  { id: "default", label: "Classic", desc: "Static highlight" },
+  { id: "bold_impact", label: "Bold Impact", desc: "Pop-in animation" },
+  { id: "subtle", label: "Subtle", desc: "Smooth fade-in" },
+  { id: "karaoke", label: "Karaoke", desc: "Progressive fill" },
+];
 
 export default function Home() {
   const [url, setUrl] = useState("");
   const [instructions, setInstructions] = useState("");
+  const [clipStyle, setClipStyle] = useState("auto");
+  const [captionStyle, setCaptionStyle] = useState("bold_impact");
   const [isProcessing, setIsProcessing] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("");
   const [clips, setClips] = useState<Clip[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
 
   // --- Auth State ---
   const [token, setToken] = useState<string | null>(null);
@@ -110,6 +132,7 @@ export default function Home() {
 
     setIsProcessing(true);
     setError(null);
+    setWarning(null);
     setClips([]);
     setStatus("Initiating...");
 
@@ -117,6 +140,8 @@ export default function Home() {
       const formData = new FormData();
       formData.append("url", url);
       if (instructions) formData.append("instructions", instructions);
+      formData.append("clip_style", clipStyle);
+      formData.append("caption_style", captionStyle);
 
       const response = await fetch("http://localhost:8000/process-url", {
         method: "POST",
@@ -167,6 +192,9 @@ export default function Home() {
 
         if (data.status === "completed") {
           setClips(data.results);
+          if (data.warnings) {
+            setWarning(data.warnings);
+          }
           setIsProcessing(false);
           setJobId(null);
           clearInterval(interval);
@@ -351,6 +379,55 @@ export default function Home() {
               disabled={isProcessing}
             />
           </div>
+
+          {/* Clip Style Selector */}
+          <div style={{ marginTop: '1.5rem', width: '100%', maxWidth: '700px' }}>
+            <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', display: 'block' }}>
+              Clip Style
+            </label>
+            <div className="style-selector">
+              {CLIP_STYLES.map((s) => (
+                <button
+                  key={s.id}
+                  className={`style-card ${clipStyle === s.id ? 'active' : ''}`}
+                  onClick={() => setClipStyle(s.id)}
+                  disabled={isProcessing}
+                  type="button"
+                >
+                  <span className="style-icon">{s.icon}</span>
+                  <span className="style-label">{s.label}</span>
+                  <span className="style-desc">{s.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Caption Style Selector */}
+          <div style={{ marginTop: '1rem', width: '100%', maxWidth: '700px' }}>
+            <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', display: 'block' }}>
+              Caption Style
+            </label>
+            <div className="style-selector">
+              {CAPTION_STYLES.map((s) => (
+                <button
+                  key={s.id}
+                  className={`style-card style-card-sm ${captionStyle === s.id ? 'active' : ''}`}
+                  onClick={() => setCaptionStyle(s.id)}
+                  disabled={isProcessing}
+                  type="button"
+                >
+                  <span className="style-label">{s.label}</span>
+                  <span className="style-desc">{s.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {warning && clips.length > 0 && (
+            <div className="warning-banner">
+              {warning} — showing {clips.length} successful clip{clips.length !== 1 ? 's' : ''}.
+            </div>
+          )}
         </section>
 
         {clips && clips.length > 0 && (
@@ -379,7 +456,22 @@ export default function Home() {
                       style={{ width: '100%', height: '100%' }}
                     />
                   </div>
+                  {clip.hook && (
+                    <p style={{ fontSize: '0.8rem', color: 'var(--secondary)', fontStyle: 'italic', marginBottom: '0.3rem' }}>
+                      "{clip.hook}"
+                    </p>
+                  )}
                   <p style={{ fontSize: '0.9rem' }}>{clip.description}</p>
+                  {(clip.virality_score || clip.clip_type) && (
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                      {clip.virality_score && (
+                        <span className="clip-badge">{clip.virality_score}/10</span>
+                      )}
+                      {clip.clip_type && (
+                        <span className="clip-badge clip-badge-type">{clip.clip_type}</span>
+                      )}
+                    </div>
+                  )}
                   <a
                     href={clip.url || clip.src || (clip.path ? (clip.path.startsWith('http') ? clip.path : `http://localhost:8000${clip.path}`) : '#')}
                     target="_blank"

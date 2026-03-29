@@ -80,6 +80,11 @@ def upload_clip_to_storage(
     filename     = os.path.basename(local_path)
     storage_path = f"{user_id}/{job_id}/{filename}"
 
+    # Check file size before uploading (Supabase free tier: 50MB limit)
+    file_size_mb = os.path.getsize(local_path) / (1024 * 1024)
+    if file_size_mb > 50:
+        raise RuntimeError(f"Clip too large ({file_size_mb:.1f}MB > 50MB limit). Try a shorter clip.")
+
     # ── 1. Upload the file ────────────────────────────────────────────────────
     with open(local_path, "rb") as f:
         resp = requests.post(
@@ -96,7 +101,7 @@ def upload_clip_to_storage(
         raise RuntimeError(f"Upload failed {resp.status_code}: {resp.text}")
 
     # ── 2. Write metadata to DB ───────────────────────────────────────────────
-    supabase.table("clip_metadata").insert({
+    row = {
         "user_id":       user_id,
         "job_id":        job_id,
         "filename":      filename,
@@ -105,10 +110,23 @@ def upload_clip_to_storage(
         "source_url":    source_url[:500],
         "start_time":    round(start_time, 2),
         "end_time":      round(end_time, 2),
-        "hook":          hook[:300],
-        "virality_score": virality_score,
-        "clip_type":     clip_type[:50],
-    }).execute()
+    }
+
+    # These columns may not exist in older DB schemas — try with them first,
+    # fall back without if the insert fails.
+    extra_cols = {}
+    if hook:
+        extra_cols["hook"] = hook[:300]
+    if virality_score:
+        extra_cols["virality_score"] = virality_score
+    if clip_type:
+        extra_cols["clip_type"] = clip_type[:50]
+
+    try:
+        supabase.table("clip_metadata").insert({**row, **extra_cols}).execute()
+    except Exception:
+        # Retry without extra columns if they don't exist in the schema
+        supabase.table("clip_metadata").insert(row).execute()
 
     print(f"  [storage] Uploaded + metadata saved → {storage_path}")
     return storage_path

@@ -8,6 +8,7 @@ import base64
 import subprocess
 import tempfile
 import re
+import time as _time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from dotenv import load_dotenv
@@ -19,18 +20,91 @@ GENAI_API_KEY = os.getenv("GOOGLE_API_KEY")
 if GENAI_API_KEY:
     genai.configure(api_key=GENAI_API_KEY)
 
-# Caption style — override via env vars
-# ASS colours are &HAABBGGRR  (alpha, blue, green, red)
-CAPTION_FONT         = os.getenv("CAPTION_FONT",        "Arial Black")
-CAPTION_FONTSIZE     = int(os.getenv("CAPTION_FONTSIZE",    "72"))
-CAPTION_COLOR        = os.getenv("CAPTION_COLOR",       "&H00FFFFFF")   # default word: white
-CAPTION_HIGHLIGHT    = os.getenv("CAPTION_HIGHLIGHT",   "&H0000FFFF")   # active word: yellow
-CAPTION_OUTLINE_CLR  = os.getenv("CAPTION_OUTLINE_CLR", "&H00000000")   # outline: black
-CAPTION_SHADOW_CLR   = os.getenv("CAPTION_SHADOW_CLR",  "&H66000000")   # soft drop-shadow
-CAPTION_OUTLINE_W    = int(os.getenv("CAPTION_OUTLINE_W",  "4"))         # outline thickness px
-CAPTION_SHADOW_W     = int(os.getenv("CAPTION_SHADOW_W",   "3"))         # shadow depth px
-CAPTION_WORDS        = int(os.getenv("CAPTION_WORDS",      "3"))         # words per line
-CAPTION_MARGIN_V     = int(os.getenv("CAPTION_MARGIN_V",   "320"))       # px from bottom
+# ---------------------------------------------------------------------------
+# Clip style definitions — user picks one to bias Gemini's selection
+# ---------------------------------------------------------------------------
+CLIP_STYLES = {
+    "auto":          "Automatically detect the best clip style based on content",
+    "funny":         "Prioritize humor, punchlines, comedic timing, and laugh-out-loud moments",
+    "educational":   "Focus on insights, aha-moments, surprising facts, and clear explanations",
+    "emotional":     "Find emotionally powerful moments — vulnerability, triumph, heartbreak, inspiration",
+    "controversial": "Surface bold opinions, hot takes, disagreements, and debate-worthy statements",
+    "highlights":    "Extract the most action-packed, visually striking, peak moments",
+}
+
+# ---------------------------------------------------------------------------
+# Caption style presets — user picks one; values feed into ASS subtitle gen
+# ---------------------------------------------------------------------------
+CAPTION_PRESETS = {
+    "default": {
+        "font": os.getenv("CAPTION_FONT", "Arial Black"),
+        "fontsize": int(os.getenv("CAPTION_FONTSIZE", "72")),
+        "color": os.getenv("CAPTION_COLOR", "&H00FFFFFF"),
+        "highlight": os.getenv("CAPTION_HIGHLIGHT", "&H0000FFFF"),
+        "outline_clr": os.getenv("CAPTION_OUTLINE_CLR", "&H00000000"),
+        "shadow_clr": os.getenv("CAPTION_SHADOW_CLR", "&H66000000"),
+        "outline_w": int(os.getenv("CAPTION_OUTLINE_W", "4")),
+        "shadow_w": int(os.getenv("CAPTION_SHADOW_W", "3")),
+        "words_per_line": int(os.getenv("CAPTION_WORDS", "3")),
+        "margin_v": int(os.getenv("CAPTION_MARGIN_V", "320")),
+        "anim_type": "none",
+    },
+    "bold_impact": {
+        "font": "Arial Black",
+        "fontsize": 80,
+        "color": "&H00FFFFFF",
+        "highlight": "&H0000FFFF",
+        "outline_clr": "&H00000000",
+        "shadow_clr": "&H66000000",
+        "outline_w": 5,
+        "shadow_w": 3,
+        "words_per_line": 3,
+        "margin_v": 320,
+        "anim_type": "pop",
+        "anim_scale_start": 50,
+        "anim_scale_end": 115,
+        "anim_duration_ms": 150,
+    },
+    "subtle": {
+        "font": "Inter",
+        "fontsize": 56,
+        "color": "&H00FFFFFF",
+        "highlight": "&H0088FF88",
+        "outline_clr": "&H00000000",
+        "shadow_clr": "&H44000000",
+        "outline_w": 2,
+        "shadow_w": 1,
+        "words_per_line": 4,
+        "margin_v": 300,
+        "anim_type": "fade",
+        "anim_duration_ms": 200,
+    },
+    "karaoke": {
+        "font": "Arial Black",
+        "fontsize": 72,
+        "color": "&H00FFFFFF",
+        "highlight": "&H000055FF",
+        "outline_clr": "&H00000000",
+        "shadow_clr": "&H66000000",
+        "outline_w": 4,
+        "shadow_w": 2,
+        "words_per_line": 5,
+        "margin_v": 320,
+        "anim_type": "karaoke",
+    },
+}
+
+# Backward-compat module-level constants (used by legacy code paths)
+CAPTION_FONT         = CAPTION_PRESETS["default"]["font"]
+CAPTION_FONTSIZE     = CAPTION_PRESETS["default"]["fontsize"]
+CAPTION_COLOR        = CAPTION_PRESETS["default"]["color"]
+CAPTION_HIGHLIGHT    = CAPTION_PRESETS["default"]["highlight"]
+CAPTION_OUTLINE_CLR  = CAPTION_PRESETS["default"]["outline_clr"]
+CAPTION_SHADOW_CLR   = CAPTION_PRESETS["default"]["shadow_clr"]
+CAPTION_OUTLINE_W    = CAPTION_PRESETS["default"]["outline_w"]
+CAPTION_SHADOW_W     = CAPTION_PRESETS["default"]["shadow_w"]
+CAPTION_WORDS        = CAPTION_PRESETS["default"]["words_per_line"]
+CAPTION_MARGIN_V     = CAPTION_PRESETS["default"]["margin_v"]
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +302,23 @@ def _virality_criteria_for_type(content_type: str) -> str:
     return criteria.get(content_type, criteria["general"])
 
 
-def analyze_video(video_path, user_instructions=None, info=None):
+def _retry(fn, max_attempts=3, backoff_base=2.0):
+    """Retry a callable with exponential backoff. Returns the first successful result."""
+    last_error = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return fn()
+        except Exception as e:
+            last_error = e
+            if attempt < max_attempts:
+                wait = backoff_base ** (attempt - 1)
+                print(f"  [retry] Attempt {attempt}/{max_attempts} failed: {e}. "
+                      f"Retrying in {wait:.1f}s...")
+                _time.sleep(wait)
+    raise last_error
+
+
+def analyze_video(video_path, user_instructions=None, info=None, clip_style="auto"):
     if not GENAI_API_KEY:
         return [{"start_time": 0, "end_time": 10, "description": "Short clip (API Key missing)"}]
 
@@ -242,8 +332,6 @@ def analyze_video(video_path, user_instructions=None, info=None):
         print("No transcript — keyframes only")
 
     # ── 2. Keyframes — denser sampling when no transcript ────────────────────
-    # With a transcript Gemini has exact timestamps so 12 frames is enough context.
-    # Without a transcript we need more frames to locate moments accurately.
     n_frames = 12 if has_transcript else 20
     print(f"Extracting {n_frames} keyframes...")
     frames, duration = _extract_keyframes(video_path, n_frames=n_frames)
@@ -269,6 +357,17 @@ def analyze_video(video_path, user_instructions=None, info=None):
         if user_instructions else ""
     )
 
+    # ── 4b. Clip style directive ──────────────────────────────────────────────
+    style_directive = ""
+    if clip_style and clip_style != "auto" and clip_style in CLIP_STYLES:
+        style_directive = (
+            f"\n\nCLIP STYLE PRIORITY (this overrides content-type defaults):\n"
+            f"The user specifically wants: {clip_style.upper()}\n"
+            f"Directive: {CLIP_STYLES[clip_style]}\n"
+            f"Every clip you return MUST strongly align with this style. "
+            f"Discard moments that don't match even if they have high general virality."
+        )
+
     prompt = f"""You are an expert viral social-media clip editor with deep knowledge of what makes content perform on TikTok, Instagram Reels, and YouTube Shorts.
 
 {title_line}Video duration: {duration:.1f} seconds
@@ -285,7 +384,7 @@ UNIVERSAL RULES FOR CLIP SELECTION:
 2. COMPLETE THOUGHT — the clip must end at a natural conclusion (punchline, insight delivered,    story resolved). Never cut off mid-sentence.
 3. NO CONTEXT REQUIRED — avoid anything that references "earlier" or "as I mentioned" —    the clip must be self-contained.
 4. EMOTIONAL ARC — the best clips have a mini arc: setup → tension/curiosity → payoff.
-5. QUOTABILITY — prioritise moments with a line someone would screenshot or repeat.{transcript_section}{custom_focus}
+5. QUOTABILITY — prioritise moments with a line someone would screenshot or repeat.{transcript_section}{custom_focus}{style_directive}
 
 KEYFRAMES are provided below for visual context — use them to verify the scene but {"rely on transcript timestamps for precise clip boundaries." if has_transcript else "use them as your primary timing signal."}
 
@@ -312,13 +411,17 @@ Constraints:
         })
         content_parts.append(f"[Keyframe at {frame['timestamp']}s]")
 
+    # Call Gemini with retry (handles transient network/rate-limit errors)
     print("Calling Gemini for viral moment analysis...")
-    model    = genai.GenerativeModel(model_name="gemini-2.5-pro")
-    response = model.generate_content(content_parts)
+
+    def _call_gemini():
+        model = genai.GenerativeModel(model_name="gemini-2.5-pro")
+        return model.generate_content(content_parts)
+
+    response = _retry(_call_gemini, max_attempts=3, backoff_base=2.0)
 
     try:
         clips = _parse_gemini_json(response.text)
-        # Sort by virality score descending so best clip is always first
         clips.sort(key=lambda c: c.get("virality_score", 0), reverse=True)
         print(f"Gemini returned {len(clips)} clips:")
         for c in clips:
@@ -342,35 +445,41 @@ def _seconds_to_ass_time(s: float) -> str:
     return f"{h}:{m:02d}:{sc:05.2f}"
 
 
-def _build_ass_header() -> str:
+def _get_preset(preset_name: str) -> dict:
+    """Look up a caption preset by name, falling back to default."""
+    return CAPTION_PRESETS.get(preset_name, CAPTION_PRESETS["default"])
+
+
+def _build_ass_header(preset_name: str = "default") -> str:
     """
     Two styles:
-      Caption   – static words, white, thick black outline + drop shadow
-      Highlight – active word, yellow, slightly larger
+      Caption   – static words, thick black outline + drop shadow
+      Highlight – active word, slightly larger
     BorderStyle 1 = outline+shadow (cleaner than opaque box).
     Alignment 2 = bottom-center.
     """
-    # Build with plain concatenation — no f-string so backslash ASS tags are safe
-    outline_w = str(CAPTION_OUTLINE_W)
-    shadow_w  = str(CAPTION_SHADOW_W)
-    margin_v  = str(CAPTION_MARGIN_V)
-    size      = str(CAPTION_FONTSIZE)
-    big_size  = str(int(CAPTION_FONTSIZE * 1.12))
+    p = _get_preset(preset_name)
+
+    outline_w = str(p["outline_w"])
+    shadow_w  = str(p["shadow_w"])
+    margin_v  = str(p["margin_v"])
+    size      = str(p["fontsize"])
+    big_size  = str(int(p["fontsize"] * 1.12))
+    font      = p["font"]
 
     fmt = ("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
            "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
            "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
            "Alignment, MarginL, MarginR, MarginV, Encoding\n")
 
-    # common tail: Bold=-1, rest 0, ScaleX/Y=100, Spacing=2, Angle=0, BorderStyle=1
     tail = "-1,0,0,0,100,100,2,0,1," + outline_w + "," + shadow_w + ",2,40,40," + margin_v + ",1\n"
 
-    caption_style   = ("Style: Caption,"   + CAPTION_FONT + "," + size     + ","
-                       + CAPTION_COLOR    + ",&H000000FF,"
-                       + CAPTION_OUTLINE_CLR + "," + CAPTION_SHADOW_CLR + "," + tail)
-    highlight_style = ("Style: Highlight," + CAPTION_FONT + "," + big_size + ","
-                       + CAPTION_HIGHLIGHT + ",&H000000FF,"
-                       + CAPTION_OUTLINE_CLR + "," + CAPTION_SHADOW_CLR + "," + tail)
+    caption_style   = ("Style: Caption,"   + font + "," + size     + ","
+                       + p["color"]       + ",&H000000FF,"
+                       + p["outline_clr"] + "," + p["shadow_clr"] + "," + tail)
+    highlight_style = ("Style: Highlight," + font + "," + big_size + ","
+                       + p["highlight"]   + ",&H000000FF,"
+                       + p["outline_clr"] + "," + p["shadow_clr"] + "," + tail)
 
     return ("[Script Info]\n"
             "ScriptType: v4.00+\n"
@@ -424,27 +533,73 @@ def _whisper_transcribe(audio_path: str, clip_duration: float) -> list:
     return words
 
 
-def _words_to_ass_events(words: list) -> str:
+def _anim_tag_pop(colour, alpha, scx_start, scx_end, settle_ms, overshoot_ms):
+    """Build an ASS override with \\t transform for pop-in animation."""
+    # Scale from scx_start → scx_end (overshoot) then settle to 100
+    return ("{" +
+            "\\c" + colour +
+            "\\alpha" + alpha +
+            "\\fscx" + str(scx_start) + "\\fscy" + str(scx_start) +
+            "\\t(0," + str(overshoot_ms) + ",\\fscx" + str(scx_end) + "\\fscy" + str(scx_end) + ")" +
+            "\\t(" + str(overshoot_ms) + "," + str(overshoot_ms + settle_ms) + ",\\fscx100\\fscy100)" +
+            "}")
+
+
+def _anim_tag_fade(colour, alpha, duration_ms):
+    """Build an ASS override with fade-in animation."""
+    return ("{" +
+            "\\c" + colour +
+            "\\alpha&HFF" +
+            "\\t(0," + str(duration_ms) + ",\\alpha" + alpha + ")" +
+            "}")
+
+
+def _words_to_ass_events(words: list, preset_name: str = "default") -> str:
     """
     One Dialogue line per word in each N-word chunk.
-    Past words = white, current word = yellow + bigger, future words = dimmed white.
-    Uses string concatenation for ASS override tags to avoid Python escape issues.
+    Supports multiple animation styles based on the caption preset:
+      - none (default): static highlight (past=white, active=yellow+bigger, future=dimmed)
+      - pop (bold_impact): active word pops in with scale overshoot
+      - fade (subtle): words fade in smoothly
+      - karaoke: uses ASS \\kf progressive fill
     """
     if not words:
         return ""
 
-    WHITE      = "&H00FFFFFF"
-    YELLOW     = "&H0000FFFF"
+    p = _get_preset(preset_name)
+    words_per_line = p.get("words_per_line", CAPTION_WORDS)
+    anim_type      = p.get("anim_type", "none")
+
     FULL_ALPHA = "&H00"
-    DIM_ALPHA  = "&HAA"        # ~33% opacity for upcoming words
+    DIM_ALPHA  = "&HAA"
+    WHITE      = p.get("color", "&H00FFFFFF")
+    HIGHLIGHT  = p.get("highlight", "&H0000FFFF")
 
     event_lines = []
 
-    for i in range(0, len(words), CAPTION_WORDS):
-        chunk       = words[i : i + CAPTION_WORDS]
+    for i in range(0, len(words), words_per_line):
+        chunk       = words[i : i + words_per_line]
         chunk_end   = chunk[-1]["end"]
         word_texts  = [w["text"].upper().replace("{", "").replace("}", "") for w in chunk]
 
+        # ── Karaoke mode: single line per chunk with \kf tags ────────────
+        if anim_type == "karaoke":
+            seg_start = chunk[0]["start"]
+            parts = []
+            for w_idx, w in enumerate(chunk):
+                dur_cs = int((w["end"] - w["start"]) * 100)  # centiseconds for \kf
+                dur_cs = max(dur_cs, 10)
+                parts.append("{\\kf" + str(dur_cs) + "}" + word_texts[w_idx])
+            line_text = " ".join(parts)
+            event_lines.append(
+                "Dialogue: 0,"
+                + _seconds_to_ass_time(seg_start) + ","
+                + _seconds_to_ass_time(chunk_end)
+                + ",Caption,,0,0,0,," + line_text
+            )
+            continue
+
+        # ── Pop / Fade / None: one Dialogue per active word ──────────────
         for active_idx, active_word in enumerate(chunk):
             seg_start = active_word["start"]
             seg_end   = (chunk[active_idx + 1]["start"]
@@ -455,15 +610,36 @@ def _words_to_ass_events(words: list) -> str:
             parts = []
             for j, wt in enumerate(word_texts):
                 if j < active_idx:
+                    # Past words — fully visible, base color
                     parts.append(_tag(WHITE, FULL_ALPHA) + wt)
                 elif j == active_idx:
-                    parts.append(_tag(YELLOW, FULL_ALPHA, "115", "115") + wt
-                                 + _tag(WHITE, FULL_ALPHA, "100", "100"))
+                    # Active word — animated based on preset
+                    if anim_type == "pop":
+                        sc_start = p.get("anim_scale_start", 50)
+                        sc_end   = p.get("anim_scale_end", 115)
+                        dur_ms   = p.get("anim_duration_ms", 150)
+                        parts.append(
+                            _anim_tag_pop(HIGHLIGHT, FULL_ALPHA, sc_start, sc_end, 100, dur_ms)
+                            + wt
+                            + _tag(WHITE, FULL_ALPHA, "100", "100")
+                        )
+                    elif anim_type == "fade":
+                        dur_ms = p.get("anim_duration_ms", 200)
+                        parts.append(
+                            _anim_tag_fade(HIGHLIGHT, FULL_ALPHA, dur_ms)
+                            + wt
+                            + _tag(WHITE, FULL_ALPHA, "100", "100")
+                        )
+                    else:
+                        # Default static highlight
+                        parts.append(_tag(HIGHLIGHT, FULL_ALPHA, "115", "115") + wt
+                                     + _tag(WHITE, FULL_ALPHA, "100", "100"))
                 else:
+                    # Future words — dimmed
                     parts.append(_tag(WHITE, DIM_ALPHA) + wt)
 
             line_text = (" ".join(parts)
-                         + _tag(WHITE, FULL_ALPHA))  # reset for next chunk
+                         + _tag(WHITE, FULL_ALPHA))
 
             event_lines.append(
                 "Dialogue: 0,"
@@ -475,7 +651,8 @@ def _words_to_ass_events(words: list) -> str:
     return "\n".join(event_lines)
 
 
-def generate_captions_ass(video_path: str, clip_duration: float, output_ass: str) -> bool:
+def generate_captions_ass(video_path: str, clip_duration: float, output_ass: str,
+                          caption_style: str = "default") -> bool:
     """Extract audio, transcribe with Whisper, write .ass file. Returns True on success."""
     with tempfile.TemporaryDirectory() as tmpdir:
         audio_path = os.path.join(tmpdir, "audio.wav")
@@ -492,41 +669,136 @@ def generate_captions_ass(video_path: str, clip_duration: float, output_ass: str
         print("  [captions] No words transcribed")
         return False
 
-    ass_content = _build_ass_header() + _words_to_ass_events(words)
+    ass_content = _build_ass_header(caption_style) + _words_to_ass_events(words, caption_style)
     with open(output_ass, "w", encoding="utf-8") as f:
         f.write(ass_content)
 
-    print(f"  [captions] {len(words)} word(s) written to {os.path.basename(output_ass)}")
+    print(f"  [captions] {len(words)} word(s) written to {os.path.basename(output_ass)} (style={caption_style})")
     return True
 
 # ---------------------------------------------------------------------------
 # Clip rendering — parallel, blur-pad background, burned captions
 # ---------------------------------------------------------------------------
 
+def _detect_face_region(video_path, start, end, sample_interval=2.0):
+    """
+    Sample frames and detect faces using OpenCV.
+    Returns average face center (x_frac, y_frac) relative to frame size,
+    or None if no faces found or OpenCV is unavailable.
+    """
+    try:
+        import cv2
+    except ImportError:
+        return None
+
+    cascade_path = os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml")
+    if not os.path.exists(cascade_path):
+        return None
+    face_cascade = cv2.CascadeClassifier(cascade_path)
+
+    duration = end - start
+    n_samples = max(1, int(duration / sample_interval))
+    face_centers = []
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for i in range(n_samples):
+            ts = start + (i + 0.5) * (duration / n_samples)
+            frame_path = os.path.join(tmpdir, f"face_{i}.jpg")
+            subprocess.run(
+                ["ffmpeg", "-ss", str(ts), "-i", video_path,
+                 "-frames:v", "1", "-q:v", "8", frame_path, "-y"],
+                capture_output=True
+            )
+            if not os.path.exists(frame_path):
+                continue
+
+            img = cv2.imread(frame_path)
+            if img is None:
+                continue
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
+
+            h, w = img.shape[:2]
+            for (fx, fy, fw, fh) in faces:
+                cx = (fx + fw / 2) / w
+                cy = (fy + fh / 2) / h
+                face_centers.append((cx, cy))
+
+    if not face_centers:
+        return None
+
+    avg_x = sum(c[0] for c in face_centers) / len(face_centers)
+    avg_y = sum(c[1] for c in face_centers) / len(face_centers)
+    return (avg_x, avg_y)
+
+
+def _build_vf_with_face(face_center):
+    """
+    Build FFmpeg video filter that crops toward the detected face
+    and uses a blurred background — same structure as the default
+    filter but with face-biased positioning instead of center.
+    """
+    fx, fy = face_center
+    fx = max(0.25, min(0.75, fx))
+    fy = max(0.25, min(0.75, fy))
+
+    # Calculate crop offset for the foreground: shift toward face
+    # (ow-iw)/2 is center; we bias it by the face offset
+    x_offset = f"(ow-iw)/2+{int((fx - 0.5) * 200)}"
+    y_offset = f"(oh-ih)/2+{int((fy - 0.5) * 200)}"
+
+    vf = (
+        "[0:v]split=2[bg][fg];"
+        "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
+        "crop=1080:1920,"
+        "gblur=sigma=40,"
+        "eq=brightness=-0.3[bg_blurred];"
+        f"[fg]scale=1080:1920:force_original_aspect_ratio=decrease,"
+        f"pad=1080:1920:{x_offset}:{y_offset}:color=black@0[fg_scaled];"
+        "[bg_blurred][fg_scaled]overlay=0:0"
+    )
+    return vf
+
+
 def _render_single_clip(args):
     """
     Worker process:
-      1. Render vertical 9:16 clip with blurred background (ffmpeg)
-      2. Transcribe audio with Whisper → write .ass subtitle file
-      3. Burn captions into the clip (second ffmpeg pass)
+      1. Optionally detect faces for smart cropping
+      2. Render vertical 9:16 clip with blurred background (ffmpeg)
+      3. Transcribe audio with Whisper → write .ass subtitle file
+      4. Burn captions into the clip (second ffmpeg pass)
     """
-    video_path, start, end, output_path, captions_enabled = args
+    video_path, start, end, output_path, captions_enabled, caption_style = args
     try:
         duration = end - start
 
-        # ── Pass 1: vertical conversion with blur-pad background ──────────────
+        # ── Face detection (optional, best-effort) ────────────────────────────
+        face_center = None
+        try:
+            face_center = _detect_face_region(video_path, start, end)
+            if face_center:
+                print(f"  [face] Detected face at ({face_center[0]:.2f}, {face_center[1]:.2f})")
+        except Exception:
+            pass  # Fall back to center-crop silently
+
+        # ── Pass 1: vertical conversion ───────────────────────────────────────
         raw_path = output_path.replace(".mp4", "_raw.mp4")
 
-        vf = (
-            "[0:v]split=2[bg][fg];"
-            "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
-            "crop=1080:1920,"
-            "gblur=sigma=40,"
-            "eq=brightness=-0.3[bg_blurred];"
-            "[fg]scale=1080:1920:force_original_aspect_ratio=decrease,"
-            "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black@0[fg_scaled];"
-            "[bg_blurred][fg_scaled]overlay=0:0"
-        )
+        if face_center:
+            # Face-biased crop with blurred background
+            vf = _build_vf_with_face(face_center)
+        else:
+            # Standard blur-pad background
+            vf = (
+                "[0:v]split=2[bg][fg];"
+                "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
+                "crop=1080:1920,"
+                "gblur=sigma=40,"
+                "eq=brightness=-0.3[bg_blurred];"
+                "[fg]scale=1080:1920:force_original_aspect_ratio=decrease,"
+                "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black@0[fg_scaled];"
+                "[bg_blurred][fg_scaled]overlay=0:0"
+            )
 
         cmd1 = [
             "ffmpeg", "-y",
@@ -539,7 +811,33 @@ def _render_single_clip(args):
         ]
         r1 = subprocess.run(cmd1, capture_output=True, text=True)
         if r1.returncode != 0:
-            raise RuntimeError(f"Pass 1 failed: {r1.stderr[-400:]}")
+            # If face-zoom filter failed, retry with standard blur-pad
+            if face_center:
+                print(f"  [face] Zoom filter failed, falling back to blur-pad")
+                vf_fallback = (
+                    "[0:v]split=2[bg][fg];"
+                    "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
+                    "crop=1080:1920,"
+                    "gblur=sigma=40,"
+                    "eq=brightness=-0.3[bg_blurred];"
+                    "[fg]scale=1080:1920:force_original_aspect_ratio=decrease,"
+                    "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black@0[fg_scaled];"
+                    "[bg_blurred][fg_scaled]overlay=0:0"
+                )
+                cmd1_retry = [
+                    "ffmpeg", "-y",
+                    "-ss", str(start), "-i", video_path,
+                    "-t", str(duration),
+                    "-vf", vf_fallback,
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                    "-c:a", "aac", "-threads", "2",
+                    raw_path,
+                ]
+                r1 = subprocess.run(cmd1_retry, capture_output=True, text=True)
+                if r1.returncode != 0:
+                    raise RuntimeError(f"Pass 1 failed: {r1.stderr[-400:]}")
+            else:
+                raise RuntimeError(f"Pass 1 failed: {r1.stderr[-400:]}")
 
         if not captions_enabled:
             os.rename(raw_path, output_path)
@@ -547,14 +845,12 @@ def _render_single_clip(args):
 
         # ── Pass 2: burn captions ─────────────────────────────────────────────
         ass_path = output_path.replace(".mp4", ".ass")
-        has_captions = generate_captions_ass(raw_path, duration, ass_path)
+        has_captions = generate_captions_ass(raw_path, duration, ass_path, caption_style)
 
         if not has_captions:
-            # Whisper unavailable or no speech — just use the raw clip
             os.rename(raw_path, output_path)
             return output_path, None
 
-        # Escape ass_path for ffmpeg filter (Windows backslash + colon issues)
         safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
 
         cmd2 = [
@@ -567,13 +863,11 @@ def _render_single_clip(args):
         ]
         r2 = subprocess.run(cmd2, capture_output=True, text=True)
         if r2.returncode != 0:
-            # Caption burn failed — fall back to raw clip so user still gets something
             print(f"  [captions] Burn failed, using raw clip: {r2.stderr[-200:]}")
             os.rename(raw_path, output_path)
         else:
             os.remove(raw_path)
 
-        # Clean up .ass file
         try:
             os.remove(ass_path)
         except OSError:
@@ -585,12 +879,20 @@ def _render_single_clip(args):
         return output_path, str(e)
 
 
-def create_clips(video_path, clips_metadata, output_dir="output", captions=True):
+MAX_RENDER_ATTEMPTS = 2
+
+
+def create_clips(video_path, clips_metadata, output_dir="output", captions=True,
+                  caption_style="default"):
+    """
+    Render clips in parallel. Returns (created_files, failed_clips) tuple.
+    Partial results are returned even if some clips fail.
+    """
     os.makedirs(output_dir, exist_ok=True)
 
     if not clips_metadata:
         print("No clip metadata returned from analysis.")
-        return []
+        return [], []
 
     # Probe total duration
     probe = subprocess.run(
@@ -611,29 +913,59 @@ def create_clips(video_path, clips_metadata, output_dir="output", captions=True)
 
         output_filename = f"clip_{i}_{uuid.uuid4().hex[:8]}.mp4"
         output_path     = os.path.join(output_dir, output_filename)
-        tasks.append((video_path, start, end, output_path, captions))
+        tasks.append((video_path, start, end, output_path, captions, caption_style))
         meta_map[output_path] = {
-            "filename":    output_filename,
-            "description": metadata.get("description", ""),
-            "start_time":  start,
-            "end_time":    end,
-            "captions":    captions,
+            "filename":       output_filename,
+            "description":    metadata.get("description", ""),
+            "start_time":     start,
+            "end_time":       end,
+            "hook":           metadata.get("hook", ""),
+            "virality_score": metadata.get("virality_score", 0),
+            "clip_type":      metadata.get("clip_type", ""),
+            "captions":       captions,
         }
 
     n_workers = min(len(tasks), 4)
-    print(f"Rendering {len(tasks)} clip(s) in parallel ({n_workers} workers), captions={'on' if captions else 'off'}...")
+    print(f"Rendering {len(tasks)} clip(s) in parallel ({n_workers} workers), "
+          f"captions={'on' if captions else 'off'}, caption_style={caption_style}...")
 
     created_files = []
+    failed_clips = []
+
     with ProcessPoolExecutor(max_workers=n_workers) as executor:
+        # First pass
         futures = {executor.submit(_render_single_clip, t): t for t in tasks}
+        retry_tasks = []
+
         for future in as_completed(futures):
             output_path, err = future.result()
             if err:
-                print(f"  x Failed {os.path.basename(output_path)}: {err}")
+                original_task = futures[future]
+                retry_tasks.append(original_task)
+                print(f"  x Failed {os.path.basename(output_path)} (attempt 1): {err}")
             else:
                 print(f"  + Done:   {os.path.basename(output_path)}")
                 created_files.append(meta_map[output_path])
 
+        # Retry failed clips once
+        if retry_tasks:
+            print(f"  Retrying {len(retry_tasks)} failed clip(s)...")
+            retry_futures = {executor.submit(_render_single_clip, t): t for t in retry_tasks}
+            for future in as_completed(retry_futures):
+                output_path, err = future.result()
+                if err:
+                    task = retry_futures[future]
+                    failed_clips.append({
+                        "filename":   os.path.basename(task[3]),
+                        "error":      err,
+                        "start_time": task[1],
+                        "end_time":   task[2],
+                    })
+                    print(f"  x Failed {os.path.basename(output_path)} (attempt 2, giving up): {err}")
+                else:
+                    print(f"  + Done (retry): {os.path.basename(output_path)}")
+                    created_files.append(meta_map[output_path])
+
     order = {t[3]: idx for idx, t in enumerate(tasks)}
     created_files.sort(key=lambda c: order.get(os.path.join(output_dir, c["filename"]), 999))
-    return created_files
+    return created_files, failed_clips

@@ -61,9 +61,10 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(b
 # Helpers
 # ─────────────────────────────────────────────
 
-def _video_cache_key(url: str, instructions: Optional[str], user_id: str) -> str:
+def _video_cache_key(url: str, instructions: Optional[str], user_id: str,
+                     clip_style: str = "auto", caption_style: str = "default") -> str:
     """Cache key scoped per user so different users don't share clips."""
-    raw = f"{user_id}||{url}||{instructions or ''}"
+    raw = f"{user_id}||{url}||{instructions or ''}||{clip_style}||{caption_style}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -95,67 +96,91 @@ async def process_video_task(
     info: Optional[dict] = None,
     captions: bool = True,
     cache_key: Optional[str] = None,
+    clip_style: str = "auto",
+    caption_style: str = "default",
 ):
     loop = asyncio.get_event_loop()
     try:
         # ── 1. Analyse ────────────────────────────────────────────────────────
         jobs[job_id]["status"] = "analyzing"
         clips_metadata = await loop.run_in_executor(
-            None, clipper.analyze_video, video_path, instructions, info
+            None, clipper.analyze_video, video_path, instructions, info, clip_style
         )
+
+        if not clips_metadata:
+            jobs[job_id]["status"] = "failed"
+            jobs[job_id]["error"]  = "No viral moments found in this video"
+            return
 
         # ── 2. Render clips locally ───────────────────────────────────────────
         jobs[job_id]["status"] = "clipping"
-        clips = await loop.run_in_executor(
-            None, clipper.create_clips, video_path, clips_metadata, OUTPUT_DIR, captions
+        clips, render_failures = await loop.run_in_executor(
+            None, clipper.create_clips, video_path, clips_metadata, OUTPUT_DIR,
+            captions, caption_style
         )
 
         # ── 3. Upload each clip to Supabase Storage ───────────────────────────
         jobs[job_id]["status"] = "uploading"
         results = []
+        upload_errors = []
         source_url = jobs[job_id].get("url", "")
+
         for clip in clips:
-            local_path  = os.path.join(OUTPUT_DIR, clip["filename"])
-            storage_path = await loop.run_in_executor(
-                None,
-                upload_clip_to_storage,
-                local_path,
-                user_id,
-                job_id,
-                clip.get("description", ""),
-                source_url,
-                clip.get("start_time", 0),
-                clip.get("end_time", 0),
-                clip.get("hook", ""),
-                clip.get("virality_score", 0),
-                clip.get("clip_type", ""),
-            )
-            signed_url = await loop.run_in_executor(
-                None, get_signed_url, storage_path
-            )
-
-            results.append({
-                **clip,
-                "url":           signed_url,
-                "video_url":     signed_url,
-                "src":           signed_url,
-                "storage_path":  storage_path,
-                "hook":          clip.get("hook", ""),
-                "virality_score": clip.get("virality_score", 0),
-                "clip_type":     clip.get("clip_type", ""),
-            })
-
-            # Delete local file immediately after upload — no longer needed
             try:
-                os.remove(local_path)
-            except OSError:
-                pass
+                local_path  = os.path.join(OUTPUT_DIR, clip["filename"])
+                storage_path = await loop.run_in_executor(
+                    None,
+                    upload_clip_to_storage,
+                    local_path,
+                    user_id,
+                    job_id,
+                    clip.get("description", ""),
+                    source_url,
+                    clip.get("start_time", 0),
+                    clip.get("end_time", 0),
+                    clip.get("hook", ""),
+                    clip.get("virality_score", 0),
+                    clip.get("clip_type", ""),
+                )
+                signed_url = await loop.run_in_executor(
+                    None, get_signed_url, storage_path
+                )
 
-        jobs[job_id]["status"]  = "completed"
-        jobs[job_id]["results"] = results
+                results.append({
+                    **clip,
+                    "url":            signed_url,
+                    "video_url":      signed_url,
+                    "src":            signed_url,
+                    "storage_path":   storage_path,
+                    "hook":           clip.get("hook", ""),
+                    "virality_score": clip.get("virality_score", 0),
+                    "clip_type":      clip.get("clip_type", ""),
+                })
 
-        if cache_key:
-            _clip_cache[cache_key] = results
+                try:
+                    os.remove(local_path)
+                except OSError:
+                    pass
+            except Exception as e:
+                upload_errors.append({"filename": clip["filename"], "error": str(e)})
+                print(f"  [upload] Failed to upload {clip['filename']}: {e}")
+
+        # ── 4. Determine final status (partial results supported) ─────────────
+        total_requested = len(clips_metadata)
+        all_errors = render_failures + upload_errors
+
+        if results:
+            jobs[job_id]["status"]  = "completed"
+            jobs[job_id]["results"] = results
+            if all_errors:
+                jobs[job_id]["warnings"] = f"{len(all_errors)} of {total_requested} clips failed"
+                jobs[job_id]["failed_clips"] = all_errors
+            if cache_key:
+                _clip_cache[cache_key] = results
+        else:
+            jobs[job_id]["status"] = "failed"
+            jobs[job_id]["error"]  = f"All {total_requested} clips failed to render/upload"
+            jobs[job_id]["failed_clips"] = all_errors
 
         # Delete source video
         try:
@@ -176,6 +201,8 @@ async def download_and_process(
     user_id: str,
     cache_key: str,
     captions: bool = True,
+    clip_style: str = "auto",
+    caption_style: str = "default",
 ):
     loop = asyncio.get_event_loop()
     try:
@@ -185,7 +212,8 @@ async def download_and_process(
         )
         jobs[job_id]["video_path"] = video_path
         await process_video_task(
-            job_id, video_path, instructions, user_id, info, captions, cache_key
+            job_id, video_path, instructions, user_id, info, captions, cache_key,
+            clip_style, caption_style
         )
     except Exception as e:
         jobs[job_id]["status"] = "failed"
@@ -249,13 +277,21 @@ async def process_url(
     url: str = Form(...),
     instructions: Optional[str] = Form(None),
     captions: bool = Form(True),
+    clip_style: str = Form("auto"),
+    caption_style: str = Form("default"),
     user: dict = Depends(get_current_user),
 ):
+    # Validate style params
+    if clip_style not in clipper.CLIP_STYLES:
+        raise HTTPException(status_code=400, detail=f"Invalid clip_style. Choose from: {list(clipper.CLIP_STYLES.keys())}")
+    if caption_style not in clipper.CAPTION_PRESETS:
+        raise HTTPException(status_code=400, detail=f"Invalid caption_style. Choose from: {list(clipper.CAPTION_PRESETS.keys())}")
+
     await _maybe_cleanup()
     user_id   = user["user_id"]
-    cache_key = _video_cache_key(url, instructions, user_id)
+    cache_key = _video_cache_key(url, instructions, user_id, clip_style, caption_style)
 
-    # Cache hit — same user, same URL, clips still alive in storage
+    # Cache hit — same user, same URL, same styles, clips still alive in storage
     if cache_key in _clip_cache:
         job_id = str(uuid.uuid4())
         jobs[job_id] = {
@@ -280,7 +316,8 @@ async def process_url(
         "cached":     False,
     }
     background_tasks.add_task(
-        download_and_process, job_id, url, instructions, user_id, cache_key, captions
+        download_and_process, job_id, url, instructions, user_id, cache_key,
+        captions, clip_style, caption_style
     )
     return {"job_id": job_id, "status": "queued"}
 
@@ -291,8 +328,15 @@ async def upload_video(
     file: UploadFile = File(...),
     instructions: Optional[str] = Form(None),
     captions: bool = Form(True),
+    clip_style: str = Form("auto"),
+    caption_style: str = Form("default"),
     user: dict = Depends(get_current_user),
 ):
+    if clip_style not in clipper.CLIP_STYLES:
+        raise HTTPException(status_code=400, detail=f"Invalid clip_style. Choose from: {list(clipper.CLIP_STYLES.keys())}")
+    if caption_style not in clipper.CAPTION_PRESETS:
+        raise HTTPException(status_code=400, detail=f"Invalid caption_style. Choose from: {list(clipper.CAPTION_PRESETS.keys())}")
+
     await _maybe_cleanup()
     try:
         user_id   = user["user_id"]
@@ -309,7 +353,8 @@ async def upload_video(
             "user_id":    user_id,
         }
         background_tasks.add_task(
-            process_video_task, job_id, file_path, instructions, user_id, None, captions, None
+            process_video_task, job_id, file_path, instructions, user_id, None,
+            captions, None, clip_style, caption_style
         )
         return {"job_id": job_id, "status": "uploaded"}
     except Exception as e:
@@ -382,6 +427,25 @@ async def storage_stats(user: dict = Depends(get_current_user)):
         "total_clips":  total_clips,
         "active_jobs":  sum(1 for j in user_jobs if j["status"] not in ("completed", "failed")),
     }
+
+
+@app.get("/clip-styles")
+async def list_clip_styles():
+    """Available clip styles the user can choose from."""
+    return {"styles": [
+        {"id": k, "label": k.replace("_", " ").title(), "description": v}
+        for k, v in clipper.CLIP_STYLES.items()
+    ]}
+
+
+@app.get("/caption-styles")
+async def list_caption_styles():
+    """Available caption animation presets."""
+    return {"styles": [
+        {"id": k, "label": k.replace("_", " ").title(),
+         "anim_type": v.get("anim_type", "none")}
+        for k, v in clipper.CAPTION_PRESETS.items()
+    ]}
 
 
 if __name__ == "__main__":
