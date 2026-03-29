@@ -136,50 +136,194 @@ def _parse_gemini_json(text):
 # Analysis
 # ---------------------------------------------------------------------------
 
+def _detect_content_type(transcript_text: str, info: dict) -> str:
+    """
+    Infer content type from transcript language patterns and yt-dlp metadata.
+    Used to tailor the virality prompt to the specific genre.
+    """
+    title       = (info.get("title") or "").lower()
+    description = (info.get("description") or "").lower()
+    tags        = " ".join(info.get("tags") or []).lower()
+    combined    = f"{title} {description} {tags} {(transcript_text or '')[:500]}".lower()
+
+    if any(w in combined for w in ["podcast", "interview", "episode", "guest", "host"]):
+        return "podcast/interview"
+    if any(w in combined for w in ["tutorial", "how to", "step by step", "learn", "guide", "course"]):
+        return "tutorial/educational"
+    if any(w in combined for w in ["react", "reacts", "reaction", "watching"]):
+        return "reaction"
+    if any(w in combined for w in ["vlog", "day in", "daily", "routine"]):
+        return "vlog"
+    if any(w in combined for w in ["comedy", "funny", "prank", "roast", "sketch"]):
+        return "comedy"
+    if any(w in combined for w in ["motivation", "mindset", "success", "hustle", "advice"]):
+        return "motivational/advice"
+    if any(w in combined for w in ["news", "breaking", "report", "politics", "election"]):
+        return "news/commentary"
+    return "general"
+
+
+def _virality_criteria_for_type(content_type: str) -> str:
+    """
+    Return genre-specific virality signals so Gemini knows exactly
+    what to look for rather than guessing.
+    """
+    criteria = {
+        "podcast/interview": """
+- Moments where the guest says something surprising, controversial, or highly quotable
+- Strong opinion stated with conviction ("The truth is...", "Nobody talks about this...")
+- Personal story with emotional weight or unexpected reveal
+- A back-and-forth exchange that peaks with a punchline or insight
+- Moments where the host reacts visibly (laughs hard, leans in, says "wait what")
+- Avoid: intros, small talk, topic transitions, sponsor reads""",
+
+        "tutorial/educational": """
+- The single most surprising or counterintuitive insight in the video
+- The "aha moment" — when the concept clicks with a concrete example
+- A demonstration where the result is visually striking or impressive
+- A common mistake being called out ("Everyone does this wrong...")
+- A before/after transformation moment
+- Avoid: setup, prerequisites, "today we're going to learn", conclusions""",
+
+        "reaction": """
+- The peak reaction moment — biggest laugh, shock, or disbelief
+- When the reactor says something that adds genuine insight to what they're watching
+- A prediction that turns out to be wrong (funny subversion)
+- Avoid: long silent watching segments, low-energy commentary""",
+
+        "comedy": """
+- The punchline and the 5-10 seconds of setup immediately before it
+- A callback to an earlier joke that lands harder
+- Moments of physical comedy or unexpected visual gag
+- The most quotable one-liner in the video
+- Avoid: slow builds without payoff, filler between bits""",
+
+        "motivational/advice": """
+- A single powerful piece of advice stated clearly and concisely
+- A personal story with a strong lesson at the end
+- A statement that challenges conventional wisdom directly
+- A moment that would make someone stop scrolling and share
+- Avoid: generic platitudes, rambling buildup, repetitive points""",
+
+        "vlog": """
+- An unexpected thing that happened — something that went wrong or surprisingly right
+- A genuine emotional moment (real reaction, not performed)
+- The most visually interesting or location-specific scene
+- A funny or relatable observation about daily life
+- Avoid: driving/commuting footage, meal prep without narration, filler transitions""",
+
+        "news/commentary": """
+- The sharpest, most pointed take or argument in the video
+- A fact or statistic that would genuinely surprise most viewers
+- A moment where the commentator's emotion is authentic and strong
+- Avoid: context-setting intros, recapping known facts""",
+
+        "general": """
+- A moment that could stand completely alone without needing the rest of the video
+- Something that would make a viewer tag a friend
+- A strong opening hook — a question, bold statement, or surprising visual
+- An emotional peak — biggest laugh, shock, insight, or tension
+- Avoid: slow intros, recaps, outros, anything that requires prior context""",
+    }
+    return criteria.get(content_type, criteria["general"])
+
+
 def analyze_video(video_path, user_instructions=None, info=None):
     if not GENAI_API_KEY:
         return [{"start_time": 0, "end_time": 10, "description": "Short clip (API Key missing)"}]
 
-    vtt_path = _find_vtt_file(video_path, info or {})
+    # ── 1. Transcript — primary signal ───────────────────────────────────────
+    vtt_path        = _find_vtt_file(video_path, info or {})
     transcript_text = _parse_vtt_to_text(vtt_path)
-    print(f"Transcript: {len(transcript_text.splitlines())} lines" if transcript_text else "No transcript — keyframes only")
+    has_transcript  = bool(transcript_text)
+    if has_transcript:
+        print(f"Transcript: {len(transcript_text.splitlines())} lines")
+    else:
+        print("No transcript — keyframes only")
 
-    print("Extracting keyframes...")
-    frames, duration = _extract_keyframes(video_path, n_frames=8)
+    # ── 2. Keyframes — denser sampling when no transcript ────────────────────
+    # With a transcript Gemini has exact timestamps so 12 frames is enough context.
+    # Without a transcript we need more frames to locate moments accurately.
+    n_frames = 12 if has_transcript else 20
+    print(f"Extracting {n_frames} keyframes...")
+    frames, duration = _extract_keyframes(video_path, n_frames=n_frames)
     print(f"Extracted {len(frames)} keyframes from {duration:.1f}s video")
 
-    focus = user_instructions or "High energy moments, key points, or funny/surprising parts"
+    # ── 3. Content type detection ─────────────────────────────────────────────
+    content_type   = _detect_content_type(transcript_text or "", info or {})
+    virality_guide = _virality_criteria_for_type(content_type)
+    print(f"Content type detected: {content_type}")
+
+    # ── 4. Build prompt ───────────────────────────────────────────────────────
+    video_title = (info or {}).get("title", "")
+    title_line  = f'Video title: "{video_title}"\n' if video_title else ""
+
     transcript_section = (
-        f"\n\nTRANSCRIPT (timestamped):\n{transcript_text}" if transcript_text
-        else "\n\n(No transcript available — use keyframes only)"
+        f"\n\nFULL TRANSCRIPT (timestamped — use these timestamps directly):\n{transcript_text}"
+        if has_transcript
+        else "\n\n(No transcript available — infer timing from keyframes)"
     )
 
-    prompt = f"""You are a social-media clip editor. The video is {duration:.1f} seconds long.
-Below are {len(frames)} evenly-spaced keyframes and a timestamped transcript (if available).
-Use BOTH to identify the best shareable moments.{transcript_section}
+    custom_focus = (
+        f"\n\nCREATOR INSTRUCTIONS (prioritise these above all else):\n{user_instructions}"
+        if user_instructions else ""
+    )
 
-Return ONLY a valid JSON array (no markdown, no explanation).
-Each element must have:
-  "start_time"  – float, seconds from the start of the video
-  "end_time"    – float, seconds from the start (clip length 15-60 s)
-  "description" – one sentence describing why this moment is great
+    prompt = f"""You are an expert viral social-media clip editor with deep knowledge of what makes content perform on TikTok, Instagram Reels, and YouTube Shorts.
 
-Focus: {focus}
-Rules: clips must not overlap, timestamps within [0, {duration:.1f}], return 3 to 5 clips.
+{title_line}Video duration: {duration:.1f} seconds
+Content type: {content_type}
+
+YOUR TASK:
+Identify the 3-5 moments in this video that would perform best as standalone short-form clips. Each clip must be able to stand completely alone — a viewer who has never seen this video should immediately understand it and feel compelled to watch to the end.
+
+VIRALITY SIGNALS TO LOOK FOR (specific to {content_type}):
+{virality_guide}
+
+UNIVERSAL RULES FOR CLIP SELECTION:
+1. HOOK FIRST — the clip must start at or just before something attention-grabbing.    Never start mid-sentence or mid-thought.
+2. COMPLETE THOUGHT — the clip must end at a natural conclusion (punchline, insight delivered,    story resolved). Never cut off mid-sentence.
+3. NO CONTEXT REQUIRED — avoid anything that references "earlier" or "as I mentioned" —    the clip must be self-contained.
+4. EMOTIONAL ARC — the best clips have a mini arc: setup → tension/curiosity → payoff.
+5. QUOTABILITY — prioritise moments with a line someone would screenshot or repeat.{transcript_section}{custom_focus}
+
+KEYFRAMES are provided below for visual context — use them to verify the scene but {"rely on transcript timestamps for precise clip boundaries." if has_transcript else "use them as your primary timing signal."}
+
+Return ONLY a valid JSON array. No markdown, no explanation, no preamble.
+Each object must have exactly these fields:
+  "start_time"    – float, seconds (start just BEFORE the hook, not at it)
+  "end_time"      – float, seconds (end AFTER the payoff, not before it)
+  "description"   – one punchy sentence saying why this specific moment is viral
+  "hook"          – the first words/action of the clip that will stop a scroller
+  "virality_score"– integer 1-10 (10 = would go viral, 1 = boring)
+  "clip_type"     – one of: insight|story|funny|reaction|tutorial|controversial|emotional
+
+Constraints:
+- Clips must not overlap
+- start_time and end_time within [0, {duration:.1f}]
+- Each clip between 20 and 60 seconds (shorter = better if the moment is complete)
+- Return highest virality_score clips first
 """
 
     content_parts = [prompt]
     for frame in frames:
-        content_parts.append({"inline_data": {"mime_type": "image/jpeg", "data": frame["data"]}})
+        content_parts.append({
+            "inline_data": {"mime_type": "image/jpeg", "data": frame["data"]}
+        })
         content_parts.append(f"[Keyframe at {frame['timestamp']}s]")
 
-    print("Calling Gemini for analysis...")
-    model = genai.GenerativeModel(model_name="gemini-2.5-pro")
+    print("Calling Gemini for viral moment analysis...")
+    model    = genai.GenerativeModel(model_name="gemini-2.5-pro")
     response = model.generate_content(content_parts)
 
     try:
         clips = _parse_gemini_json(response.text)
-        print(f"Gemini returned {len(clips)} clips")
+        # Sort by virality score descending so best clip is always first
+        clips.sort(key=lambda c: c.get("virality_score", 0), reverse=True)
+        print(f"Gemini returned {len(clips)} clips:")
+        for c in clips:
+            print(f"  [{c.get('virality_score', '?')}/10] {c.get('clip_type','?')} "
+                  f"{c.get('start_time')}s-{c.get('end_time')}s — {c.get('description','')[:60]}")
         return clips
     except Exception as e:
         print(f"Error parsing Gemini response: {e}\nRaw: {response.text}")

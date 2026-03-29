@@ -69,6 +69,9 @@ def upload_clip_to_storage(
     source_url: str = "",
     start_time: float = 0,
     end_time: float = 0,
+    hook: str = "",
+    virality_score: int = 0,
+    clip_type: str = "",
 ) -> str:
     """
     Upload file to Supabase Storage, then write metadata to clip_metadata table.
@@ -94,14 +97,17 @@ def upload_clip_to_storage(
 
     # ── 2. Write metadata to DB ───────────────────────────────────────────────
     supabase.table("clip_metadata").insert({
-        "user_id":      user_id,
-        "job_id":       job_id,
-        "filename":     filename,
-        "storage_path": storage_path,
-        "description":  description[:500],
-        "source_url":   source_url[:500],
-        "start_time":   round(start_time, 2),
-        "end_time":     round(end_time, 2),
+        "user_id":       user_id,
+        "job_id":        job_id,
+        "filename":      filename,
+        "storage_path":  storage_path,
+        "description":   description[:500],
+        "source_url":    source_url[:500],
+        "start_time":    round(start_time, 2),
+        "end_time":      round(end_time, 2),
+        "hook":          hook[:300],
+        "virality_score": virality_score,
+        "clip_type":     clip_type[:50],
     }).execute()
 
     print(f"  [storage] Uploaded + metadata saved → {storage_path}")

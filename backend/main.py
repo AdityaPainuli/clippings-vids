@@ -126,6 +126,9 @@ async def process_video_task(
                 source_url,
                 clip.get("start_time", 0),
                 clip.get("end_time", 0),
+                clip.get("hook", ""),
+                clip.get("virality_score", 0),
+                clip.get("clip_type", ""),
             )
             signed_url = await loop.run_in_executor(
                 None, get_signed_url, storage_path
@@ -133,11 +136,13 @@ async def process_video_task(
 
             results.append({
                 **clip,
-                # Signed URL expires in 6 hours — matches our deletion window
-                "url":          signed_url,
-                "video_url":    signed_url,
-                "src":          signed_url,
-                "storage_path": storage_path,
+                "url":           signed_url,
+                "video_url":     signed_url,
+                "src":           signed_url,
+                "storage_path":  storage_path,
+                "hook":          clip.get("hook", ""),
+                "virality_score": clip.get("virality_score", 0),
+                "clip_type":     clip.get("clip_type", ""),
             })
 
             # Delete local file immediately after upload — no longer needed
