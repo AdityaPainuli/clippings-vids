@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import "./globals.css";
 
 interface Clip {
@@ -11,6 +11,8 @@ interface Clip {
   hook?: string;
   virality_score?: number;
   clip_type?: string;
+  start_time?: number;
+  end_time?: number;
 }
 
 const CLIP_STYLES = [
@@ -34,12 +36,22 @@ export default function Home() {
   const [instructions, setInstructions] = useState("");
   const [clipStyle, setClipStyle] = useState("auto");
   const [captionStyle, setCaptionStyle] = useState("bold_impact");
+  const [clipCount, setClipCount] = useState<number>(4);
+  const [minLength, setMinLength] = useState<number>(20);
+  const [maxLength, setMaxLength] = useState<number>(60);
   const [isProcessing, setIsProcessing] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("");
+  const [statusDetail, setStatusDetail] = useState<string>("");
   const [clips, setClips] = useState<Clip[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+
+  // Trimmer modal state
+  const [trimmerClip, setTrimmerClip] = useState<Clip | null>(null);
+  const [trimStart, setTrimStart] = useState(0);
+  const [trimEnd, setTrimEnd] = useState(0);
+  const trimVideoRef = useRef<HTMLVideoElement>(null);
 
   // --- Auth State ---
   const [token, setToken] = useState<string | null>(null);
@@ -52,14 +64,23 @@ export default function Home() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
 
+  // SSE ref for cleanup
+  const eventSourceRef = useRef<EventSource | null>(null);
+
   useEffect(() => {
-    // Initialize auth from localStorage on mount
     const storedToken = localStorage.getItem("clipwave_access_token");
     const storedEmail = localStorage.getItem("clipwave_user_email");
     if (storedToken && storedEmail) {
       setToken(storedToken);
       setUserEmail(storedEmail);
     }
+  }, []);
+
+  // Cleanup SSE on unmount
+  useEffect(() => {
+    return () => {
+      eventSourceRef.current?.close();
+    };
   }, []);
 
   const handleLogout = () => {
@@ -69,6 +90,7 @@ export default function Home() {
     setUserEmail(null);
     setClips([]);
     setJobId(null);
+    eventSourceRef.current?.close();
   };
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -103,7 +125,6 @@ export default function Home() {
         setAuthEmail("");
         setAuthPassword("");
       } else {
-        // Signup success usually requires login afterwards or check email
         setAuthError("Signup successful! You can now log in.");
         setAuthMode("login");
       }
@@ -120,63 +141,52 @@ export default function Home() {
     setShowAuthModal(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!url) return;
+  // Connect to SSE stream for a job
+  const connectSSE = useCallback((jobId: string, authToken: string) => {
+    eventSourceRef.current?.close();
 
-    if (!token) {
-      setError("Please log in to generate clips.");
-      openAuth("login");
-      return;
-    }
+    const es = new EventSource(
+      `http://localhost:8000/stream/${jobId}?token=${encodeURIComponent(authToken)}`
+    );
+    eventSourceRef.current = es;
 
-    setIsProcessing(true);
-    setError(null);
-    setWarning(null);
-    setClips([]);
-    setStatus("Initiating...");
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        setStatus(data.status || "");
+        if (data.detail) setStatusDetail(data.detail);
 
-    try {
-      const formData = new FormData();
-      formData.append("url", url);
-      if (instructions) formData.append("instructions", instructions);
-      formData.append("clip_style", clipStyle);
-      formData.append("caption_style", captionStyle);
-
-      const response = await fetch("http://localhost:8000/process-url", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${token}`
-        },
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          handleLogout();
-          throw new Error("Session expired. Please log in again.");
+        if (data.status === "completed") {
+          setClips(data.results || []);
+          if (data.warnings) setWarning(data.warnings);
+          setIsProcessing(false);
+          setJobId(null);
+          es.close();
+        } else if (data.status === "failed") {
+          setError(data.error || "Processing failed");
+          setIsProcessing(false);
+          setJobId(null);
+          es.close();
         }
-        throw new Error(data.detail || "Failed to start processing");
+      } catch {
+        // ignore parse errors on heartbeats
       }
+    };
 
-      setJobId(data.job_id);
-    } catch (err: any) {
-      setError(err.message);
-      setIsProcessing(false);
-    }
-  };
+    es.onerror = () => {
+      // SSE failed — fall back to polling
+      es.close();
+      console.warn("SSE connection lost, falling back to polling");
+      startPolling(jobId, authToken);
+    };
+  }, []);
 
-  useEffect(() => {
-    if (!jobId || !token) return;
-
+  // Fallback polling (in case SSE fails)
+  const startPolling = useCallback((jobId: string, authToken: string) => {
     const interval = setInterval(async () => {
       try {
         const response = await fetch(`http://localhost:8000/status/${jobId}`, {
-          headers: {
-            "Authorization": `Bearer ${token}`
-          }
+          headers: { "Authorization": `Bearer ${authToken}` }
         });
         const data = await response.json();
 
@@ -192,9 +202,7 @@ export default function Home() {
 
         if (data.status === "completed") {
           setClips(data.results);
-          if (data.warnings) {
-            setWarning(data.warnings);
-          }
+          if (data.warnings) setWarning(data.warnings);
           setIsProcessing(false);
           setJobId(null);
           clearInterval(interval);
@@ -216,12 +224,134 @@ export default function Home() {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [jobId, token]);
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!url) return;
+
+    if (!token) {
+      setError("Please log in to generate clips.");
+      openAuth("login");
+      return;
+    }
+
+    setIsProcessing(true);
+    setError(null);
+    setWarning(null);
+    setClips([]);
+    setStatus("Initiating...");
+    setStatusDetail("");
+
+    try {
+      const formData = new FormData();
+      formData.append("url", url);
+      if (instructions) formData.append("instructions", instructions);
+      formData.append("clip_style", clipStyle);
+      formData.append("caption_style", captionStyle);
+      formData.append("clip_count", String(clipCount));
+      formData.append("min_clip_length", String(minLength));
+      formData.append("max_clip_length", String(maxLength));
+
+      const response = await fetch("http://localhost:8000/process-url", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        },
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          handleLogout();
+          throw new Error("Session expired. Please log in again.");
+        }
+        throw new Error(data.detail || "Failed to start processing");
+      }
+
+      setJobId(data.job_id);
+
+      // If cached, results are already in the response
+      if (data.status === "completed") {
+        // Fetch full status to get results
+        const statusRes = await fetch(`http://localhost:8000/status/${data.job_id}`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const statusData = await statusRes.json();
+        setClips(statusData.results || []);
+        setIsProcessing(false);
+        setJobId(null);
+      } else {
+        // Connect to SSE stream
+        connectSSE(data.job_id, token);
+      }
+    } catch (err: any) {
+      setError(err.message);
+      setIsProcessing(false);
+    }
+  };
+
+  // ── Trimmer functions ──────────────────────────────────────────────────────
+  const openTrimmer = (clip: Clip) => {
+    setTrimmerClip(clip);
+    setTrimStart(0);
+    const videoEl = document.createElement("video");
+    videoEl.src = clip.url || clip.src || "";
+    videoEl.onloadedmetadata = () => {
+      setTrimEnd(videoEl.duration);
+    };
+    // Fallback if metadata doesn't load
+    setTrimEnd(clip.end_time && clip.start_time ? clip.end_time - clip.start_time : 60);
+  };
+
+  const closeTrimmer = () => {
+    setTrimmerClip(null);
+  };
+
+  const handleTrimPreview = () => {
+    const video = trimVideoRef.current;
+    if (!video) return;
+    video.currentTime = trimStart;
+    video.play();
+  };
+
+  // Enforce trim end when video plays
+  useEffect(() => {
+    const video = trimVideoRef.current;
+    if (!video || !trimmerClip) return;
+    const handleTimeUpdate = () => {
+      if (video.currentTime >= trimEnd) {
+        video.pause();
+        video.currentTime = trimEnd;
+      }
+    };
+    video.addEventListener("timeupdate", handleTimeUpdate);
+    return () => video.removeEventListener("timeupdate", handleTimeUpdate);
+  }, [trimEnd, trimmerClip]);
+
+  const handleTrimDownload = () => {
+    if (!trimmerClip) return;
+    const videoUrl = trimmerClip.url || trimmerClip.src || "";
+    // For trimmed clips, we use the Media Fragments URI spec (#t=start,end)
+    // This works for direct browser download
+    const trimmedUrl = `${videoUrl}#t=${trimStart},${trimEnd}`;
+    const a = document.createElement("a");
+    a.href = videoUrl; // Full download (browser doesn't support fragment trimming on download)
+    a.download = `clip_trimmed.mp4`;
+    a.target = "_blank";
+    a.click();
+  };
+
+  const getClipUrl = (clip: Clip) =>
+    clip.url || clip.src || (clip.path ? (clip.path.startsWith("http") ? clip.path : `http://localhost:8000${clip.path}`) : "");
 
   return (
     <main>
       <div className="glow-bg"></div>
 
+      {/* Auth Modal */}
       {showAuthModal && (
         <div className="modal-overlay" style={{
           position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
@@ -301,6 +431,76 @@ export default function Home() {
         </div>
       )}
 
+      {/* Trimmer Modal */}
+      {trimmerClip && (
+        <div className="modal-overlay" style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1000,
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          padding: '2rem'
+        }}>
+          <div className="trimmer-modal">
+            <button className="trimmer-close" onClick={closeTrimmer}>&times;</button>
+            <h2 style={{ marginBottom: '1rem' }}>Clip Editor</h2>
+
+            <div className="trimmer-video-wrap">
+              <video
+                ref={trimVideoRef}
+                src={getClipUrl(trimmerClip)}
+                controls
+                style={{ width: '100%', maxHeight: '60vh', borderRadius: '12px' }}
+              />
+            </div>
+
+            <div className="trimmer-controls">
+              <div className="trimmer-range-row">
+                <label>
+                  <span>Start: {trimStart.toFixed(1)}s</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={trimEnd - 1}
+                    step={0.1}
+                    value={trimStart}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      setTrimStart(v);
+                      if (trimVideoRef.current) trimVideoRef.current.currentTime = v;
+                    }}
+                  />
+                </label>
+                <label>
+                  <span>End: {trimEnd.toFixed(1)}s</span>
+                  <input
+                    type="range"
+                    min={trimStart + 1}
+                    max={trimEnd + 30}
+                    step={0.1}
+                    value={trimEnd}
+                    onChange={(e) => setTrimEnd(parseFloat(e.target.value))}
+                  />
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+                <button className="btn btn-secondary" onClick={handleTrimPreview}>
+                  Preview Trim
+                </button>
+                <button className="btn btn-primary" onClick={handleTrimDownload}>
+                  Download
+                </button>
+              </div>
+            </div>
+
+            {trimmerClip.description && (
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '1rem' }}>
+                {trimmerClip.description}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       <nav className="navbar">
         <div className="logo">Clipwave AI</div>
         <div className="action-buttons">
@@ -347,8 +547,12 @@ export default function Home() {
           </form>
 
           {isProcessing && (
-            <div style={{ marginTop: '1rem', color: 'var(--secondary)' }}>
-              {status}... This may take a few minutes as our clipping engine  analyzes the video.
+            <div className="status-banner">
+              <div className="status-dot"></div>
+              <div>
+                <strong>{status}</strong>
+                {statusDetail && <span style={{ color: 'var(--text-secondary)', marginLeft: '0.5rem' }}>— {statusDetail}</span>}
+              </div>
             </div>
           )}
 
@@ -423,6 +627,41 @@ export default function Home() {
             </div>
           </div>
 
+          {/* Clip Count & Duration Controls */}
+          <div style={{ marginTop: '1rem', width: '100%', maxWidth: '700px' }}>
+            <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', display: 'block' }}>
+              Clip Settings
+            </label>
+            <div className="clip-settings-row">
+              <div className="clip-setting">
+                <span className="clip-setting-label">Clips</span>
+                <div className="clip-setting-control">
+                  <button type="button" onClick={() => setClipCount(Math.max(1, clipCount - 1))} disabled={isProcessing}>-</button>
+                  <span className="clip-setting-value">{clipCount}</span>
+                  <button type="button" onClick={() => setClipCount(Math.min(10, clipCount + 1))} disabled={isProcessing}>+</button>
+                </div>
+              </div>
+              <div className="clip-setting">
+                <span className="clip-setting-label">Min {minLength}s</span>
+                <input
+                  type="range" min={5} max={maxLength - 5} step={5}
+                  value={minLength}
+                  onChange={(e) => setMinLength(parseInt(e.target.value))}
+                  disabled={isProcessing}
+                />
+              </div>
+              <div className="clip-setting">
+                <span className="clip-setting-label">Max {maxLength}s</span>
+                <input
+                  type="range" min={minLength + 5} max={180} step={5}
+                  value={maxLength}
+                  onChange={(e) => setMaxLength(parseInt(e.target.value))}
+                  disabled={isProcessing}
+                />
+              </div>
+            </div>
+          </div>
+
           {warning && clips.length > 0 && (
             <div className="warning-banner">
               {warning} — showing {clips.length} successful clip{clips.length !== 1 ? 's' : ''}.
@@ -451,7 +690,7 @@ export default function Home() {
                     justifyContent: 'center'
                   }}>
                     <video
-                      src={clip.url || clip.src || (clip.path ? (clip.path.startsWith('http') ? clip.path : `http://localhost:8000${clip.path}`) : '')}
+                      src={getClipUrl(clip)}
                       controls
                       style={{ width: '100%', height: '100%' }}
                     />
@@ -472,15 +711,24 @@ export default function Home() {
                       )}
                     </div>
                   )}
-                  <a
-                    href={clip.url || clip.src || (clip.path ? (clip.path.startsWith('http') ? clip.path : `http://localhost:8000${clip.path}`) : '#')}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn btn-primary"
-                    style={{ marginTop: '1rem', display: 'inline-block', textDecoration: 'none' }}
-                  >
-                    Download
-                  </a>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                    <button
+                      className="btn btn-secondary"
+                      style={{ flex: 1, fontSize: '0.85rem', padding: '0.6rem' }}
+                      onClick={() => openTrimmer(clip)}
+                    >
+                      Edit
+                    </button>
+                    <a
+                      href={getClipUrl(clip)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-primary"
+                      style={{ flex: 1, textDecoration: 'none', textAlign: 'center', fontSize: '0.85rem', padding: '0.6rem' }}
+                    >
+                      Download
+                    </a>
+                  </div>
                 </div>
               ))}
             </div>

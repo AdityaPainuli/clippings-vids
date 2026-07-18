@@ -318,9 +318,24 @@ def _retry(fn, max_attempts=3, backoff_base=2.0):
     raise last_error
 
 
-def analyze_video(video_path, user_instructions=None, info=None, clip_style="auto"):
+def analyze_video(video_path, user_instructions=None, info=None, clip_style="auto",
+                   clip_count=None, min_clip_length=None, max_clip_length=None):
+    """
+    clip_count:       number of clips to return (None = default 3-5)
+    min_clip_length:  minimum clip duration in seconds (None = default 20)
+    max_clip_length:  maximum clip duration in seconds (None = default 60)
+    """
     if not GENAI_API_KEY:
         return [{"start_time": 0, "end_time": 10, "description": "Short clip (API Key missing)"}]
+
+    # Apply defaults
+    min_len = max(5, min(min_clip_length or 20, 120))
+    max_len = max(min_len + 5, min(max_clip_length or 60, 180))
+    count_low  = max(1, (clip_count or 3))
+    count_high = max(count_low, (clip_count or 5))
+    # If user gave exact count, use it as both min and max
+    if clip_count:
+        count_low = count_high = max(1, min(clip_count, 10))
 
     # ── 1. Transcript — primary signal ───────────────────────────────────────
     vtt_path        = _find_vtt_file(video_path, info or {})
@@ -374,7 +389,7 @@ def analyze_video(video_path, user_instructions=None, info=None, clip_style="aut
 Content type: {content_type}
 
 YOUR TASK:
-Identify the 3-5 moments in this video that would perform best as standalone short-form clips. Each clip must be able to stand completely alone — a viewer who has never seen this video should immediately understand it and feel compelled to watch to the end.
+Identify the {count_low}{f"-{count_high}" if count_high != count_low else ""} best moments in this video that would perform best as standalone short-form clips. Each clip must be able to stand completely alone — a viewer who has never seen this video should immediately understand it and feel compelled to watch to the end.
 
 VIRALITY SIGNALS TO LOOK FOR (specific to {content_type}):
 {virality_guide}
@@ -400,7 +415,8 @@ Each object must have exactly these fields:
 Constraints:
 - Clips must not overlap
 - start_time and end_time within [0, {duration:.1f}]
-- Each clip between 20 and 60 seconds (shorter = better if the moment is complete)
+- Each clip between {min_len} and {max_len} seconds (shorter = better if the moment is complete)
+- Return exactly {count_low}{f" to {count_high}" if count_high != count_low else ""} clips
 - Return highest virality_score clips first
 """
 
