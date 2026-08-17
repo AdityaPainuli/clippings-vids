@@ -51,6 +51,7 @@ export default function Home() {
   const [trimmerClip, setTrimmerClip] = useState<Clip | null>(null);
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
+  const [trimDuration, setTrimDuration] = useState(0);   // actual video duration
   const trimVideoRef = useRef<HTMLVideoElement>(null);
 
   // --- Auth State ---
@@ -64,8 +65,16 @@ export default function Home() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
 
-  // SSE ref for cleanup
+  // SSE + polling refs for cleanup
   const eventSourceRef = useRef<EventSource | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = () => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  };
 
   useEffect(() => {
     const storedToken = localStorage.getItem("clipwave_access_token");
@@ -76,10 +85,11 @@ export default function Home() {
     }
   }, []);
 
-  // Cleanup SSE on unmount
+  // Cleanup SSE + polling on unmount
   useEffect(() => {
     return () => {
       eventSourceRef.current?.close();
+      stopPolling();
     };
   }, []);
 
@@ -91,6 +101,7 @@ export default function Home() {
     setClips([]);
     setJobId(null);
     eventSourceRef.current?.close();
+    stopPolling();
   };
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -141,12 +152,29 @@ export default function Home() {
     setShowAuthModal(true);
   };
 
-  // Connect to SSE stream for a job
-  const connectSSE = useCallback((jobId: string, authToken: string) => {
+  // Connect to SSE stream for a job.
+  // The bearer JWT never goes in the URL — we exchange it for a one-time
+  // short-lived stream token first (query strings leak via logs/history).
+  const connectSSE = useCallback(async (jobId: string, authToken: string) => {
     eventSourceRef.current?.close();
+    stopPolling();
+
+    let streamToken: string;
+    try {
+      const tokenRes = await fetch("http://localhost:8000/stream-token", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${authToken}` },
+      });
+      if (!tokenRes.ok) throw new Error("stream token request failed");
+      streamToken = (await tokenRes.json()).stream_token;
+    } catch {
+      // Can't get a stream token — fall back to polling
+      startPolling(jobId, authToken);
+      return;
+    }
 
     const es = new EventSource(
-      `http://localhost:8000/stream/${jobId}?token=${encodeURIComponent(authToken)}`
+      `http://localhost:8000/stream/${jobId}?token=${encodeURIComponent(streamToken)}`
     );
     eventSourceRef.current = es;
 
@@ -183,6 +211,7 @@ export default function Home() {
 
   // Fallback polling (in case SSE fails)
   const startPolling = useCallback((jobId: string, authToken: string) => {
+    stopPolling();
     const interval = setInterval(async () => {
       try {
         const response = await fetch(`http://localhost:8000/status/${jobId}`, {
@@ -223,7 +252,7 @@ export default function Home() {
       }
     }, 2000);
 
-    return () => clearInterval(interval);
+    pollIntervalRef.current = interval;
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -280,6 +309,13 @@ export default function Home() {
           headers: { "Authorization": `Bearer ${token}` }
         });
         const statusData = await statusRes.json();
+        if (!statusRes.ok) {
+          if (statusRes.status === 401 || statusRes.status === 403) {
+            handleLogout();
+            throw new Error("Session expired. Please log in again.");
+          }
+          throw new Error(statusData.detail || "Failed to fetch cached results");
+        }
         setClips(statusData.results || []);
         setIsProcessing(false);
         setJobId(null);
@@ -297,13 +333,16 @@ export default function Home() {
   const openTrimmer = (clip: Clip) => {
     setTrimmerClip(clip);
     setTrimStart(0);
+    // Fallback duration until metadata loads
+    const fallback = clip.end_time && clip.start_time ? clip.end_time - clip.start_time : 60;
+    setTrimEnd(fallback);
+    setTrimDuration(fallback);
     const videoEl = document.createElement("video");
-    videoEl.src = clip.url || clip.src || "";
+    videoEl.src = getClipUrl(clip);
     videoEl.onloadedmetadata = () => {
       setTrimEnd(videoEl.duration);
+      setTrimDuration(videoEl.duration);
     };
-    // Fallback if metadata doesn't load
-    setTrimEnd(clip.end_time && clip.start_time ? clip.end_time - clip.start_time : 60);
   };
 
   const closeTrimmer = () => {
@@ -333,13 +372,11 @@ export default function Home() {
 
   const handleTrimDownload = () => {
     if (!trimmerClip) return;
-    const videoUrl = trimmerClip.url || trimmerClip.src || "";
-    // For trimmed clips, we use the Media Fragments URI spec (#t=start,end)
-    // This works for direct browser download
-    const trimmedUrl = `${videoUrl}#t=${trimStart},${trimEnd}`;
+    // Downloads the full clip — browsers can't trim on download, and there's
+    // no server-side trim endpoint yet. The sliders only affect preview.
     const a = document.createElement("a");
-    a.href = videoUrl; // Full download (browser doesn't support fragment trimming on download)
-    a.download = `clip_trimmed.mp4`;
+    a.href = getClipUrl(trimmerClip);
+    a.download = `clip.mp4`;
     a.target = "_blank";
     a.click();
   };
@@ -459,7 +496,7 @@ export default function Home() {
                   <input
                     type="range"
                     min={0}
-                    max={trimEnd - 1}
+                    max={Math.max(0.1, trimEnd - 1)}
                     step={0.1}
                     value={trimStart}
                     onChange={(e) => {
@@ -473,8 +510,8 @@ export default function Home() {
                   <span>End: {trimEnd.toFixed(1)}s</span>
                   <input
                     type="range"
-                    min={trimStart + 1}
-                    max={trimEnd + 30}
+                    min={Math.min(trimStart + 1, trimDuration)}
+                    max={trimDuration || trimEnd}
                     step={0.1}
                     value={trimEnd}
                     onChange={(e) => setTrimEnd(parseFloat(e.target.value))}

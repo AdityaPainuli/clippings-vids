@@ -41,6 +41,24 @@ _last_cleanup: float = time.time()
 # SSE subscribers: job_id → list of asyncio.Queue
 _sse_subscribers: Dict[str, list] = {}
 
+# One-time stream tokens: token → {"user_id", "expires"}. The bearer JWT
+# never goes in a URL (query strings leak via logs/history); the client
+# exchanges it for a short-lived single-use token instead.
+_stream_tokens: Dict[str, dict] = {}
+STREAM_TOKEN_TTL = 300
+
+
+def _consume_stream_token(token: str) -> Optional[str]:
+    """Validate and burn a one-time stream token. Returns user_id or None."""
+    now = time.time()
+    # Drop expired tokens opportunistically
+    for t in [t for t, v in _stream_tokens.items() if v["expires"] < now]:
+        _stream_tokens.pop(t, None)
+    entry = _stream_tokens.pop(token, None)
+    if entry and entry["expires"] >= now:
+        return entry["user_id"]
+    return None
+
 
 def _notify_job(job_id: str, event_data: dict):
     """Push an SSE event to all subscribers of a job."""
@@ -76,9 +94,13 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(b
 # ─────────────────────────────────────────────
 
 def _video_cache_key(url: str, instructions: Optional[str], user_id: str,
-                     clip_style: str = "auto", caption_style: str = "default") -> str:
+                     clip_style: str = "auto", caption_style: str = "default",
+                     clip_count: Optional[int] = None,
+                     min_clip_length: Optional[int] = None,
+                     max_clip_length: Optional[int] = None) -> str:
     """Cache key scoped per user so different users don't share clips."""
-    raw = f"{user_id}||{url}||{instructions or ''}||{clip_style}||{caption_style}"
+    raw = (f"{user_id}||{url}||{instructions or ''}||{clip_style}||{caption_style}"
+           f"||{clip_count or ''}||{min_clip_length or ''}||{max_clip_length or ''}")
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -333,10 +355,14 @@ async def process_url(
         raise HTTPException(status_code=400, detail="min_clip_length must be between 5 and 120 seconds")
     if max_clip_length is not None and not (10 <= max_clip_length <= 180):
         raise HTTPException(status_code=400, detail="max_clip_length must be between 10 and 180 seconds")
+    if (min_clip_length is not None and max_clip_length is not None
+            and min_clip_length > max_clip_length):
+        raise HTTPException(status_code=400, detail="min_clip_length cannot exceed max_clip_length")
 
     await _maybe_cleanup()
     user_id   = user["user_id"]
-    cache_key = _video_cache_key(url, instructions, user_id, clip_style, caption_style)
+    cache_key = _video_cache_key(url, instructions, user_id, clip_style, caption_style,
+                                 clip_count, min_clip_length, max_clip_length)
 
     # Cache hit — same user, same URL, same styles, clips still alive in storage
     if cache_key in _clip_cache:
@@ -386,6 +412,15 @@ async def upload_video(
         raise HTTPException(status_code=400, detail=f"Invalid clip_style. Choose from: {list(clipper.CLIP_STYLES.keys())}")
     if caption_style not in clipper.CAPTION_PRESETS:
         raise HTTPException(status_code=400, detail=f"Invalid caption_style. Choose from: {list(clipper.CAPTION_PRESETS.keys())}")
+    if clip_count is not None and not (1 <= clip_count <= 10):
+        raise HTTPException(status_code=400, detail="clip_count must be between 1 and 10")
+    if min_clip_length is not None and not (5 <= min_clip_length <= 120):
+        raise HTTPException(status_code=400, detail="min_clip_length must be between 5 and 120 seconds")
+    if max_clip_length is not None and not (10 <= max_clip_length <= 180):
+        raise HTTPException(status_code=400, detail="max_clip_length must be between 10 and 180 seconds")
+    if (min_clip_length is not None and max_clip_length is not None
+            and min_clip_length > max_clip_length):
+        raise HTTPException(status_code=400, detail="min_clip_length cannot exceed max_clip_length")
 
     await _maybe_cleanup()
     try:
@@ -422,22 +457,34 @@ async def get_status(job_id: str, user: dict = Depends(get_current_user)):
     return job
 
 
+@app.post("/stream-token")
+async def create_stream_token(user: dict = Depends(get_current_user)):
+    """
+    Exchange the bearer JWT for a short-lived one-time SSE token.
+    EventSource can't send Authorization headers, and putting the JWT in
+    the URL would leak it via logs/history — this token is safe to place
+    in a query param: single-use, 5-minute expiry, useless for other routes.
+    """
+    stream_token = uuid.uuid4().hex
+    _stream_tokens[stream_token] = {
+        "user_id": user["user_id"],
+        "expires": time.time() + STREAM_TOKEN_TTL,
+    }
+    return {"stream_token": stream_token, "expires_in": STREAM_TOKEN_TTL}
+
+
 @app.get("/stream/{job_id}")
 async def stream_status(job_id: str, request: Request, token: str = ""):
     """
     SSE endpoint for real-time job status updates.
-    Token is passed as query param since EventSource doesn't support headers.
+    Auth: one-time stream token from POST /stream-token (query param,
+    since EventSource doesn't support headers).
     """
-    # Authenticate via query param
     if not token:
         raise HTTPException(status_code=401, detail="Missing token")
-    try:
-        user_resp = supabase.auth.get_user(token)
-        if not user_resp or not user_resp.user:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        user_id = user_resp.user.id
-    except Exception:
-        raise HTTPException(status_code=401, detail="Auth failed")
+    user_id = _consume_stream_token(token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid or expired stream token")
 
     if job_id not in jobs:
         raise HTTPException(status_code=404, detail="Job not found")
