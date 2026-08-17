@@ -9,9 +9,11 @@ import time
 import hashlib
 import clipper
 from supabase_client import supabase, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips
+from captions.api import router as captions_router
 
 
 app = FastAPI()
+app.include_router(captions_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -75,6 +77,9 @@ async def _maybe_cleanup():
         _last_cleanup = time.time()
         loop = asyncio.get_event_loop()
         deleted = await loop.run_in_executor(None, delete_old_clips)
+        # Caption jobs + storage past their retention window
+        from captions.storage import delete_expired
+        await loop.run_in_executor(None, delete_expired)
         # Also purge stale in-memory job records
         now = time.time()
         stale = [jid for jid, j in jobs.items() if j.get("created_at", now) < now - JOB_TTL]
