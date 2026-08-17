@@ -29,7 +29,7 @@ class Animation(BaseModel):
     # pop: word scales scale_start → scale_end → 100
     scale_start: int = Field(50, ge=10, le=100)
     scale_end: int = Field(115, ge=100, le=200)
-    # pop/fade: how long the entrance runs
+    # pop/fade: total entrance duration (pop splits it into overshoot + settle)
     duration_ms: int = Field(150, ge=50, le=1000)
 
 

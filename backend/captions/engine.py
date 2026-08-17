@@ -102,9 +102,12 @@ def _events(words: list, style: CaptionStyle) -> str:
                     parts.append(_tag(white, FULL_ALPHA) + wt)
                 elif j == active_idx:
                     if anim.type == "pop":
+                        # duration_ms is the total pop: 60% overshoot, 40% settle
+                        overshoot_ms = max(1, int(anim.duration_ms * 0.6))
+                        settle_ms = max(1, anim.duration_ms - overshoot_ms)
                         parts.append(
                             _pop_tag(hilite, FULL_ALPHA, anim.scale_start,
-                                     anim.scale_end, 100, anim.duration_ms)
+                                     anim.scale_end, settle_ms, overshoot_ms)
                             + wt + _tag(white, FULL_ALPHA)
                         )
                     elif anim.type == "fade":
@@ -113,7 +116,8 @@ def _events(words: list, style: CaptionStyle) -> str:
                             + wt + _tag(white, FULL_ALPHA)
                         )
                     else:
-                        parts.append(_tag(hilite, FULL_ALPHA, "115", "115") + wt
+                        scale = str(int(style.highlight_scale * 100))
+                        parts.append(_tag(hilite, FULL_ALPHA, scale, scale) + wt
                                      + _tag(white, FULL_ALPHA))
                 else:
                     parts.append(_tag(white, dim) + wt)

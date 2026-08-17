@@ -27,6 +27,10 @@ RETENTION_SECONDS = int(os.getenv("CAPTION_RETENTION_SECONDS", 48 * 3600))
 _HEADERS     = {"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}", "apikey": SUPABASE_SERVICE_KEY}
 _STORAGE_URL = f"{SUPABASE_URL}/storage/v1"
 
+# (connect, read) timeouts — control-plane calls fail fast, transfers get room
+_CTRL_TIMEOUT     = (10, 30)
+_TRANSFER_TIMEOUT = (10, 600)
+
 
 # ── Job rows ─────────────────────────────────────────────────────────────────
 
@@ -37,6 +41,8 @@ def create_job(user_id: str, kind: str, **fields) -> str:
         "expires_at": expires.isoformat(), **fields,
     }
     res = supabase.table("caption_jobs").insert(row).execute()
+    if not res.data:
+        raise RuntimeError("caption_jobs insert returned no row — is schema.sql applied?")
     return res.data[0]["id"]
 
 
@@ -85,6 +91,7 @@ def create_signed_upload(user_id: str, job_id: str, filename: str) -> dict:
         f"{_STORAGE_URL}/object/upload/sign/{BUCKET}/{path}",
         headers={**_HEADERS, "Content-Type": "application/json"},
         json={"expiresIn": 6 * 3600},
+        timeout=_CTRL_TIMEOUT,
     )
     if resp.status_code != 200:
         raise RuntimeError(f"Signed upload failed {resp.status_code}: {resp.text}")
@@ -96,7 +103,7 @@ def create_signed_upload(user_id: str, job_id: str, filename: str) -> dict:
 def download_to_file(storage_path: str, local_path: str):
     """Stream a storage object to disk (render workers pull sources this way)."""
     with requests.get(f"{_STORAGE_URL}/object/{BUCKET}/{storage_path}",
-                      headers=_HEADERS, stream=True) as r:
+                      headers=_HEADERS, stream=True, timeout=_TRANSFER_TIMEOUT) as r:
         if r.status_code != 200:
             raise RuntimeError(f"Storage download failed {r.status_code}: {r.text[:200]}")
         with open(local_path, "wb") as f:
@@ -114,6 +121,7 @@ def upload_output(local_path: str, user_id: str, job_id: str) -> str:
             f"{_STORAGE_URL}/object/{BUCKET}/{path}",
             headers={**_HEADERS, "x-upsert": "true"},
             files={"file": (filename, f, mime)},
+            timeout=_TRANSFER_TIMEOUT,
         )
     if resp.status_code not in (200, 201):
         raise RuntimeError(f"Output upload failed {resp.status_code}: {resp.text}")
@@ -125,6 +133,7 @@ def signed_download_url(storage_path: str, expires_in: int | None = None) -> str
         f"{_STORAGE_URL}/object/sign/{BUCKET}/{storage_path}",
         headers={**_HEADERS, "Content-Type": "application/json"},
         json={"expiresIn": expires_in or RETENTION_SECONDS},
+        timeout=_CTRL_TIMEOUT,
     )
     if resp.status_code != 200:
         raise RuntimeError(f"Signed URL failed {resp.status_code}: {resp.text}")
@@ -141,6 +150,7 @@ def _delete_storage_paths(paths: list):
             f"{_STORAGE_URL}/object/{BUCKET}",
             headers={**_HEADERS, "Content-Type": "application/json"},
             json={"prefixes": paths[i : i + 100]},
+            timeout=_CTRL_TIMEOUT,
         )
 
 

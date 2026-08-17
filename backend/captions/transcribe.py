@@ -13,6 +13,17 @@ import tempfile
 MLX_MODEL = os.getenv("CAPTIONS_MLX_MODEL", "mlx-community/whisper-large-v3-turbo")
 CPU_MODEL = os.getenv("CAPTIONS_CPU_MODEL", "small")
 
+_cpu_model_cache = None
+
+
+def _cpu_model():
+    """Load the CPU whisper model once per process — loading dominates latency."""
+    global _cpu_model_cache
+    if _cpu_model_cache is None:
+        import whisper
+        _cpu_model_cache = whisper.load_model(CPU_MODEL)
+    return _cpu_model_cache
+
 
 def _extract_audio(video_path: str, out_path: str):
     r = subprocess.run(
@@ -56,8 +67,7 @@ def transcribe_video(video_path: str, language: str | None = None) -> dict:
             )
             backend = f"mlx:{MLX_MODEL}"
         except ImportError:
-            import whisper
-            model = whisper.load_model(CPU_MODEL)
+            model = _cpu_model()
             result = model.transcribe(
                 audio, word_timestamps=True, language=language, fp16=False, verbose=None,
             )

@@ -72,14 +72,18 @@ def _owned_job(job_id: str, user_id: str) -> dict:
 
 
 def _with_staleness(job: dict) -> dict:
-    """Flag jobs orphaned by a server restart as failed when reading them."""
+    """
+    Flag jobs orphaned by a server restart as failed, persisting the state
+    so notifications and later reads see the same durable status.
+    """
     if job["status"] in ("queued", "transcribing", "romanizing", "rendering"):
         try:
             from datetime import datetime
             updated = datetime.fromisoformat(job["updated_at"].replace("Z", "+00:00"))
             if time.time() - updated.timestamp() > STALE_SECONDS:
-                job = {**job, "status": "failed",
-                       "error": "Job interrupted (server restart) — please retry"}
+                error = "Job interrupted (server restart) — please retry"
+                storage.update_job(job["id"], status="failed", error=error)
+                job = {**job, "status": "failed", "error": error}
         except (ValueError, KeyError, AttributeError):
             pass
     return job
@@ -138,8 +142,10 @@ async def transcribe_endpoint(
 
     local_path = os.path.join(WORK_DIR, f"{job_id}_source")
     if file is not None:
+        # Stream to disk in chunks — never buffer the whole upload in memory
         with open(local_path, "wb") as f:
-            f.write(await file.read())
+            while chunk := await file.read(1 << 20):
+                f.write(chunk)
     else:
         try:
             storage.download_to_file(storage_path, local_path)
@@ -269,7 +275,13 @@ async def render_endpoint(
     if storage_path and not storage_path.startswith(f"{user['user_id']}/"):
         raise HTTPException(status_code=403, detail="Not your upload")
 
-    info = json.loads(video_info) if video_info else None
+    try:
+        info = json.loads(video_info) if video_info else None
+        if info is not None and not isinstance(info, dict):
+            raise ValueError("must be a JSON object")
+    except (json.JSONDecodeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Bad video_info: {e}")
+
     job_id = storage.create_job(user["user_id"], "render", export=export,
                                 source_path=storage_path)
     background_tasks.add_task(_render_task, job_id, user["user_id"], user["email"],

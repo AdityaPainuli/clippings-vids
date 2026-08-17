@@ -22,7 +22,11 @@ def probe_video(video_path: str) -> dict:
          "-show_entries", "format=duration", "-of", "json", video_path],
         capture_output=True, text=True,
     )
+    if r.returncode != 0:
+        raise RuntimeError(f"ffprobe failed: {r.stderr[-300:]}")
     data = json.loads(r.stdout)
+    if not data.get("streams"):
+        raise RuntimeError("No video stream found — unsupported or corrupt file")
     stream = data["streams"][0]
     num, den = stream["r_frame_rate"].split("/")
     return {
