@@ -1,3 +1,5 @@
 .env
 /output
-/uploads__pycache__/
+/uploads
+/captions_output
+__pycache__/

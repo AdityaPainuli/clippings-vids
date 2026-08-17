@@ -1,5 +1,5 @@
 """
-Caption engine — standalone, style-schema-driven subtitle generation.
+Bolcap caption engine — standalone, style-schema-driven subtitle generation.
 
 Flow: transcribe (word timestamps) → optional Hinglish romanization →
 style (JSON schema: fonts, colors, animation) → export (.ass / .srt /
