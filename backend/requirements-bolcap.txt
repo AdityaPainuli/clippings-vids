@@ -1,0 +1,8 @@
+# Bolcap local app — runtime deps (no torch, no cloud SDKs; see DECISIONS.md)
+fastapi
+uvicorn
+python-multipart
+pydantic
+requests
+faster-whisper
+indic-transliteration

@@ -1,0 +1,83 @@
+name: bolcap-release
+
+on:
+  push:
+    tags: ["bolcap-v*"]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows-x64
+          - os: macos-latest        # arm64
+            target: macos-arm64
+          - os: macos-13            # last intel runner
+            target: macos-x64
+          - os: ubuntu-latest
+            target: linux-x64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-bolcap.txt pyinstaller
+
+      - name: Build
+        run: pyinstaller bolcap.spec --noconfirm
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          ./dist/bolcap/bolcap &
+          APP_PID=$!
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8756/api/presets > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8756/api/presets | grep -q bold_impact
+          curl -sf http://127.0.0.1:8756/api/setup/status | grep -q model_choices
+          curl -sf http://127.0.0.1:8756/ | grep -qi bolcap
+          kill $APP_PID
+
+      - name: Package
+        shell: bash
+        run: |
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "bolcap-${{ matrix.target }}.zip" bolcap
+          else
+            zip -qr "bolcap-${{ matrix.target }}.zip" bolcap
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bolcap-${{ matrix.target }}
+          path: backend/dist/bolcap-${{ matrix.target }}.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: "bolcap-*.zip"
+          generate_release_notes: true

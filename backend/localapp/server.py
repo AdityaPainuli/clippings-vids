@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from captions import engine, render, romanize, styles, transcribe
+from . import assets
 
 HOST = os.getenv("BOLCAP_HOST", "127.0.0.1")
 PORT = int(os.getenv("BOLCAP_PORT", "8756"))
@@ -29,8 +30,10 @@ WORK_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="Bolcap")
+assets.apply_environment()
 
 jobs: Dict[str, dict] = {}
+setup_progress: Dict[str, object] = {"status": "idle"}
 
 
 def _job(job_id: str) -> dict:
@@ -38,6 +41,31 @@ def _job(job_id: str) -> dict:
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+# ── First-run setup ──────────────────────────────────────────────────────────
+
+@app.get("/api/setup/status")
+async def setup_status():
+    return {**assets.setup_status(), "progress": setup_progress}
+
+
+@app.post("/api/setup/run")
+async def setup_run(model: str = Form(assets.DEFAULT_MODEL)):
+    if setup_progress.get("status") == "running":
+        return {"status": "running"}
+    setup_progress.clear()
+    setup_progress.update({"status": "running", "step": "starting",
+                           "total_bytes": 0, "done_bytes": 0})
+
+    def _run():
+        assets.run_setup(model, setup_progress)
+        if setup_progress.get("status") == "ready":
+            assets.apply_environment()
+            os.environ["CAPTIONS_CPU_MODEL"] = model
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "running"}
 
 
 # ── Transcribe ───────────────────────────────────────────────────────────────
@@ -65,6 +93,9 @@ async def transcribe_endpoint(
     language: Optional[str] = Form(None),
     hinglish: bool = Form(True),
 ):
+    if assets.ffmpeg_path() is None:
+        raise HTTPException(status_code=409,
+                            detail="ffmpeg not set up yet — run first-run setup")
     job_id = uuid.uuid4().hex[:12]
     video_path = WORK_DIR / f"{job_id}_{os.path.basename(file.filename or 'video.mp4')}"
     with open(video_path, "wb") as f:
