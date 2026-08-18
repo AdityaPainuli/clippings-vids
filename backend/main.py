@@ -1,8 +1,10 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import StreamingResponse
 from typing import Optional, Dict
 import os
+import json
 import uuid
 import asyncio
 import time
@@ -38,6 +40,36 @@ jobs: Dict[str, dict] = {}
 _clip_cache: Dict[str, list] = {}
 _last_cleanup: float = time.time()
 
+# SSE subscribers: job_id → list of asyncio.Queue
+_sse_subscribers: Dict[str, list] = {}
+
+# One-time stream tokens: token → {"user_id", "expires"}. The bearer JWT
+# never goes in a URL (query strings leak via logs/history); the client
+# exchanges it for a short-lived single-use token instead.
+_stream_tokens: Dict[str, dict] = {}
+STREAM_TOKEN_TTL = 300
+
+
+def _consume_stream_token(token: str) -> Optional[str]:
+    """Validate and burn a one-time stream token. Returns user_id or None."""
+    now = time.time()
+    # Drop expired tokens opportunistically
+    for t in [t for t, v in _stream_tokens.items() if v["expires"] < now]:
+        _stream_tokens.pop(t, None)
+    entry = _stream_tokens.pop(token, None)
+    if entry and entry["expires"] >= now:
+        return entry["user_id"]
+    return None
+
+
+def _notify_job(job_id: str, event_data: dict):
+    """Push an SSE event to all subscribers of a job."""
+    for queue in _sse_subscribers.get(job_id, []):
+        try:
+            queue.put_nowait(event_data)
+        except asyncio.QueueFull:
+            pass
+
 # ─────────────────────────────────────────────
 # Auth — validate Supabase JWT on protected routes
 # ─────────────────────────────────────────────
@@ -64,9 +96,13 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(b
 # ─────────────────────────────────────────────
 
 def _video_cache_key(url: str, instructions: Optional[str], user_id: str,
-                     clip_style: str = "auto", caption_style: str = "default") -> str:
+                     clip_style: str = "auto", caption_style: str = "default",
+                     clip_count: Optional[int] = None,
+                     min_clip_length: Optional[int] = None,
+                     max_clip_length: Optional[int] = None) -> str:
     """Cache key scoped per user so different users don't share clips."""
-    raw = f"{user_id}||{url}||{instructions or ''}||{clip_style}||{caption_style}"
+    raw = (f"{user_id}||{url}||{instructions or ''}||{clip_style}||{caption_style}"
+           f"||{clip_count or ''}||{min_clip_length or ''}||{max_clip_length or ''}")
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -103,22 +139,31 @@ async def process_video_task(
     cache_key: Optional[str] = None,
     clip_style: str = "auto",
     caption_style: str = "default",
+    clip_count: Optional[int] = None,
+    min_clip_length: Optional[int] = None,
+    max_clip_length: Optional[int] = None,
 ):
     loop = asyncio.get_event_loop()
     try:
         # ── 1. Analyse ────────────────────────────────────────────────────────
         jobs[job_id]["status"] = "analyzing"
+        _notify_job(job_id, {"status": "analyzing", "detail": "Analyzing video for viral moments..."})
         clips_metadata = await loop.run_in_executor(
-            None, clipper.analyze_video, video_path, instructions, info, clip_style
+            None, clipper.analyze_video, video_path, instructions, info,
+            clip_style, clip_count, min_clip_length, max_clip_length
         )
 
         if not clips_metadata:
             jobs[job_id]["status"] = "failed"
             jobs[job_id]["error"]  = "No viral moments found in this video"
+            _notify_job(job_id, {"status": "failed", "error": "No viral moments found in this video"})
             return
+
+        _notify_job(job_id, {"status": "analyzing", "detail": f"Found {len(clips_metadata)} potential clips"})
 
         # ── 2. Render clips locally ───────────────────────────────────────────
         jobs[job_id]["status"] = "clipping"
+        _notify_job(job_id, {"status": "clipping", "detail": f"Rendering {len(clips_metadata)} clips...", "total_clips": len(clips_metadata)})
         clips, render_failures = await loop.run_in_executor(
             None, clipper.create_clips, video_path, clips_metadata, OUTPUT_DIR,
             captions, caption_style
@@ -126,6 +171,7 @@ async def process_video_task(
 
         # ── 3. Upload each clip to Supabase Storage ───────────────────────────
         jobs[job_id]["status"] = "uploading"
+        _notify_job(job_id, {"status": "uploading", "detail": f"Uploading {len(clips)} clips...", "rendered": len(clips)})
         results = []
         upload_errors = []
         source_url = jobs[job_id].get("url", "")
@@ -182,10 +228,17 @@ async def process_video_task(
                 jobs[job_id]["failed_clips"] = all_errors
             if cache_key:
                 _clip_cache[cache_key] = results
+            _notify_job(job_id, {
+                "status": "completed",
+                "results": results,
+                "warnings": jobs[job_id].get("warnings"),
+            })
         else:
+            err_msg = f"All {total_requested} clips failed to render/upload"
             jobs[job_id]["status"] = "failed"
-            jobs[job_id]["error"]  = f"All {total_requested} clips failed to render/upload"
+            jobs[job_id]["error"]  = err_msg
             jobs[job_id]["failed_clips"] = all_errors
+            _notify_job(job_id, {"status": "failed", "error": err_msg})
 
         # Delete source video
         try:
@@ -196,6 +249,7 @@ async def process_video_task(
     except Exception as e:
         jobs[job_id]["status"] = "failed"
         jobs[job_id]["error"]  = str(e)
+        _notify_job(job_id, {"status": "failed", "error": str(e)})
         print(f"[job {job_id}] failed: {e}")
 
 
@@ -208,21 +262,27 @@ async def download_and_process(
     captions: bool = True,
     clip_style: str = "auto",
     caption_style: str = "default",
+    clip_count: Optional[int] = None,
+    min_clip_length: Optional[int] = None,
+    max_clip_length: Optional[int] = None,
 ):
     loop = asyncio.get_event_loop()
     try:
         jobs[job_id]["status"] = "downloading"
+        _notify_job(job_id, {"status": "downloading", "detail": "Downloading video..."})
         video_path, info = await loop.run_in_executor(
             None, clipper.download_video, url, UPLOAD_DIR
         )
         jobs[job_id]["video_path"] = video_path
+        _notify_job(job_id, {"status": "downloading", "detail": "Download complete"})
         await process_video_task(
             job_id, video_path, instructions, user_id, info, captions, cache_key,
-            clip_style, caption_style
+            clip_style, caption_style, clip_count, min_clip_length, max_clip_length
         )
     except Exception as e:
         jobs[job_id]["status"] = "failed"
         jobs[job_id]["error"]  = str(e)
+        _notify_job(job_id, {"status": "failed", "error": str(e)})
 
 
 # ─────────────────────────────────────────────
@@ -284,6 +344,9 @@ async def process_url(
     captions: bool = Form(True),
     clip_style: str = Form("auto"),
     caption_style: str = Form("default"),
+    clip_count: Optional[int] = Form(None),
+    min_clip_length: Optional[int] = Form(None),
+    max_clip_length: Optional[int] = Form(None),
     user: dict = Depends(get_current_user),
 ):
     # Validate style params
@@ -291,10 +354,20 @@ async def process_url(
         raise HTTPException(status_code=400, detail=f"Invalid clip_style. Choose from: {list(clipper.CLIP_STYLES.keys())}")
     if caption_style not in clipper.CAPTION_PRESETS:
         raise HTTPException(status_code=400, detail=f"Invalid caption_style. Choose from: {list(clipper.CAPTION_PRESETS.keys())}")
+    if clip_count is not None and not (1 <= clip_count <= 10):
+        raise HTTPException(status_code=400, detail="clip_count must be between 1 and 10")
+    if min_clip_length is not None and not (5 <= min_clip_length <= 120):
+        raise HTTPException(status_code=400, detail="min_clip_length must be between 5 and 120 seconds")
+    if max_clip_length is not None and not (10 <= max_clip_length <= 180):
+        raise HTTPException(status_code=400, detail="max_clip_length must be between 10 and 180 seconds")
+    if (min_clip_length is not None and max_clip_length is not None
+            and min_clip_length > max_clip_length):
+        raise HTTPException(status_code=400, detail="min_clip_length cannot exceed max_clip_length")
 
     await _maybe_cleanup()
     user_id   = user["user_id"]
-    cache_key = _video_cache_key(url, instructions, user_id, clip_style, caption_style)
+    cache_key = _video_cache_key(url, instructions, user_id, clip_style, caption_style,
+                                 clip_count, min_clip_length, max_clip_length)
 
     # Cache hit — same user, same URL, same styles, clips still alive in storage
     if cache_key in _clip_cache:
@@ -322,7 +395,7 @@ async def process_url(
     }
     background_tasks.add_task(
         download_and_process, job_id, url, instructions, user_id, cache_key,
-        captions, clip_style, caption_style
+        captions, clip_style, caption_style, clip_count, min_clip_length, max_clip_length
     )
     return {"job_id": job_id, "status": "queued"}
 
@@ -335,12 +408,24 @@ async def upload_video(
     captions: bool = Form(True),
     clip_style: str = Form("auto"),
     caption_style: str = Form("default"),
+    clip_count: Optional[int] = Form(None),
+    min_clip_length: Optional[int] = Form(None),
+    max_clip_length: Optional[int] = Form(None),
     user: dict = Depends(get_current_user),
 ):
     if clip_style not in clipper.CLIP_STYLES:
         raise HTTPException(status_code=400, detail=f"Invalid clip_style. Choose from: {list(clipper.CLIP_STYLES.keys())}")
     if caption_style not in clipper.CAPTION_PRESETS:
         raise HTTPException(status_code=400, detail=f"Invalid caption_style. Choose from: {list(clipper.CAPTION_PRESETS.keys())}")
+    if clip_count is not None and not (1 <= clip_count <= 10):
+        raise HTTPException(status_code=400, detail="clip_count must be between 1 and 10")
+    if min_clip_length is not None and not (5 <= min_clip_length <= 120):
+        raise HTTPException(status_code=400, detail="min_clip_length must be between 5 and 120 seconds")
+    if max_clip_length is not None and not (10 <= max_clip_length <= 180):
+        raise HTTPException(status_code=400, detail="max_clip_length must be between 10 and 180 seconds")
+    if (min_clip_length is not None and max_clip_length is not None
+            and min_clip_length > max_clip_length):
+        raise HTTPException(status_code=400, detail="min_clip_length cannot exceed max_clip_length")
 
     await _maybe_cleanup()
     try:
@@ -359,7 +444,7 @@ async def upload_video(
         }
         background_tasks.add_task(
             process_video_task, job_id, file_path, instructions, user_id, None,
-            captions, None, clip_style, caption_style
+            captions, None, clip_style, caption_style, clip_count, min_clip_length, max_clip_length
         )
         return {"job_id": job_id, "status": "uploaded"}
     except Exception as e:
@@ -375,6 +460,86 @@ async def get_status(job_id: str, user: dict = Depends(get_current_user)):
     if job.get("user_id") != user["user_id"]:
         raise HTTPException(status_code=403, detail="Not your job")
     return job
+
+
+@app.post("/stream-token")
+async def create_stream_token(user: dict = Depends(get_current_user)):
+    """
+    Exchange the bearer JWT for a short-lived one-time SSE token.
+    EventSource can't send Authorization headers, and putting the JWT in
+    the URL would leak it via logs/history — this token is safe to place
+    in a query param: single-use, 5-minute expiry, useless for other routes.
+    """
+    stream_token = uuid.uuid4().hex
+    _stream_tokens[stream_token] = {
+        "user_id": user["user_id"],
+        "expires": time.time() + STREAM_TOKEN_TTL,
+    }
+    return {"stream_token": stream_token, "expires_in": STREAM_TOKEN_TTL}
+
+
+@app.get("/stream/{job_id}")
+async def stream_status(job_id: str, request: Request, token: str = ""):
+    """
+    SSE endpoint for real-time job status updates.
+    Auth: one-time stream token from POST /stream-token (query param,
+    since EventSource doesn't support headers).
+    """
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing token")
+    user_id = _consume_stream_token(token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid or expired stream token")
+
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if jobs[job_id].get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Not your job")
+
+    queue: asyncio.Queue = asyncio.Queue(maxsize=50)
+    _sse_subscribers.setdefault(job_id, []).append(queue)
+
+    async def event_generator():
+        try:
+            # Send current state immediately
+            job = jobs.get(job_id, {})
+            yield f"data: {json.dumps({'status': job.get('status', 'queued'), 'detail': 'Connected'})}\n\n"
+
+            # If already done, send result and close
+            if job.get("status") in ("completed", "failed"):
+                yield f"data: {json.dumps(job)}\n\n"
+                return
+
+            while True:
+                # Check if client disconnected
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    yield f"data: {json.dumps(event)}\n\n"
+                    # If terminal state, close stream
+                    if event.get("status") in ("completed", "failed"):
+                        break
+                except asyncio.TimeoutError:
+                    # Send heartbeat to keep connection alive
+                    yield f": heartbeat\n\n"
+        finally:
+            # Cleanup subscriber
+            subs = _sse_subscribers.get(job_id, [])
+            if queue in subs:
+                subs.remove(queue)
+            if not subs:
+                _sse_subscribers.pop(job_id, None)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/my-clips")

@@ -296,6 +296,160 @@ h1, h2, h3 {
   text-align: center;
 }
 
+/* SSE Status banner */
+.status-banner {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: 12px;
+  background: rgba(0, 209, 255, 0.06);
+  border: 1px solid rgba(0, 209, 255, 0.2);
+  color: var(--secondary);
+  font-size: 0.9rem;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--secondary);
+  animation: pulse-dot 1.5s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+/* Clip count & duration settings */
+.clip-settings-row {
+  display: flex;
+  gap: 1.25rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-radius: 14px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+}
+
+.clip-setting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+}
+
+.clip-setting-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.clip-setting-control {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.clip-setting-control button {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.clip-setting-control button:hover {
+  background: rgba(255,255,255,0.12);
+  border-color: var(--primary);
+}
+
+.clip-setting-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+  min-width: 24px;
+  text-align: center;
+}
+
+.clip-setting input[type="range"] {
+  width: 100%;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+/* Trimmer modal */
+.trimmer-modal {
+  background: var(--background);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  padding: 2rem;
+  width: 100%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+}
+
+.trimmer-close {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.trimmer-video-wrap {
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 1.25rem;
+}
+
+.trimmer-controls {
+  padding: 0.75rem;
+  border-radius: 14px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+}
+
+.trimmer-range-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.trimmer-range-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.trimmer-range-row label span {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.trimmer-range-row input[type="range"] {
+  width: 100%;
+  accent-color: var(--primary);
+}
+
 @media (max-width: 768px) {
   .hero h1 { font-size: 2.5rem; }
   .features { grid-template-columns: 1fr; }
@@ -305,4 +459,6 @@ h1, h2, h3 {
   .btn { width: 100%; }
   .style-selector { gap: 0.4rem; }
   .style-card { min-width: 80px; padding: 0.6rem 0.7rem; }
+  .clip-settings-row { flex-direction: column; gap: 0.75rem; }
+  .trimmer-modal { max-width: 100%; margin: 1rem; padding: 1.25rem; }
 }
