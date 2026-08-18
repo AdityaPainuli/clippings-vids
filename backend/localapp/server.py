@@ -22,10 +22,36 @@ from pydantic import ValidationError
 from captions import engine, render, romanize, styles, transcribe
 from . import assets
 
+# Loopback only — there is no auth. LAN exposure requires the explicit
+# opt-in AND is still the user's own risk (documented, not recommended).
 HOST = os.getenv("BOLCAP_HOST", "127.0.0.1")
+if HOST not in ("127.0.0.1", "localhost", "::1") and os.getenv("BOLCAP_ALLOW_LAN") != "1":
+    HOST = "127.0.0.1"
 PORT = int(os.getenv("BOLCAP_PORT", "8756"))
 WORK_DIR = Path(os.getenv("BOLCAP_WORK_DIR", Path.home() / ".bolcap" / "work"))
 WORK_DIR.mkdir(parents=True, exist_ok=True)
+
+# Sweep work files older than this on startup — re-exports stay possible
+# within the window, disk doesn't grow forever (single-user local app).
+WORK_TTL_DAYS = float(os.getenv("BOLCAP_WORK_TTL_DAYS", "3"))
+
+
+def _sweep_stale_work():
+    import time
+    cutoff = time.time() - WORK_TTL_DAYS * 86400
+    removed = 0
+    for f in WORK_DIR.iterdir():
+        try:
+            if f.is_file() and f.stat().st_mtime < cutoff:
+                f.unlink()
+                removed += 1
+        except OSError:
+            pass
+    if removed:
+        print(f"[bolcap] removed {removed} work file(s) older than {WORK_TTL_DAYS:g} days")
+
+
+_sweep_stale_work()
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -177,6 +203,8 @@ async def render_endpoint(
 
     try:
         style_data = json.loads(style_json)
+        if not isinstance(style_data, dict):
+            raise ValueError("style must be a JSON object")
         if "preset" in style_data:
             base = styles.STYLE_PRESETS.get(style_data["preset"])
             if base is None:
@@ -189,8 +217,13 @@ async def render_endpoint(
         raise HTTPException(status_code=400, detail=f"Bad style: {e}")
 
     try:
-        words = (json.loads(transcript)["words"] if transcript
-                 else job["transcript"]["words"])
+        if transcript:
+            data = json.loads(transcript)
+            if not isinstance(data, dict) or not isinstance(data.get("words"), list):
+                raise ValueError("transcript must be an object with a words array")
+            words = data["words"]
+        else:
+            words = job["transcript"]["words"]
         if not words:
             raise ValueError("empty transcript")
     except (json.JSONDecodeError, KeyError, ValueError) as e:

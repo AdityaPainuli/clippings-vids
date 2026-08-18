@@ -88,12 +88,14 @@
     <p class="hint" style="margin:0 0 0.8rem" id="setup-why"></p>
     <div id="model-choices" class="presets" style="margin-bottom:0.9rem"></div>
     <button class="primary" id="setup-btn">Download &amp; set up</button>
-    <div class="status-line hidden" id="setup-progress" style="margin-top:0.8rem">
+    <div class="status-line hidden" id="setup-progress" style="margin-top:0.8rem"
+         role="status" aria-live="polite">
       <div class="spinner"></div><span id="setup-progress-text"></span>
     </div>
   </div>
 
-  <div class="drop hidden" id="drop">
+  <div class="drop hidden" id="drop" role="button" tabindex="0"
+       aria-label="Choose a video file to caption">
     <p class="big">Drop a video here or click to choose</p>
     <p>MP4 / MOV · transcribed with Whisper locally</p>
     <input type="file" id="file" accept="video/*" class="hidden">
@@ -101,7 +103,9 @@
 
   <div class="card hidden" id="status-card">
     <h2>Status</h2>
-    <div class="status-line" id="status-line"><div class="spinner"></div><span id="status-text">Uploading…</span></div>
+    <div class="status-line" id="status-line" role="status" aria-live="polite">
+      <div class="spinner"></div><span id="status-text">Uploading…</span>
+    </div>
   </div>
 
   <div class="card hidden" id="transcript-card">
@@ -156,8 +160,8 @@ async function checkSetup() {
     ? "Bolcap needs ffmpeg and a Whisper model on this machine. One-time download, everything stays local."
     : "Pick a Whisper model to download. One-time, stays local.";
   $("model-choices").innerHTML = Object.entries(s.model_choices).map(([m, info]) =>
-    `<div class="preset ${m === chosenModel ? "selected" : ""}" data-model="${m}">
-       <b>${m}</b><span>${info.disk} · ${info.note}</span></div>`).join("");
+    `<button type="button" class="preset ${m === chosenModel ? "selected" : ""}" data-model="${m}">
+       <b>${m}</b><span>${info.disk} · ${info.note}</span></button>`).join("");
   document.querySelectorAll("#model-choices .preset").forEach(el => {
     el.onclick = () => {
       chosenModel = el.dataset.model;
@@ -195,6 +199,9 @@ checkSetup();
 // ── Upload ──────────────────────────────────────────────────────────────────
 const drop = $("drop"), fileInput = $("file");
 drop.onclick = () => fileInput.click();
+drop.onkeydown = (e) => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+};
 drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("hover"); };
 drop.ondragleave = () => drop.classList.remove("hover");
 drop.ondrop = (e) => {
@@ -213,7 +220,7 @@ async function upload(file) {
     const res = await fetch("/api/transcribe", { method: "POST", body: fd });
     if (!res.ok) throw new Error((await res.json()).detail || "Upload failed");
     jobId = (await res.json()).job_id;
-    poll(onTranscribed);
+    poll(jobId, onTranscribed);
   } catch (err) { setStatus(err.message, "error"); }
 }
 
@@ -225,16 +232,24 @@ const STAGE_TEXT = {
   rendering: "Rendering…",
 };
 
-function poll(onReady) {
+function poll(id, onReady, onFail) {
+  // `id` is captured per operation — a new upload mid-flight must not
+  // redirect an older poller to the new job.
   const t = setInterval(async () => {
     try {
-      const res = await fetch(`/api/jobs/${jobId}`);
+      const res = await fetch(`/api/jobs/${id}`);
       if (!res.ok) throw new Error("Job lost — restart the app and retry");
       const job = await res.json();
-      if (job.status === "failed") { clearInterval(t); setStatus(job.error || "Failed", "error"); return; }
+      if (job.status === "failed") {
+        clearInterval(t); setStatus(job.error || "Failed", "error");
+        if (onFail) onFail(job); return;
+      }
       if (job.status === "ready") { clearInterval(t); onReady(job); return; }
       setStatus(STAGE_TEXT[job.status] || job.status);
-    } catch (err) { clearInterval(t); setStatus(err.message, "error"); }
+    } catch (err) {
+      clearInterval(t); setStatus(err.message, "error");
+      if (onFail) onFail(null);
+    }
   }, 1500);
 }
 
@@ -264,7 +279,7 @@ document.querySelectorAll(".script-toggle button").forEach(btn => {
   const names = Object.keys((await res.json()).presets);
   $("presets").innerHTML = names.map(n => {
     const [label, desc] = PRESET_LABELS[n] || [n, ""];
-    return `<div class="preset ${n === preset ? "selected" : ""}" data-preset="${n}"><b>${label}</b><span>${desc}</span></div>`;
+    return `<button type="button" class="preset ${n === preset ? "selected" : ""}" data-preset="${n}"><b>${label}</b><span>${desc}</span></button>`;
   }).join("");
   document.querySelectorAll(".preset").forEach(el => {
     el.onclick = () => {
@@ -278,26 +293,37 @@ document.querySelectorAll(".script-toggle button").forEach(btn => {
 document.querySelectorAll(".exports button").forEach(btn => {
   btn.onclick = async () => {
     const exportFmt = btn.dataset.export;
+    const renderJobId = jobId;   // capture — a new upload must not hijack this render
+    const enableButtons = () =>
+      document.querySelectorAll(".exports button").forEach(b => b.disabled = false);
     document.querySelectorAll(".exports button").forEach(b => b.disabled = true);
     show("status-card"); setStatus(`Rendering ${exportFmt}…`);
     const fd = new FormData();
-    fd.append("job_id", jobId);
+    fd.append("job_id", renderJobId);
     fd.append("style_json", JSON.stringify({ preset }));
     fd.append("export", exportFmt);
     fd.append("text_key", scriptKey);
     try {
       const res = await fetch("/api/render", { method: "POST", body: fd });
       if (!res.ok) throw new Error((await res.json()).detail || "Render failed");
-      poll((job) => {
+      poll(renderJobId, (job) => {
         setStatus("Done", "done");
-        document.querySelectorAll(".exports button").forEach(b => b.disabled = false);
-        $("downloads").innerHTML = Object.entries(job.outputs)
-          .map(([fmt, name]) => `<a href="/api/download/${jobId}/${fmt}" download>⬇ ${name}</a>`)
-          .join("");
-      });
+        enableButtons();
+        // Filenames come from user uploads — build anchors with DOM APIs,
+        // never innerHTML, so markup in a filename stays inert.
+        const downloads = $("downloads");
+        downloads.replaceChildren();
+        for (const [fmt, name] of Object.entries(job.outputs)) {
+          const a = document.createElement("a");
+          a.href = `/api/download/${renderJobId}/${fmt}`;
+          a.download = "";
+          a.textContent = `⬇ ${name}`;
+          downloads.appendChild(a);
+        }
+      }, enableButtons);
     } catch (err) {
       setStatus(err.message, "error");
-      document.querySelectorAll(".exports button").forEach(b => b.disabled = false);
+      enableButtons();
     }
   };
 });
