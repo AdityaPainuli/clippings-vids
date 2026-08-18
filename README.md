@@ -17,7 +17,7 @@ backend/            FastAPI service
   clipper.py        download → Gemini viral-moment analysis → parallel clip rendering
   captions/         Bolcap caption engine (SaaS API + CLI)
     styles.py       CaptionStyle schema — the user-facing customization surface
-    transcribe.py   Whisper word timestamps (mlx-whisper on Apple Silicon, CPU fallback)
+    transcribe.py   Whisper word timestamps (mlx-whisper → faster-whisper → openai-whisper)
     romanize.py     Devanagari → natural Hinglish (LLM pass with rule-based fallback)
     engine.py       word timings + style → animated ASS subtitles
     render.py       exports: burned MP4, alpha overlay .mov, .ass, .srt
@@ -78,8 +78,9 @@ All `/captions/*` routes require a Supabase bearer token (same auth as the clipp
 # backend
 cd backend
 pip install fastapi uvicorn supabase yt-dlp google-generativeai moviepy \
-            openai-whisper indic-transliteration pydantic python-multipart requests
-pip install mlx-whisper   # Apple Silicon only, much faster transcription
+            faster-whisper indic-transliteration pydantic python-multipart requests
+pip install mlx-whisper     # Apple Silicon only, much faster transcription
+pip install openai-whisper  # optional legacy fallback, pulls PyTorch
 uvicorn main:app --reload
 
 # frontend
