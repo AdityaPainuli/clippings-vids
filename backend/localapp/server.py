@@ -85,10 +85,9 @@ async def setup_run(model: str = Form(assets.DEFAULT_MODEL)):
                            "total_bytes": 0, "done_bytes": 0})
 
     def _run():
-        assets.run_setup(model, setup_progress)
+        assets.run_setup(model, setup_progress)   # persists the model choice
         if setup_progress.get("status") == "ready":
-            assets.apply_environment()
-            os.environ["CAPTIONS_CPU_MODEL"] = model
+            assets.apply_environment()            # PATH + active model + fonts
 
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "running"}
@@ -119,9 +118,9 @@ async def transcribe_endpoint(
     language: Optional[str] = Form(None),
     hinglish: bool = Form(True),
 ):
-    if assets.ffmpeg_path() is None:
+    if not assets.ffmpeg_ready():
         raise HTTPException(status_code=409,
-                            detail="ffmpeg not set up yet — run first-run setup")
+                            detail="ffmpeg/ffprobe not set up yet — run first-run setup")
     job_id = uuid.uuid4().hex[:12]
     video_path = WORK_DIR / f"{job_id}_{os.path.basename(file.filename or 'video.mp4')}"
     with open(video_path, "wb") as f:

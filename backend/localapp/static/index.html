@@ -281,10 +281,12 @@ document.querySelectorAll(".script-toggle button").forEach(btn => {
     const [label, desc] = PRESET_LABELS[n] || [n, ""];
     return `<button type="button" class="preset ${n === preset ? "selected" : ""}" data-preset="${n}"><b>${label}</b><span>${desc}</span></button>`;
   }).join("");
-  document.querySelectorAll(".preset").forEach(el => {
+  // Scoped to #presets — the setup screen's model choices share the
+  // .preset class and must keep their own handlers.
+  document.querySelectorAll("#presets .preset").forEach(el => {
     el.onclick = () => {
       preset = el.dataset.preset;
-      document.querySelectorAll(".preset").forEach(p => p.classList.toggle("selected", p === el));
+      document.querySelectorAll("#presets .preset").forEach(p => p.classList.toggle("selected", p === el));
     };
   });
 })();

@@ -38,19 +38,12 @@ jobs:
       - name: Build
         run: pyinstaller bolcap.spec --noconfirm
 
-      - name: Smoke test
+      - name: Smoke test (full pipeline)
         shell: bash
-        run: |
-          ./dist/bolcap/bolcap &
-          APP_PID=$!
-          for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:8756/api/presets > /dev/null && break
-            sleep 1
-          done
-          curl -sf http://127.0.0.1:8756/api/presets | grep -q bold_impact
-          curl -sf http://127.0.0.1:8756/api/setup/status | grep -q model_choices
-          curl -sf http://127.0.0.1:8756/ | grep -qi bolcap
-          kill $APP_PID
+        # Runs first-run setup through the app's own downloader (tiny model),
+        # transcribes a generated fixture, and validates a burned render —
+        # missing ffprobe, codecs, model data, or fonts all fail here.
+        run: bash scripts/smoke_bolcap.sh ./dist/bolcap/bolcap
 
       - name: Package
         shell: bash

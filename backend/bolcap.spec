@@ -4,7 +4,10 @@
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
-datas = [("localapp/static", "localapp/static")]
+datas = [
+    ("localapp/static", "localapp/static"),
+    ("localapp/fonts", "localapp/fonts"),   # OFL fonts for libass fontsdir
+]
 # These packages ship data files PyInstaller misses on its own
 datas += collect_data_files("ctranslate2")
 datas += collect_data_files("faster_whisper", includes=["**/*.json", "assets/*"])
