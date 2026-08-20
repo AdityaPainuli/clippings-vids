@@ -63,6 +63,9 @@ def _transcribe_mlx(audio: str, language: str | None) -> dict | None:
     result = mlx_whisper.transcribe(
         audio, path_or_hf_repo=MLX_MODEL,
         word_timestamps=True, language=language, verbose=None,
+        # Whisper loops on the same phrase when audio is quiet or noisy;
+        # not feeding it its own previous output breaks the loop.
+        condition_on_previous_text=False,
     )
     return {"language": result.get("language"),
             "backend": f"mlx:{MLX_MODEL}",
@@ -89,7 +92,12 @@ def _transcribe_faster_whisper(audio: str, language: str | None) -> dict | None:
     except ImportError:
         return None
     model = _faster_whisper_model()
-    segments, info = model.transcribe(audio, word_timestamps=True, language=language)
+    segments, info = model.transcribe(
+        audio, word_timestamps=True, language=language,
+        # Same loop guard as the mlx path, plus VAD so silence never gets
+        # a chance to hallucinate text in the first place.
+        condition_on_previous_text=False, vad_filter=True,
+    )
     words = []
     sentence_fallback = []
     for seg in segments:  # generator — transcription happens during iteration

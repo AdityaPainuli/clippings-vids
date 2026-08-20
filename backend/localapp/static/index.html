@@ -135,6 +135,21 @@
   </button>
   <input type="file" id="file" accept="video/*" class="hidden">
 
+  <label class="field hidden" id="lang-field" style="margin-top:0.9rem;max-width:280px">
+    <span>Spoken language — set it if auto-detect gets the language wrong</span>
+    <select id="language">
+      <option value="">Auto-detect</option>
+      <option value="hi">Hindi / Hinglish</option>
+      <option value="en">English</option>
+      <option value="ur">Urdu</option>
+      <option value="pa">Punjabi</option>
+      <option value="bn">Bengali</option>
+      <option value="ta">Tamil</option>
+      <option value="te">Telugu</option>
+      <option value="mr">Marathi</option>
+    </select>
+  </label>
+
   <div class="card hidden" id="status-card" style="margin-top:1.25rem">
     <h2>Status</h2>
     <div class="status-line" id="status-line" role="status" aria-live="polite">
@@ -199,9 +214,11 @@ async function checkSetup() {
   const s = await (await fetch("/api/setup/status")).json();
   chosenModel = chosenModel || s.default_model;
   const modelReady = Object.values(s.models).some(Boolean) || s.mlx;
-  if (!s.ffmpeg_needed && modelReady) { hide("setup-card"); show("drop"); return true; }
+  if (!s.ffmpeg_needed && modelReady) {
+    hide("setup-card"); show("drop"); show("lang-field"); return true;
+  }
 
-  show("setup-card"); hide("drop");
+  show("setup-card"); hide("drop"); hide("lang-field");
   $("setup-why").textContent = s.ffmpeg_needed
     ? "Bolcap needs ffmpeg and a Whisper model on this machine. One-time download, everything stays local."
     : "Pick a Whisper model to download. One-time, stays local.";
@@ -261,6 +278,10 @@ async function upload(file) {
   video.src = URL.createObjectURL(file);
   const fd = new FormData();
   fd.append("file", file);
+  // Auto-detect misfires on noisy or short audio and the whole transcript
+  // comes back as the wrong language — this is the escape hatch.
+  const lang = $("language").value;
+  if (lang) fd.append("language", lang);
   try {
     const res = await fetch("/api/transcribe", { method: "POST", body: fd });
     if (!res.ok) throw new Error((await res.json()).detail || "Upload failed");
