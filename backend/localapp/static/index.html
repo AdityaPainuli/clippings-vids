@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bolcap</title>
+<style>
+  :root {
+    --bg: #131417; --panel: #1c1e23; --panel-2: #24262c;
+    --ink: #e9e7e1; --muted: #8f939b; --accent: #ffd24d;
+    --accent-ink: #131417; --ok: #6fbf8f; --err: #e08a5f;
+    --border: #2e3138;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    padding: 2.5rem 1rem 4rem;
+  }
+  main { width: 100%; max-width: 640px; display: flex; flex-direction: column; gap: 1.25rem; }
+  h1 { font-size: 1.6rem; margin: 0; letter-spacing: -0.02em; }
+  h1 .cap { color: var(--accent); }
+  .tagline { color: var(--muted); margin: 0.2rem 0 1rem; font-size: 0.92rem; }
+
+  .drop {
+    border: 2px dashed var(--border); border-radius: 12px; background: var(--panel);
+    padding: 3rem 1rem; text-align: center; cursor: pointer; transition: border-color .15s;
+  }
+  .drop:hover, .drop.hover { border-color: var(--accent); }
+  .drop p { margin: 0.3rem 0; color: var(--muted); }
+  .drop .big { color: var(--ink); font-size: 1.05rem; }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem 1.25rem; }
+  .card h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin: 0 0 0.8rem; }
+
+  .status-line { display: flex; align-items: center; gap: 0.6rem; }
+  .spinner {
+    width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .status-line.error { color: var(--err); }
+  .status-line.done { color: var(--ok); }
+
+  .transcript {
+    max-height: 180px; overflow-y: auto; font-size: 0.9rem; line-height: 1.55;
+    background: var(--panel-2); border-radius: 8px; padding: 0.8rem 1rem; color: var(--ink);
+  }
+  .script-toggle { display: flex; gap: 0.5rem; margin-bottom: 0.7rem; }
+
+  .presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.6rem; }
+  .preset {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.7rem 0.8rem; cursor: pointer; text-align: left;
+  }
+  .preset.selected { border-color: var(--accent); }
+  .preset b { display: block; font-size: 0.9rem; margin-bottom: 0.15rem; }
+  .preset span { font-size: 0.75rem; color: var(--muted); }
+
+  .exports { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+  button, .btn {
+    font: inherit; border: 1px solid var(--border); background: var(--panel-2); color: var(--ink);
+    border-radius: 8px; padding: 0.55rem 1rem; cursor: pointer; font-size: 0.9rem;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.small { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
+  button.small.active { border-color: var(--accent); color: var(--accent); }
+
+  .downloads { display: flex; flex-direction: column; gap: 0.5rem; }
+  .downloads a { color: var(--accent); text-decoration: none; font-size: 0.92rem; }
+  .downloads a:hover { text-decoration: underline; }
+  .hidden { display: none; }
+  .hint { font-size: 0.78rem; color: var(--muted); margin-top: 0.6rem; }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>bol<span class="cap">cap</span></h1>
+    <p class="tagline">Hinglish captions, all on your machine. Nothing is uploaded anywhere.</p>
+  </div>
+
+  <div class="card hidden" id="setup-card">
+    <h2>First-run setup</h2>
+    <p class="hint" style="margin:0 0 0.8rem" id="setup-why"></p>
+    <div id="model-choices" class="presets" style="margin-bottom:0.9rem"></div>
+    <button class="primary" id="setup-btn">Download &amp; set up</button>
+    <div class="status-line hidden" id="setup-progress" style="margin-top:0.8rem"
+         role="status" aria-live="polite">
+      <div class="spinner"></div><span id="setup-progress-text"></span>
+    </div>
+  </div>
+
+  <div class="drop hidden" id="drop" role="button" tabindex="0"
+       aria-label="Choose a video file to caption">
+    <p class="big">Drop a video here or click to choose</p>
+    <p>MP4 / MOV · transcribed with Whisper locally</p>
+    <input type="file" id="file" accept="video/*" class="hidden">
+  </div>
+
+  <div class="card hidden" id="status-card">
+    <h2>Status</h2>
+    <div class="status-line" id="status-line" role="status" aria-live="polite">
+      <div class="spinner"></div><span id="status-text">Uploading…</span>
+    </div>
+  </div>
+
+  <div class="card hidden" id="transcript-card">
+    <h2>Transcript</h2>
+    <div class="script-toggle">
+      <button class="small active" data-script="hinglish">Hinglish</button>
+      <button class="small" data-script="text">Devanagari</button>
+    </div>
+    <div class="transcript" id="transcript"></div>
+    <p class="hint">Word-level editing lands in the next version — exports use this transcript as-is.</p>
+  </div>
+
+  <div class="card hidden" id="style-card">
+    <h2>Caption style</h2>
+    <div class="presets" id="presets"></div>
+  </div>
+
+  <div class="card hidden" id="export-card">
+    <h2>Export</h2>
+    <div class="exports">
+      <button class="primary" data-export="burned">Captioned MP4</button>
+      <button data-export="overlay">Overlay .mov (for editors)</button>
+      <button data-export="srt">.srt</button>
+      <button data-export="ass">.ass</button>
+    </div>
+    <div class="downloads" id="downloads" style="margin-top:0.9rem"></div>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let jobId = null, transcript = null, scriptKey = "hinglish", preset = "bold_impact";
+
+const PRESET_LABELS = {
+  default: ["Classic", "Static yellow highlight"],
+  bold_impact: ["Bold Impact", "Active word pops in"],
+  subtle: ["Subtle", "Soft fade, smaller type"],
+  karaoke: ["Karaoke", "Progressive color fill"],
+};
+
+// ── First-run setup ─────────────────────────────────────────────────────────
+let chosenModel = null;
+
+async function checkSetup() {
+  const s = await (await fetch("/api/setup/status")).json();
+  chosenModel = chosenModel || s.default_model;
+  const modelReady = Object.values(s.models).some(Boolean);
+  if (!s.ffmpeg_needed && modelReady) { hide("setup-card"); show("drop"); return true; }
+
+  show("setup-card"); hide("drop");
+  $("setup-why").textContent = s.ffmpeg_needed
+    ? "Bolcap needs ffmpeg and a Whisper model on this machine. One-time download, everything stays local."
+    : "Pick a Whisper model to download. One-time, stays local.";
+  $("model-choices").innerHTML = Object.entries(s.model_choices).map(([m, info]) =>
+    `<button type="button" class="preset ${m === chosenModel ? "selected" : ""}" data-model="${m}">
+       <b>${m}</b><span>${info.disk} · ${info.note}</span></button>`).join("");
+  document.querySelectorAll("#model-choices .preset").forEach(el => {
+    el.onclick = () => {
+      chosenModel = el.dataset.model;
+      document.querySelectorAll("#model-choices .preset").forEach(p => p.classList.toggle("selected", p === el));
+    };
+  });
+  return false;
+}
+
+$("setup-btn").onclick = async () => {
+  $("setup-btn").disabled = true;
+  const fd = new FormData();
+  fd.append("model", chosenModel);
+  await fetch("/api/setup/run", { method: "POST", body: fd });
+  show("setup-progress"); $("setup-progress").classList.remove("hidden");
+  const t = setInterval(async () => {
+    const s = await (await fetch("/api/setup/status")).json();
+    const p = s.progress || {};
+    if (p.status === "failed") {
+      clearInterval(t); $("setup-btn").disabled = false;
+      $("setup-progress-text").textContent = "Failed: " + (p.error || "unknown") + " — try again";
+      return;
+    }
+    if (p.status === "ready") { clearInterval(t); checkSetup(); return; }
+    let text = p.step === "ffmpeg" ? "Downloading ffmpeg" : `Downloading model (${chosenModel})`;
+    if (p.total_bytes > 0) {
+      text += ` — ${(p.done_bytes / 1048576).toFixed(0)} / ${(p.total_bytes / 1048576).toFixed(0)} MB`;
+    }
+    $("setup-progress-text").textContent = text + "…";
+  }, 1000);
+};
+
+checkSetup();
+
+// ── Upload ──────────────────────────────────────────────────────────────────
+const drop = $("drop"), fileInput = $("file");
+drop.onclick = () => fileInput.click();
+drop.onkeydown = (e) => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+};
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("hover"); };
+drop.ondragleave = () => drop.classList.remove("hover");
+drop.ondrop = (e) => {
+  e.preventDefault(); drop.classList.remove("hover");
+  if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
+};
+fileInput.onchange = () => fileInput.files[0] && upload(fileInput.files[0]);
+
+async function upload(file) {
+  show("status-card"); setStatus("Uploading…");
+  hide("transcript-card"); hide("style-card"); hide("export-card");
+  $("downloads").innerHTML = "";
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const res = await fetch("/api/transcribe", { method: "POST", body: fd });
+    if (!res.ok) throw new Error((await res.json()).detail || "Upload failed");
+    jobId = (await res.json()).job_id;
+    poll(jobId, onTranscribed);
+  } catch (err) { setStatus(err.message, "error"); }
+}
+
+// ── Polling ─────────────────────────────────────────────────────────────────
+const STAGE_TEXT = {
+  queued: "Queued…",
+  transcribing: "Transcribing with Whisper (this is the slow part)…",
+  romanizing: "Romanizing to Hinglish…",
+  rendering: "Rendering…",
+};
+
+function poll(id, onReady, onFail) {
+  // `id` is captured per operation — a new upload mid-flight must not
+  // redirect an older poller to the new job.
+  const t = setInterval(async () => {
+    try {
+      const res = await fetch(`/api/jobs/${id}`);
+      if (!res.ok) throw new Error("Job lost — restart the app and retry");
+      const job = await res.json();
+      if (job.status === "failed") {
+        clearInterval(t); setStatus(job.error || "Failed", "error");
+        if (onFail) onFail(job); return;
+      }
+      if (job.status === "ready") { clearInterval(t); onReady(job); return; }
+      setStatus(STAGE_TEXT[job.status] || job.status);
+    } catch (err) {
+      clearInterval(t); setStatus(err.message, "error");
+      if (onFail) onFail(null);
+    }
+  }, 1500);
+}
+
+function onTranscribed(job) {
+  transcript = job.transcript;
+  setStatus(`Transcribed — ${transcript.words.length} words (${transcript.backend})`, "done");
+  renderTranscript();
+  show("transcript-card"); show("style-card"); show("export-card");
+}
+
+// ── Transcript display ──────────────────────────────────────────────────────
+function renderTranscript() {
+  $("transcript").textContent =
+    transcript.words.map(w => w[scriptKey] || w.text).join(" ");
+}
+document.querySelectorAll(".script-toggle button").forEach(btn => {
+  btn.onclick = () => {
+    scriptKey = btn.dataset.script;
+    document.querySelectorAll(".script-toggle button").forEach(b => b.classList.toggle("active", b === btn));
+    renderTranscript();
+  };
+});
+
+// ── Presets ─────────────────────────────────────────────────────────────────
+(async () => {
+  const res = await fetch("/api/presets");
+  const names = Object.keys((await res.json()).presets);
+  $("presets").innerHTML = names.map(n => {
+    const [label, desc] = PRESET_LABELS[n] || [n, ""];
+    return `<button type="button" class="preset ${n === preset ? "selected" : ""}" data-preset="${n}"><b>${label}</b><span>${desc}</span></button>`;
+  }).join("");
+  // Scoped to #presets — the setup screen's model choices share the
+  // .preset class and must keep their own handlers.
+  document.querySelectorAll("#presets .preset").forEach(el => {
+    el.onclick = () => {
+      preset = el.dataset.preset;
+      document.querySelectorAll("#presets .preset").forEach(p => p.classList.toggle("selected", p === el));
+    };
+  });
+})();
+
+// ── Export ──────────────────────────────────────────────────────────────────
+document.querySelectorAll(".exports button").forEach(btn => {
+  btn.onclick = async () => {
+    const exportFmt = btn.dataset.export;
+    const renderJobId = jobId;   // capture — a new upload must not hijack this render
+    const enableButtons = () =>
+      document.querySelectorAll(".exports button").forEach(b => b.disabled = false);
+    document.querySelectorAll(".exports button").forEach(b => b.disabled = true);
+    show("status-card"); setStatus(`Rendering ${exportFmt}…`);
+    const fd = new FormData();
+    fd.append("job_id", renderJobId);
+    fd.append("style_json", JSON.stringify({ preset }));
+    fd.append("export", exportFmt);
+    fd.append("text_key", scriptKey);
+    try {
+      const res = await fetch("/api/render", { method: "POST", body: fd });
+      if (!res.ok) throw new Error((await res.json()).detail || "Render failed");
+      poll(renderJobId, (job) => {
+        setStatus("Done", "done");
+        enableButtons();
+        // Filenames come from user uploads — build anchors with DOM APIs,
+        // never innerHTML, so markup in a filename stays inert.
+        const downloads = $("downloads");
+        downloads.replaceChildren();
+        for (const [fmt, name] of Object.entries(job.outputs)) {
+          const a = document.createElement("a");
+          a.href = `/api/download/${renderJobId}/${fmt}`;
+          a.download = "";
+          a.textContent = `⬇ ${name}`;
+          downloads.appendChild(a);
+        }
+      }, enableButtons);
+    } catch (err) {
+      setStatus(err.message, "error");
+      enableButtons();
+    }
+  };
+});
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function show(id) { $(id).classList.remove("hidden"); }
+function hide(id) { $(id).classList.add("hidden"); }
+function setStatus(text, kind) {
+  $("status-text").textContent = text;
+  const line = $("status-line");
+  line.className = "status-line" + (kind ? " " + kind : "");
+  line.querySelector(".spinner").style.display = kind ? "none" : "";
+}
+</script>
+</body>
+</html>

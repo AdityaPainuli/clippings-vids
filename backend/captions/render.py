@@ -67,11 +67,21 @@ def _safe_ass_path(ass_path: str) -> str:
     return ass_path.replace("\\", "/").replace(":", "\\:")
 
 
+def _ass_filter(ass_path: str, extra: str = "") -> str:
+    """ass filter spec; CAPTIONS_FONTS_DIR adds bundled fonts for libass
+    (fresh machines may lack Arial Black / Devanagari coverage)."""
+    spec = f"ass={_safe_ass_path(ass_path)}{extra}"
+    fonts_dir = os.getenv("CAPTIONS_FONTS_DIR")
+    if fonts_dir:
+        spec += f":fontsdir={_safe_ass_path(fonts_dir)}"
+    return spec
+
+
 def burn_video(video_path: str, ass_path: str, out_path: str, crf: int = 20) -> str:
     """Render captions into the video (single re-encode, audio copied)."""
     cmd = [
         "ffmpeg", "-y", "-i", video_path,
-        "-vf", f"ass={_safe_ass_path(ass_path)}",
+        "-vf", _ass_filter(ass_path),
         "-c:v", "libx264", "-preset", "fast", "-crf", str(crf),
         "-c:a", "copy", out_path,
     ]
@@ -94,7 +104,7 @@ def render_overlay(ass_path: str, out_path: str, width: int, height: int,
         "ffmpeg", "-y",
         "-f", "lavfi",
         "-i", f"color=c=black@0.0:s={width}x{height}:r={fps}:d={duration},format=yuva420p",
-        "-vf", f"ass={_safe_ass_path(ass_path)}:alpha=1",
+        "-vf", _ass_filter(ass_path, ":alpha=1"),
         "-c:v", "qtrle", out_path,
     ]
     r = subprocess.run(cmd, capture_output=True, text=True)

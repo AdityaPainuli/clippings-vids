@@ -3,3 +3,5 @@
 /uploads
 /captions_output
 __pycache__/
+/dist
+/build
