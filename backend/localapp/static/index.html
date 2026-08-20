@@ -15,19 +15,24 @@
   body {
     margin: 0; background: var(--bg); color: var(--ink);
     font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
-    padding: 2.5rem 1rem 4rem;
+    min-height: 100vh; padding: 2rem 1rem 4rem;
   }
-  main { width: 100%; max-width: 640px; display: flex; flex-direction: column; gap: 1.25rem; }
+  .shell { max-width: 1100px; margin: 0 auto; }
+  header { margin-bottom: 1.25rem; }
   h1 { font-size: 1.6rem; margin: 0; letter-spacing: -0.02em; }
   h1 .cap { color: var(--accent); }
-  .tagline { color: var(--muted); margin: 0.2rem 0 1rem; font-size: 0.92rem; }
+  .tagline { color: var(--muted); margin: 0.2rem 0 0; font-size: 0.92rem; }
+
+  .cols { display: grid; grid-template-columns: minmax(260px, 380px) 1fr; gap: 1.25rem; align-items: start; }
+  @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+  .stack { display: flex; flex-direction: column; gap: 1.25rem; min-width: 0; }
 
   .drop {
     border: 2px dashed var(--border); border-radius: 12px; background: var(--panel);
     padding: 3rem 1rem; text-align: center; cursor: pointer; transition: border-color .15s;
+    width: 100%; color: inherit; font: inherit;
   }
-  .drop:hover, .drop.hover { border-color: var(--accent); }
+  .drop:hover, .drop.hover, .drop:focus-visible { border-color: var(--accent); outline: none; }
   .drop p { margin: 0.3rem 0; color: var(--muted); }
   .drop .big { color: var(--ink); font-size: 1.05rem; }
 
@@ -37,26 +42,52 @@
   .status-line { display: flex; align-items: center; gap: 0.6rem; }
   .spinner {
     width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent);
-    border-radius: 50%; animation: spin 0.8s linear infinite;
+    border-radius: 50%; animation: spin 0.8s linear infinite; flex: none;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
   .status-line.error { color: var(--err); }
   .status-line.done { color: var(--ok); }
 
-  .transcript {
-    max-height: 180px; overflow-y: auto; font-size: 0.9rem; line-height: 1.55;
-    background: var(--panel-2); border-radius: 8px; padding: 0.8rem 1rem; color: var(--ink);
+  /* Video + preview */
+  .player-wrap { position: relative; background: #000; border-radius: 12px; overflow: hidden; }
+  .player-wrap video { display: block; width: 100%; max-height: 62vh; }
+  .player-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+  /* Transcript editor */
+  .words {
+    max-height: 300px; overflow-y: auto; line-height: 2.1; font-size: 0.95rem;
+    background: var(--panel-2); border-radius: 8px; padding: 0.8rem 1rem;
+  }
+  .word {
+    display: inline-block; padding: 0.05rem 0.3rem; margin: 0 0.05rem;
+    border-radius: 5px; cursor: pointer; border: 1px solid transparent;
+    font: inherit; background: none; color: inherit;
+  }
+  .word:hover { background: var(--panel); border-color: var(--border); }
+  .word.active { background: var(--accent); color: var(--accent-ink); }
+  .word input {
+    font: inherit; background: var(--bg); color: var(--ink); border: 1px solid var(--accent);
+    border-radius: 4px; padding: 0 0.25rem; width: 9ch;
   }
   .script-toggle { display: flex; gap: 0.5rem; margin-bottom: 0.7rem; }
 
-  .presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.6rem; }
+  /* Style panel */
+  .style-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem 1rem; }
+  .field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; color: var(--muted); }
+  .field input[type="color"] { width: 100%; height: 32px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); padding: 2px; }
+  .field input[type="number"], .field select {
+    font: inherit; font-size: 0.88rem; background: var(--panel-2); color: var(--ink);
+    border: 1px solid var(--border); border-radius: 6px; padding: 0.35rem 0.5rem; width: 100%;
+  }
+  .field input[type="range"] { width: 100%; }
+  .presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.6rem; margin-bottom: 0.9rem; }
   .preset {
     background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
-    padding: 0.7rem 0.8rem; cursor: pointer; text-align: left;
+    padding: 0.6rem 0.7rem; cursor: pointer; text-align: left; font: inherit; color: inherit;
   }
   .preset.selected { border-color: var(--accent); }
-  .preset b { display: block; font-size: 0.9rem; margin-bottom: 0.15rem; }
-  .preset span { font-size: 0.75rem; color: var(--muted); }
+  .preset b { display: block; font-size: 0.85rem; margin-bottom: 0.1rem; }
+  .preset span { font-size: 0.72rem; color: var(--muted); }
 
   .exports { display: flex; flex-wrap: wrap; gap: 0.6rem; }
   button, .btn {
@@ -69,7 +100,7 @@
   button.small { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
   button.small.active { border-color: var(--accent); color: var(--accent); }
 
-  .downloads { display: flex; flex-direction: column; gap: 0.5rem; }
+  .downloads { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.9rem; }
   .downloads a { color: var(--accent); text-decoration: none; font-size: 0.92rem; }
   .downloads a:hover { text-decoration: underline; }
   .hidden { display: none; }
@@ -77,11 +108,11 @@
 </style>
 </head>
 <body>
-<main>
-  <div>
+<div class="shell">
+  <header>
     <h1>bol<span class="cap">cap</span></h1>
     <p class="tagline">Hinglish captions, all on your machine. Nothing is uploaded anywhere.</p>
-  </div>
+  </header>
 
   <div class="card hidden" id="setup-card">
     <h2>First-run setup</h2>
@@ -94,56 +125,67 @@
     </div>
   </div>
 
-  <div class="drop hidden" id="drop" role="button" tabindex="0"
-       aria-label="Choose a video file to caption">
+  <button class="drop hidden" id="drop" aria-label="Choose a video file to caption">
     <p class="big">Drop a video here or click to choose</p>
     <p>MP4 / MOV · transcribed with Whisper locally</p>
-    <input type="file" id="file" accept="video/*" class="hidden">
-  </div>
+  </button>
+  <input type="file" id="file" accept="video/*" class="hidden">
 
-  <div class="card hidden" id="status-card">
+  <div class="card hidden" id="status-card" style="margin-top:1.25rem">
     <h2>Status</h2>
     <div class="status-line" id="status-line" role="status" aria-live="polite">
       <div class="spinner"></div><span id="status-text">Uploading…</span>
     </div>
   </div>
 
-  <div class="card hidden" id="transcript-card">
-    <h2>Transcript</h2>
-    <div class="script-toggle">
-      <button class="small active" data-script="hinglish">Hinglish</button>
-      <button class="small" data-script="text">Devanagari</button>
+  <div class="cols hidden" id="editor" style="margin-top:1.25rem">
+    <div class="stack">
+      <div class="player-wrap">
+        <video id="video" controls playsinline></video>
+        <canvas id="preview"></canvas>
+      </div>
+      <div class="card">
+        <h2>Export</h2>
+        <div class="exports">
+          <button class="primary" data-export="burned">Captioned MP4</button>
+          <button data-export="overlay">Overlay .mov</button>
+          <button data-export="srt">.srt</button>
+          <button data-export="ass">.ass</button>
+        </div>
+        <div class="downloads" id="downloads"></div>
+      </div>
     </div>
-    <div class="transcript" id="transcript"></div>
-    <p class="hint">Word-level editing lands in the next version — exports use this transcript as-is.</p>
-  </div>
 
-  <div class="card hidden" id="style-card">
-    <h2>Caption style</h2>
-    <div class="presets" id="presets"></div>
-  </div>
+    <div class="stack">
+      <div class="card">
+        <h2>Transcript — click a word to seek, double-click to edit</h2>
+        <div class="script-toggle">
+          <button class="small active" data-script="hinglish">Hinglish</button>
+          <button class="small" data-script="text">Devanagari</button>
+        </div>
+        <div class="words" id="words"></div>
+      </div>
 
-  <div class="card hidden" id="export-card">
-    <h2>Export</h2>
-    <div class="exports">
-      <button class="primary" data-export="burned">Captioned MP4</button>
-      <button data-export="overlay">Overlay .mov (for editors)</button>
-      <button data-export="srt">.srt</button>
-      <button data-export="ass">.ass</button>
+      <div class="card">
+        <h2>Caption style</h2>
+        <div class="presets" id="presets"></div>
+        <div class="style-grid" id="style-controls"></div>
+      </div>
     </div>
-    <div class="downloads" id="downloads" style="margin-top:0.9rem"></div>
   </div>
-</main>
+</div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-let jobId = null, transcript = null, scriptKey = "hinglish", preset = "bold_impact";
+let jobId = null, words = [], scriptKey = "hinglish";
+let style = null, presets = {}, presetName = "bold_impact";
+let videoInfo = null, editingIdx = -1;
 
 const PRESET_LABELS = {
-  default: ["Classic", "Static yellow highlight"],
-  bold_impact: ["Bold Impact", "Active word pops in"],
-  subtle: ["Subtle", "Soft fade, smaller type"],
-  karaoke: ["Karaoke", "Progressive color fill"],
+  default: ["Classic", "Static highlight"],
+  bold_impact: ["Bold Impact", "Pop-in animation"],
+  subtle: ["Subtle", "Soft fade"],
+  karaoke: ["Karaoke", "Progressive fill"],
 };
 
 // ── First-run setup ─────────────────────────────────────────────────────────
@@ -152,7 +194,7 @@ let chosenModel = null;
 async function checkSetup() {
   const s = await (await fetch("/api/setup/status")).json();
   chosenModel = chosenModel || s.default_model;
-  const modelReady = Object.values(s.models).some(Boolean);
+  const modelReady = Object.values(s.models).some(Boolean) || s.mlx;
   if (!s.ffmpeg_needed && modelReady) { hide("setup-card"); show("drop"); return true; }
 
   show("setup-card"); hide("drop");
@@ -176,7 +218,7 @@ $("setup-btn").onclick = async () => {
   const fd = new FormData();
   fd.append("model", chosenModel);
   await fetch("/api/setup/run", { method: "POST", body: fd });
-  show("setup-progress"); $("setup-progress").classList.remove("hidden");
+  $("setup-progress").classList.remove("hidden");
   const t = setInterval(async () => {
     const s = await (await fetch("/api/setup/status")).json();
     const p = s.progress || {};
@@ -194,14 +236,9 @@ $("setup-btn").onclick = async () => {
   }, 1000);
 };
 
-checkSetup();
-
 // ── Upload ──────────────────────────────────────────────────────────────────
 const drop = $("drop"), fileInput = $("file");
 drop.onclick = () => fileInput.click();
-drop.onkeydown = (e) => {
-  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
-};
 drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("hover"); };
 drop.ondragleave = () => drop.classList.remove("hover");
 drop.ondrop = (e) => {
@@ -212,8 +249,10 @@ fileInput.onchange = () => fileInput.files[0] && upload(fileInput.files[0]);
 
 async function upload(file) {
   show("status-card"); setStatus("Uploading…");
-  hide("transcript-card"); hide("style-card"); hide("export-card");
-  $("downloads").innerHTML = "";
+  hide("editor");
+  $("downloads").replaceChildren();
+  // The browser plays the local file directly — it never re-downloads.
+  $("video").src = URL.createObjectURL(file);
   const fd = new FormData();
   fd.append("file", file);
   try {
@@ -233,8 +272,6 @@ const STAGE_TEXT = {
 };
 
 function poll(id, onReady, onFail) {
-  // `id` is captured per operation — a new upload mid-flight must not
-  // redirect an older poller to the new job.
   const t = setInterval(async () => {
     try {
       const res = await fetch(`/api/jobs/${id}`);
@@ -254,42 +291,244 @@ function poll(id, onReady, onFail) {
 }
 
 function onTranscribed(job) {
-  transcript = job.transcript;
-  setStatus(`Transcribed — ${transcript.words.length} words (${transcript.backend})`, "done");
-  renderTranscript();
-  show("transcript-card"); show("style-card"); show("export-card");
+  words = job.transcript.words;
+  videoInfo = job.video_info;
+  setStatus(`Transcribed — ${words.length} words (${job.transcript.backend})`, "done");
+  renderWords();
+  show("editor");
+  sizePreview();
 }
 
-// ── Transcript display ──────────────────────────────────────────────────────
-function renderTranscript() {
-  $("transcript").textContent =
-    transcript.words.map(w => w[scriptKey] || w.text).join(" ");
+// ── Transcript editor ───────────────────────────────────────────────────────
+function wordText(w) { return (w[scriptKey] || w.text || "").trim(); }
+
+function renderWords() {
+  const box = $("words");
+  box.replaceChildren();
+  words.forEach((w, i) => {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "word";
+    el.dataset.idx = i;
+    el.textContent = wordText(w);
+    el.title = `${w.start.toFixed(2)}s — click: seek · double-click: edit`;
+    el.onclick = () => { if (editingIdx !== i) seekTo(w.start); };
+    el.ondblclick = (e) => { e.preventDefault(); startEdit(el, i); };
+    box.appendChild(el);
+    box.appendChild(document.createTextNode(" "));
+  });
 }
+
+function startEdit(el, i) {
+  if (editingIdx >= 0) return;
+  editingIdx = i;
+  const input = document.createElement("input");
+  input.value = wordText(words[i]);
+  el.replaceChildren(input);
+  input.focus();
+  input.select();
+  const commit = () => {
+    const v = input.value.trim();
+    if (v) {
+      // Editing updates the script currently displayed; the other script
+      // stays untouched so toggling back never loses data.
+      words[i][scriptKey] = v;
+      if (scriptKey === "hinglish" && !words[i].text) words[i].text = v;
+    }
+    editingIdx = -1;
+    renderWords();
+  };
+  input.onblur = commit;
+  input.onkeydown = (e) => {
+    if (e.key === "Enter") input.blur();
+    if (e.key === "Escape") { input.value = wordText(words[i]); input.blur(); }
+  };
+}
+
 document.querySelectorAll(".script-toggle button").forEach(btn => {
   btn.onclick = () => {
     scriptKey = btn.dataset.script;
     document.querySelectorAll(".script-toggle button").forEach(b => b.classList.toggle("active", b === btn));
-    renderTranscript();
+    renderWords();
   };
 });
 
-// ── Presets ─────────────────────────────────────────────────────────────────
-(async () => {
-  const res = await fetch("/api/presets");
-  const names = Object.keys((await res.json()).presets);
-  $("presets").innerHTML = names.map(n => {
+function seekTo(t) {
+  const v = $("video");
+  v.currentTime = t + 0.01;
+  v.play();
+}
+
+// ── Style panel ─────────────────────────────────────────────────────────────
+const STYLE_FIELDS = [
+  { key: "font", label: "Font", type: "select",
+    options: ["Arial Black", "Archivo Black", "Inter", "Noto Sans Devanagari"] },
+  { key: "font_size", label: "Size", type: "number", min: 24, max: 200 },
+  { key: "words_per_line", label: "Words per line", type: "number", min: 1, max: 8 },
+  { key: "margin_v", label: "Bottom margin", type: "number", min: 0, max: 1920 },
+  { key: "text_color", label: "Text", type: "color" },
+  { key: "highlight_color", label: "Highlight", type: "color" },
+  { key: "outline_color", label: "Outline", type: "color" },
+  { key: "anim", label: "Animation", type: "select-anim",
+    options: ["none", "pop", "fade", "karaoke"] },
+  { key: "uppercase", label: "Uppercase", type: "select-bool", options: ["yes", "no"] },
+];
+
+async function loadPresets() {
+  presets = (await (await fetch("/api/presets")).json()).presets;
+  style = structuredClone(presets[presetName]);
+  $("presets").innerHTML = Object.keys(presets).map(n => {
     const [label, desc] = PRESET_LABELS[n] || [n, ""];
-    return `<button type="button" class="preset ${n === preset ? "selected" : ""}" data-preset="${n}"><b>${label}</b><span>${desc}</span></button>`;
+    return `<button type="button" class="preset ${n === presetName ? "selected" : ""}" data-preset="${n}"><b>${label}</b><span>${desc}</span></button>`;
   }).join("");
-  // Scoped to #presets — the setup screen's model choices share the
-  // .preset class and must keep their own handlers.
   document.querySelectorAll("#presets .preset").forEach(el => {
     el.onclick = () => {
-      preset = el.dataset.preset;
+      presetName = el.dataset.preset;
+      style = structuredClone(presets[presetName]);
       document.querySelectorAll("#presets .preset").forEach(p => p.classList.toggle("selected", p === el));
+      renderStyleControls();
     };
   });
-})();
+  renderStyleControls();
+}
+
+function renderStyleControls() {
+  const grid = $("style-controls");
+  grid.replaceChildren();
+  for (const f of STYLE_FIELDS) {
+    const wrap = document.createElement("label");
+    wrap.className = "field";
+    const span = document.createElement("span");
+    span.textContent = f.label;
+    wrap.appendChild(span);
+
+    let input;
+    if (f.type === "color") {
+      input = document.createElement("input");
+      input.type = "color";
+      input.value = (style[f.key] || "#ffffff").slice(0, 7);
+      input.oninput = () => { style[f.key] = input.value.toUpperCase(); };
+    } else if (f.type === "number") {
+      input = document.createElement("input");
+      input.type = "number";
+      input.min = f.min; input.max = f.max;
+      input.value = style[f.key];
+      input.onchange = () => {
+        style[f.key] = Math.max(f.min, Math.min(f.max, parseInt(input.value) || f.min));
+        input.value = style[f.key];
+      };
+    } else if (f.type === "select") {
+      input = document.createElement("select");
+      for (const o of f.options) {
+        const opt = document.createElement("option");
+        opt.value = opt.textContent = o;
+        input.appendChild(opt);
+      }
+      input.value = style[f.key];
+      if (input.value !== style[f.key]) {   // custom font not in list
+        const opt = document.createElement("option");
+        opt.value = opt.textContent = style[f.key];
+        input.appendChild(opt);
+        input.value = style[f.key];
+      }
+      input.onchange = () => { style[f.key] = input.value; };
+    } else if (f.type === "select-anim") {
+      input = document.createElement("select");
+      for (const o of f.options) {
+        const opt = document.createElement("option");
+        opt.value = opt.textContent = o;
+        input.appendChild(opt);
+      }
+      input.value = style.animation.type;
+      input.onchange = () => { style.animation.type = input.value; };
+    } else if (f.type === "select-bool") {
+      input = document.createElement("select");
+      for (const o of f.options) {
+        const opt = document.createElement("option");
+        opt.value = opt.textContent = o;
+        input.appendChild(opt);
+      }
+      input.value = style.uppercase ? "yes" : "no";
+      input.onchange = () => { style.uppercase = input.value === "yes"; };
+    }
+    wrap.appendChild(input);
+    grid.appendChild(wrap);
+  }
+}
+
+// ── Canvas caption preview ──────────────────────────────────────────────────
+// Approximates the burned look (font, colors, active-word highlight, margin).
+// The render itself always comes from libass — this is a live guide, not
+// a pixel-exact proof.
+function sizePreview() {
+  const video = $("video"), canvas = $("preview");
+  canvas.width = video.clientWidth * devicePixelRatio;
+  canvas.height = video.clientHeight * devicePixelRatio;
+}
+window.addEventListener("resize", sizePreview);
+$("video").addEventListener("loadedmetadata", sizePreview);
+
+function drawPreview() {
+  requestAnimationFrame(drawPreview);
+  const video = $("video"), canvas = $("preview");
+  if (!words.length || !style || !videoInfo || !video.clientWidth) return;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const t = video.currentTime;
+  // Find the chunk whose time range covers t
+  const n = style.words_per_line;
+  let chunkStart = -1;
+  for (let i = 0; i < words.length; i += n) {
+    const end = words[Math.min(i + n, words.length) - 1].end;
+    if (t >= words[i].start && t <= end) { chunkStart = i; break; }
+  }
+  if (chunkStart < 0) return;
+  const chunk = words.slice(chunkStart, chunkStart + n);
+
+  // Scale ASS PlayRes coordinates onto the displayed video size
+  const scale = canvas.height / videoInfo.height;
+  const fontPx = style.font_size * scale;
+  const y = canvas.height - style.margin_v * scale;
+  ctx.textBaseline = "alphabetic";
+
+  const texts = chunk.map(w => {
+    let txt = wordText(w);
+    return style.uppercase ? txt.toUpperCase() : txt;
+  });
+  const font = (px) => `${px}px "${style.font}", "Archivo Black", sans-serif`;
+
+  // Measure total width (active word slightly bigger)
+  const activeIdx = chunk.findIndex(w => t >= w.start && t < w.end);
+  let total = 0;
+  const widths = texts.map((txt, j) => {
+    ctx.font = font(j === activeIdx ? fontPx * 1.12 : fontPx);
+    const w = ctx.measureText(txt).width;
+    total += w;
+    return w;
+  });
+  total += (texts.length - 1) * fontPx * 0.28;
+
+  let x = (canvas.width - total) / 2;
+  texts.forEach((txt, j) => {
+    const isActive = j === activeIdx;
+    const px = isActive ? fontPx * 1.12 : fontPx;
+    ctx.font = font(px);
+    ctx.lineWidth = Math.max(2, (style.outline_width || 4) * scale * 1.6);
+    ctx.strokeStyle = style.outline_color || "#000000";
+    ctx.lineJoin = "round";
+    if (isActive) ctx.fillStyle = style.highlight_color;
+    else {
+      ctx.fillStyle = style.text_color;
+      ctx.globalAlpha = (activeIdx >= 0 && j > activeIdx) ? 0.45 : 1;
+    }
+    ctx.strokeText(txt, x, y);
+    ctx.fillText(txt, x, y);
+    ctx.globalAlpha = 1;
+    x += widths[j] + fontPx * 0.28;
+  });
+}
+requestAnimationFrame(drawPreview);
 
 // ── Export ──────────────────────────────────────────────────────────────────
 document.querySelectorAll(".exports button").forEach(btn => {
@@ -302,17 +541,16 @@ document.querySelectorAll(".exports button").forEach(btn => {
     show("status-card"); setStatus(`Rendering ${exportFmt}…`);
     const fd = new FormData();
     fd.append("job_id", renderJobId);
-    fd.append("style_json", JSON.stringify({ preset }));
+    fd.append("style_json", JSON.stringify(style));
     fd.append("export", exportFmt);
     fd.append("text_key", scriptKey);
+    fd.append("transcript", JSON.stringify({ words }));   // edits included
     try {
       const res = await fetch("/api/render", { method: "POST", body: fd });
       if (!res.ok) throw new Error((await res.json()).detail || "Render failed");
       poll(renderJobId, (job) => {
         setStatus("Done", "done");
         enableButtons();
-        // Filenames come from user uploads — build anchors with DOM APIs,
-        // never innerHTML, so markup in a filename stays inert.
         const downloads = $("downloads");
         downloads.replaceChildren();
         for (const [fmt, name] of Object.entries(job.outputs)) {
@@ -339,6 +577,9 @@ function setStatus(text, kind) {
   line.className = "status-line" + (kind ? " " + kind : "");
   line.querySelector(".spinner").style.display = kind ? "none" : "";
 }
+
+checkSetup();
+loadPresets();
 </script>
 </body>
 </html>

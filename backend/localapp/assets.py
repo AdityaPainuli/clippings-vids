@@ -126,6 +126,15 @@ def active_model() -> str:
     return load_config().get("model", DEFAULT_MODEL)
 
 
+def _mlx_available() -> bool:
+    """mlx-whisper (dev installs on Apple Silicon) needs no downloaded model."""
+    try:
+        import mlx_whisper  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def setup_status() -> dict:
     return {
         "ffmpeg": ffmpeg_path(),
@@ -134,6 +143,7 @@ def setup_status() -> dict:
         "models": {m: model_installed(m) for m in MODEL_CHOICES},
         "model_choices": MODEL_CHOICES,
         "default_model": active_model(),
+        "mlx": _mlx_available(),
         "home": str(BOLCAP_HOME),
     }
 
