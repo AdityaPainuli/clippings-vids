@@ -258,4 +258,9 @@ async def download(job_id: str, export: str):
     return FileResponse(out["path"], filename=out["name"])
 
 
+# Bundled fonts served so the canvas preview can @font-face the same
+# faces libass burns with.
+FONTS_DIR = Path(__file__).parent / "fonts"
+if FONTS_DIR.is_dir():
+    app.mount("/fonts", StaticFiles(directory=str(FONTS_DIR)), name="fonts")
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
