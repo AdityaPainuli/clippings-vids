@@ -83,7 +83,18 @@
     <p class="tagline">Hinglish captions, all on your machine. Nothing is uploaded anywhere.</p>
   </div>
 
-  <div class="drop" id="drop" role="button" tabindex="0"
+  <div class="card hidden" id="setup-card">
+    <h2>First-run setup</h2>
+    <p class="hint" style="margin:0 0 0.8rem" id="setup-why"></p>
+    <div id="model-choices" class="presets" style="margin-bottom:0.9rem"></div>
+    <button class="primary" id="setup-btn">Download &amp; set up</button>
+    <div class="status-line hidden" id="setup-progress" style="margin-top:0.8rem"
+         role="status" aria-live="polite">
+      <div class="spinner"></div><span id="setup-progress-text"></span>
+    </div>
+  </div>
+
+  <div class="drop hidden" id="drop" role="button" tabindex="0"
        aria-label="Choose a video file to caption">
     <p class="big">Drop a video here or click to choose</p>
     <p>MP4 / MOV · transcribed with Whisper locally</p>
@@ -134,6 +145,56 @@ const PRESET_LABELS = {
   subtle: ["Subtle", "Soft fade, smaller type"],
   karaoke: ["Karaoke", "Progressive color fill"],
 };
+
+// ── First-run setup ─────────────────────────────────────────────────────────
+let chosenModel = null;
+
+async function checkSetup() {
+  const s = await (await fetch("/api/setup/status")).json();
+  chosenModel = chosenModel || s.default_model;
+  const modelReady = Object.values(s.models).some(Boolean);
+  if (!s.ffmpeg_needed && modelReady) { hide("setup-card"); show("drop"); return true; }
+
+  show("setup-card"); hide("drop");
+  $("setup-why").textContent = s.ffmpeg_needed
+    ? "Bolcap needs ffmpeg and a Whisper model on this machine. One-time download, everything stays local."
+    : "Pick a Whisper model to download. One-time, stays local.";
+  $("model-choices").innerHTML = Object.entries(s.model_choices).map(([m, info]) =>
+    `<button type="button" class="preset ${m === chosenModel ? "selected" : ""}" data-model="${m}">
+       <b>${m}</b><span>${info.disk} · ${info.note}</span></button>`).join("");
+  document.querySelectorAll("#model-choices .preset").forEach(el => {
+    el.onclick = () => {
+      chosenModel = el.dataset.model;
+      document.querySelectorAll("#model-choices .preset").forEach(p => p.classList.toggle("selected", p === el));
+    };
+  });
+  return false;
+}
+
+$("setup-btn").onclick = async () => {
+  $("setup-btn").disabled = true;
+  const fd = new FormData();
+  fd.append("model", chosenModel);
+  await fetch("/api/setup/run", { method: "POST", body: fd });
+  show("setup-progress"); $("setup-progress").classList.remove("hidden");
+  const t = setInterval(async () => {
+    const s = await (await fetch("/api/setup/status")).json();
+    const p = s.progress || {};
+    if (p.status === "failed") {
+      clearInterval(t); $("setup-btn").disabled = false;
+      $("setup-progress-text").textContent = "Failed: " + (p.error || "unknown") + " — try again";
+      return;
+    }
+    if (p.status === "ready") { clearInterval(t); checkSetup(); return; }
+    let text = p.step === "ffmpeg" ? "Downloading ffmpeg" : `Downloading model (${chosenModel})`;
+    if (p.total_bytes > 0) {
+      text += ` — ${(p.done_bytes / 1048576).toFixed(0)} / ${(p.total_bytes / 1048576).toFixed(0)} MB`;
+    }
+    $("setup-progress-text").textContent = text + "…";
+  }, 1000);
+};
+
+checkSetup();
 
 // ── Upload ──────────────────────────────────────────────────────────────────
 const drop = $("drop"), fileInput = $("file");
@@ -220,10 +281,12 @@ document.querySelectorAll(".script-toggle button").forEach(btn => {
     const [label, desc] = PRESET_LABELS[n] || [n, ""];
     return `<button type="button" class="preset ${n === preset ? "selected" : ""}" data-preset="${n}"><b>${label}</b><span>${desc}</span></button>`;
   }).join("");
-  document.querySelectorAll(".preset").forEach(el => {
+  // Scoped to #presets — the setup screen's model choices share the
+  // .preset class and must keep their own handlers.
+  document.querySelectorAll("#presets .preset").forEach(el => {
     el.onclick = () => {
       preset = el.dataset.preset;
-      document.querySelectorAll(".preset").forEach(p => p.classList.toggle("selected", p === el));
+      document.querySelectorAll("#presets .preset").forEach(p => p.classList.toggle("selected", p === el));
     };
   });
 })();

@@ -16,10 +16,16 @@ import subprocess
 import tempfile
 
 MLX_MODEL = os.getenv("CAPTIONS_MLX_MODEL", "mlx-community/whisper-large-v3-turbo")
-CPU_MODEL = os.getenv("CAPTIONS_CPU_MODEL", "small")
 
-_fw_model_cache = None
-_cpu_model_cache = None
+
+def _cpu_model_name() -> str:
+    """Read at call time, not import time — the local app changes the
+    active model after setup without restarting the process."""
+    return os.getenv("CAPTIONS_CPU_MODEL", "small")
+
+
+_fw_model_cache = None      # (name, model)
+_cpu_model_cache = None     # (name, model)
 
 
 def _extract_audio(video_path: str, out_path: str):
@@ -64,15 +70,17 @@ def _transcribe_mlx(audio: str, language: str | None) -> dict | None:
 
 
 def _faster_whisper_model():
-    """Load once per process; picks CUDA float16 when available, else int8 CPU."""
+    """Cached per model name; picks CUDA float16 when available, else int8 CPU."""
     global _fw_model_cache
-    if _fw_model_cache is None:
+    name = _cpu_model_name()
+    if _fw_model_cache is None or _fw_model_cache[0] != name:
         from faster_whisper import WhisperModel
         try:
-            _fw_model_cache = WhisperModel(CPU_MODEL, device="cuda", compute_type="float16")
+            model = WhisperModel(name, device="cuda", compute_type="float16")
         except Exception:
-            _fw_model_cache = WhisperModel(CPU_MODEL, device="cpu", compute_type="int8")
-    return _fw_model_cache
+            model = WhisperModel(name, device="cpu", compute_type="int8")
+        _fw_model_cache = (name, model)
+    return _fw_model_cache[1]
 
 
 def _transcribe_faster_whisper(audio: str, language: str | None) -> dict | None:
@@ -92,20 +100,21 @@ def _transcribe_faster_whisper(audio: str, language: str | None) -> dict | None:
             if text:
                 words.append({"start": float(w.start), "end": float(w.end), "text": text})
     return {"language": info.language,
-            "backend": f"faster-whisper:{CPU_MODEL}",
+            "backend": f"faster-whisper:{_cpu_model_name()}",
             "words": words or [s for s in sentence_fallback if s["text"]]}
 
 
 def _transcribe_openai_whisper(audio: str, language: str | None) -> dict:
     global _cpu_model_cache
     import whisper
-    if _cpu_model_cache is None:
-        _cpu_model_cache = whisper.load_model(CPU_MODEL)
-    result = _cpu_model_cache.transcribe(
+    name = _cpu_model_name()
+    if _cpu_model_cache is None or _cpu_model_cache[0] != name:
+        _cpu_model_cache = (name, whisper.load_model(name))
+    result = _cpu_model_cache[1].transcribe(
         audio, word_timestamps=True, language=language, fp16=False, verbose=None,
     )
     return {"language": result.get("language"),
-            "backend": f"whisper:{CPU_MODEL}",
+            "backend": f"whisper:{name}",
             "words": _words_from_result(result)}
 
 
