@@ -64,13 +64,20 @@ def export_srt(words: list, out_path: str, words_per_line: int = 3,
 
 
 def _safe_ass_path(ass_path: str) -> str:
-    return ass_path.replace("\\", "/").replace(":", "\\:")
+    """
+    Escape a path for use as an ffmpeg filter option value. Two parser
+    levels apply (option value, then filtergraph): single-quote the value
+    and escape colons once, per ffmpeg's filtergraph-escaping docs.
+    Windows drive letters (C:/...) break without this.
+    """
+    p = ass_path.replace("\\", "/").replace("'", r"\'").replace(":", r"\:")
+    return f"'{p}'"
 
 
 def _ass_filter(ass_path: str, extra: str = "") -> str:
     """ass filter spec; CAPTIONS_FONTS_DIR adds bundled fonts for libass
     (fresh machines may lack Arial Black / Devanagari coverage)."""
-    spec = f"ass={_safe_ass_path(ass_path)}{extra}"
+    spec = f"ass=filename={_safe_ass_path(ass_path)}{extra}"
     fonts_dir = os.getenv("CAPTIONS_FONTS_DIR")
     if fonts_dir:
         spec += f":fontsdir={_safe_ass_path(fonts_dir)}"
