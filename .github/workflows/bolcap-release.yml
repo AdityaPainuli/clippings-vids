@@ -15,7 +15,7 @@ jobs:
             target: windows-x64
           - os: macos-latest        # arm64
             target: macos-arm64
-          - os: macos-13            # last intel runner
+          - os: macos-15-intel      # macos-13 was retired; this is the Intel label
             target: macos-x64
           - os: ubuntu-latest
             target: linux-x64
