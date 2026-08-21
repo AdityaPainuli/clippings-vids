@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
-from captions import engine, render, romanize, styles, transcribe
+from captions import engine, render, romanize, styles, tighten, transcribe
 from . import assets
 
 # Loopback only — there is no auth. LAN exposure requires the explicit
@@ -135,6 +135,41 @@ async def transcribe_endpoint(
     return {"job_id": job_id}
 
 
+# ── Tighten ──────────────────────────────────────────────────────────────────
+
+@app.post("/api/tighten")
+async def tighten_endpoint(
+    job_id: str = Form(...),
+    silence: bool = Form(True),
+    fillers: bool = Form(True),
+    lexical_fillers: bool = Form(False),   # opt-in: these are real words
+    repeats: bool = Form(True),
+    min_gap: float = Form(0.40),
+):
+    """
+    Propose cuts. Nothing is applied — the UI decides what to keep.
+
+    lexical_fillers defaults off because words like "toh" and "yaani" are
+    usually doing grammatical work; see DECISIONS.md.
+    """
+    job = _job(job_id)
+    if not job.get("transcript"):
+        raise HTTPException(status_code=409, detail="Transcribe first")
+
+    cfg = tighten.TightenConfig(
+        silence=silence, fillers=fillers, lexical_fillers=lexical_fillers,
+        repeats=repeats, min_gap=max(0.15, min(2.0, min_gap)),
+    )
+    duration = job["video_info"]["duration"]
+    cuts = tighten.detect(job["transcript"]["words"], cfg, duration=duration,
+                          media_path=job["video_path"])
+    return {
+        "cuts": [c.to_dict() for c in cuts],
+        "summary": tighten.summarize(cuts, duration),
+        "duration": duration,
+    }
+
+
 # ── Styles ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/presets")
@@ -153,13 +188,27 @@ ExportFormat = Literal["burned", "overlay", "ass", "srt"]
 
 
 def _render_worker(job_id: str, export: str, style: styles.CaptionStyle,
-                   text_key: str, words: list):
+                   text_key: str, words: list, cuts: list | None = None):
     job = jobs[job_id]
     try:
         job["status"] = "rendering"
         info = job["video_info"]
         base = WORK_DIR / job_id
         stem = os.path.splitext(job.get("filename") or "video")[0]
+        source = job["video_path"]
+
+        if cuts:
+            # Cut first, then re-time the words onto the new timeline so the
+            # captions and the cuts can never disagree.
+            cut_objs = [tighten.Cut(c["start"], c["end"], c.get("reason", "silence"),
+                                    c.get("confidence", 1.0), auto=True) for c in cuts]
+            result = tighten.apply_cuts(words, cut_objs, info["duration"])
+            if not result["kept"]:
+                raise RuntimeError("Every part of the video was cut")
+            words = result["words"]
+            source = str(base) + "_cut.mp4"
+            render.render_cut(job["video_path"], result["kept"], source)
+            info = {**info, "duration": result["duration"]}
 
         ass_path = f"{base}.ass"
         with open(ass_path, "w", encoding="utf-8") as f:
@@ -176,8 +225,7 @@ def _render_worker(job_id: str, export: str, style: styles.CaptionStyle,
                                         info["width"], info["height"],
                                         info["duration"], info["fps"])
         else:
-            out = render.burn_video(job["video_path"], ass_path,
-                                    f"{base}_subtitled.mp4")
+            out = render.burn_video(source, ass_path, f"{base}_subtitled.mp4")
 
         ext = os.path.splitext(out)[1]
         suffix = {"burned": "_captioned", "overlay": "_overlay"}.get(export, "")
@@ -195,6 +243,7 @@ async def render_endpoint(
     export: ExportFormat = Form("burned"),
     text_key: str = Form("hinglish"),
     transcript: Optional[str] = Form(None),  # edited transcript override
+    cuts: Optional[str] = Form(None),        # JSON list of spans to remove
 ):
     job = _job(job_id)
     if not job.get("transcript"):
@@ -228,8 +277,15 @@ async def render_endpoint(
     except (json.JSONDecodeError, KeyError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Bad transcript: {e}")
 
+    try:
+        cut_list = json.loads(cuts) if cuts else None
+        if cut_list is not None and not isinstance(cut_list, list):
+            raise ValueError("cuts must be a JSON array")
+    except (json.JSONDecodeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Bad cuts: {e}")
+
     threading.Thread(target=_render_worker,
-                     args=(job_id, export, style, text_key, words),
+                     args=(job_id, export, style, text_key, words, cut_list),
                      daemon=True).start()
     return {"job_id": job_id, "export": export}
 

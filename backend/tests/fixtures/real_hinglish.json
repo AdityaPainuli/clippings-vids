@@ -1,0 +1,3819 @@
+{
+ "name": "reference-hinglish-real-words",
+ "source": "final_draft_2 reference clip, 757 words of natural Hinglish speech",
+ "note": "Every filler-list word here is genuine vocabulary doing grammatical work, and every repeated word is deliberate — rhetorical restarts ('sabse upar aaya Claude. Claude ne...') and Hindi reduplication ('alag-alag'). None may be cut. This is the regression test against naive word-list and duplicate matching.",
+ "duration": 267.08,
+ "words": [
+  {
+   "start": 0.0,
+   "end": 0.52,
+   "text": "kisi"
+  },
+  {
+   "start": 0.52,
+   "end": 0.62,
+   "text": "bhi"
+  },
+  {
+   "start": 0.62,
+   "end": 0.86,
+   "text": "tarah"
+  },
+  {
+   "start": 0.86,
+   "end": 1.04,
+   "text": "ka"
+  },
+  {
+   "start": 1.04,
+   "end": 1.5,
+   "text": "avishkar"
+  },
+  {
+   "start": 1.5,
+   "end": 2.0,
+   "text": "humare"
+  },
+  {
+   "start": 2.0,
+   "end": 2.38,
+   "text": "saamne"
+  },
+  {
+   "start": 2.38,
+   "end": 2.62,
+   "text": "do"
+  },
+  {
+   "start": 2.62,
+   "end": 2.96,
+   "text": "tarah"
+  },
+  {
+   "start": 2.96,
+   "end": 3.14,
+   "text": "ki"
+  },
+  {
+   "start": 3.14,
+   "end": 3.68,
+   "text": "chunautiyan"
+  },
+  {
+   "start": 3.68,
+   "end": 3.98,
+   "text": "pesh"
+  },
+  {
+   "start": 3.98,
+   "end": 4.36,
+   "text": "karta"
+  },
+  {
+   "start": 4.36,
+   "end": 4.42,
+   "text": "hai"
+  },
+  {
+   "start": 4.42,
+   "end": 4.96,
+   "text": "pehla"
+  },
+  {
+   "start": 4.96,
+   "end": 5.14,
+   "text": "toh"
+  },
+  {
+   "start": 5.14,
+   "end": 5.34,
+   "text": "ye"
+  },
+  {
+   "start": 5.34,
+   "end": 5.7,
+   "text": "ki"
+  },
+  {
+   "start": 5.7,
+   "end": 5.82,
+   "text": "hum"
+  },
+  {
+   "start": 5.82,
+   "end": 6.04,
+   "text": "use"
+  },
+  {
+   "start": 6.04,
+   "end": 6.36,
+   "text": "bhali"
+  },
+  {
+   "start": 6.36,
+   "end": 6.72,
+   "text": "bhaanti"
+  },
+  {
+   "start": 6.72,
+   "end": 7.08,
+   "text": "samajh"
+  },
+  {
+   "start": 7.08,
+   "end": 7.26,
+   "text": "le"
+  },
+  {
+   "start": 7.26,
+   "end": 8.02,
+   "text": "doosra"
+  },
+  {
+   "start": 8.02,
+   "end": 8.24,
+   "text": "ye"
+  },
+  {
+   "start": 8.24,
+   "end": 8.56,
+   "text": "ki"
+  },
+  {
+   "start": 8.56,
+   "end": 8.76,
+   "text": "use"
+  },
+  {
+   "start": 8.76,
+   "end": 9.24,
+   "text": "tasalli"
+  },
+  {
+   "start": 9.24,
+   "end": 9.46,
+   "text": "se"
+  },
+  {
+   "start": 9.46,
+   "end": 9.86,
+   "text": "aazma"
+  },
+  {
+   "start": 9.86,
+   "end": 10.16,
+   "text": "liya"
+  },
+  {
+   "start": 10.16,
+   "end": 10.38,
+   "text": "jaaye"
+  },
+  {
+   "start": 10.38,
+   "end": 10.8,
+   "text": "AI"
+  },
+  {
+   "start": 10.8,
+   "end": 11.12,
+   "text": "ke"
+  },
+  {
+   "start": 11.12,
+   "end": 11.56,
+   "text": "avishkar"
+  },
+  {
+   "start": 11.56,
+   "end": 11.78,
+   "text": "ke"
+  },
+  {
+   "start": 11.78,
+   "end": 11.94,
+   "text": "baad"
+  },
+  {
+   "start": 11.94,
+   "end": 12.34,
+   "text": "humne"
+  },
+  {
+   "start": 12.34,
+   "end": 12.76,
+   "text": "pehli"
+  },
+  {
+   "start": 12.76,
+   "end": 13.22,
+   "text": "chunauti"
+  },
+  {
+   "start": 13.22,
+   "end": 13.42,
+   "text": "ko"
+  },
+  {
+   "start": 13.42,
+   "end": 13.7,
+   "text": "kahin"
+  },
+  {
+   "start": 13.7,
+   "end": 13.88,
+   "text": "na"
+  },
+  {
+   "start": 13.88,
+   "end": 14.06,
+   "text": "kahin"
+  },
+  {
+   "start": 14.06,
+   "end": 14.42,
+   "text": "acche"
+  },
+  {
+   "start": 14.42,
+   "end": 14.62,
+   "text": "se"
+  },
+  {
+   "start": 14.62,
+   "end": 14.88,
+   "text": "paar"
+  },
+  {
+   "start": 14.88,
+   "end": 15.1,
+   "text": "kar"
+  },
+  {
+   "start": 15.1,
+   "end": 15.26,
+   "text": "li"
+  },
+  {
+   "start": 15.26,
+   "end": 15.6,
+   "text": "lekin"
+  },
+  {
+   "start": 15.6,
+   "end": 16.02,
+   "text": "doosri"
+  },
+  {
+   "start": 16.02,
+   "end": 16.48,
+   "text": "chunauti"
+  },
+  {
+   "start": 16.48,
+   "end": 16.88,
+   "text": "bachi"
+  },
+  {
+   "start": 16.88,
+   "end": 17.18,
+   "text": "reh"
+  },
+  {
+   "start": 17.18,
+   "end": 17.24,
+   "text": "gayi"
+  },
+  {
+   "start": 17.24,
+   "end": 17.72,
+   "text": "main"
+  },
+  {
+   "start": 17.72,
+   "end": 18.14,
+   "text": "Sylvia"
+  },
+  {
+   "start": 18.14,
+   "end": 18.96,
+   "text": "aapko"
+  },
+  {
+   "start": 18.96,
+   "end": 19.14,
+   "text": "is"
+  },
+  {
+   "start": 19.14,
+   "end": 19.62,
+   "text": "chunauti"
+  },
+  {
+   "start": 19.62,
+   "end": 19.78,
+   "text": "mein"
+  },
+  {
+   "start": 19.78,
+   "end": 20.02,
+   "text": "paar"
+  },
+  {
+   "start": 20.02,
+   "end": 20.36,
+   "text": "karne"
+  },
+  {
+   "start": 20.36,
+   "end": 20.7,
+   "text": "mein"
+  },
+  {
+   "start": 20.7,
+   "end": 21.02,
+   "text": "poori"
+  },
+  {
+   "start": 21.02,
+   "end": 21.28,
+   "text": "madad"
+  },
+  {
+   "start": 21.28,
+   "end": 21.72,
+   "text": "karunga"
+  },
+  {
+   "start": 21.72,
+   "end": 22.3,
+   "text": "iske"
+  },
+  {
+   "start": 22.3,
+   "end": 22.48,
+   "text": "liye"
+  },
+  {
+   "start": 22.48,
+   "end": 22.9,
+   "text": "main"
+  },
+  {
+   "start": 22.9,
+   "end": 23.1,
+   "text": "aur"
+  },
+  {
+   "start": 23.1,
+   "end": 23.3,
+   "text": "mere"
+  },
+  {
+   "start": 23.3,
+   "end": 23.54,
+   "text": "kuch"
+  },
+  {
+   "start": 23.54,
+   "end": 23.88,
+   "text": "dost"
+  },
+  {
+   "start": 23.88,
+   "end": 24.32,
+   "text": "lekar"
+  },
+  {
+   "start": 24.32,
+   "end": 24.46,
+   "text": "aa"
+  },
+  {
+   "start": 24.46,
+   "end": 24.64,
+   "text": "rahe"
+  },
+  {
+   "start": 24.64,
+   "end": 24.86,
+   "text": "hain"
+  },
+  {
+   "start": 24.86,
+   "end": 25.42,
+   "text": "Ainak"
+  },
+  {
+   "start": 25.42,
+   "end": 26.06,
+   "text": "yahan"
+  },
+  {
+   "start": 26.06,
+   "end": 26.26,
+   "text": "hum"
+  },
+  {
+   "start": 26.26,
+   "end": 26.56,
+   "text": "AI"
+  },
+  {
+   "start": 26.56,
+   "end": 26.84,
+   "text": "ka"
+  },
+  {
+   "start": 26.84,
+   "end": 27.28,
+   "text": "istemaal"
+  },
+  {
+   "start": 27.28,
+   "end": 27.62,
+   "text": "karke"
+  },
+  {
+   "start": 27.62,
+   "end": 27.88,
+   "text": "AI"
+  },
+  {
+   "start": 27.88,
+   "end": 28.18,
+   "text": "ko"
+  },
+  {
+   "start": 28.18,
+   "end": 28.32,
+   "text": "hi"
+  },
+  {
+   "start": 28.32,
+   "end": 28.68,
+   "text": "test"
+  },
+  {
+   "start": 28.68,
+   "end": 29.08,
+   "text": "karenge"
+  },
+  {
+   "start": 29.08,
+   "end": 29.52,
+   "text": "lekin"
+  },
+  {
+   "start": 29.52,
+   "end": 29.64,
+   "text": "yeh"
+  },
+  {
+   "start": 29.64,
+   "end": 29.92,
+   "text": "hoga"
+  },
+  {
+   "start": 29.92,
+   "end": 30.28,
+   "text": "kaise"
+  },
+  {
+   "start": 30.28,
+   "end": 30.74,
+   "text": "iske"
+  },
+  {
+   "start": 30.74,
+   "end": 30.84,
+   "text": "liye"
+  },
+  {
+   "start": 30.84,
+   "end": 31.02,
+   "text": "I"
+  },
+  {
+   "start": 31.02,
+   "end": 31.2,
+   "text": "have"
+  },
+  {
+   "start": 31.2,
+   "end": 31.3,
+   "text": "a"
+  },
+  {
+   "start": 31.3,
+   "end": 31.6,
+   "text": "brilliant"
+  },
+  {
+   "start": 31.6,
+   "end": 31.96,
+   "text": "exam"
+  },
+  {
+   "start": 31.96,
+   "end": 32.32,
+   "text": "main"
+  },
+  {
+   "start": 32.32,
+   "end": 32.96,
+   "text": "mere"
+  },
+  {
+   "start": 32.96,
+   "end": 33.18,
+   "text": "bua"
+  },
+  {
+   "start": 33.18,
+   "end": 33.36,
+   "text": "ke"
+  },
+  {
+   "start": 33.36,
+   "end": 33.64,
+   "text": "ladke"
+  },
+  {
+   "start": 33.64,
+   "end": 33.8,
+   "text": "ki"
+  },
+  {
+   "start": 33.8,
+   "end": 34.24,
+   "text": "sarkari"
+  },
+  {
+   "start": 34.24,
+   "end": 34.56,
+   "text": "naukri"
+  },
+  {
+   "start": 34.56,
+   "end": 34.9,
+   "text": "clear"
+  },
+  {
+   "start": 34.9,
+   "end": 36.5,
+   "text": "hote"
+  },
+  {
+   "start": 36.5,
+   "end": 36.68,
+   "text": "ke"
+  },
+  {
+   "start": 36.68,
+   "end": 36.86,
+   "text": "saath"
+  },
+  {
+   "start": 36.86,
+   "end": 37.32,
+   "text": "baat"
+  },
+  {
+   "start": 37.32,
+   "end": 37.6,
+   "text": "uske"
+  },
+  {
+   "start": 37.6,
+   "end": 37.96,
+   "text": "shaadi"
+  },
+  {
+   "start": 37.96,
+   "end": 38.08,
+   "text": "par"
+  },
+  {
+   "start": 38.08,
+   "end": 38.44,
+   "text": "pahunchi"
+  },
+  {
+   "start": 38.44,
+   "end": 38.78,
+   "text": "jab"
+  },
+  {
+   "start": 38.78,
+   "end": 39.0,
+   "text": "baat"
+  },
+  {
+   "start": 39.0,
+   "end": 39.38,
+   "text": "shaadi"
+  },
+  {
+   "start": 39.38,
+   "end": 39.5,
+   "text": "par"
+  },
+  {
+   "start": 39.5,
+   "end": 39.88,
+   "text": "pahunchi"
+  },
+  {
+   "start": 39.88,
+   "end": 40.06,
+   "text": "toh"
+  },
+  {
+   "start": 40.06,
+   "end": 40.44,
+   "text": "sabka"
+  },
+  {
+   "start": 40.44,
+   "end": 40.76,
+   "text": "dhyaan"
+  },
+  {
+   "start": 40.76,
+   "end": 41.2,
+   "text": "paise"
+  },
+  {
+   "start": 41.2,
+   "end": 41.34,
+   "text": "ki"
+  },
+  {
+   "start": 41.34,
+   "end": 41.58,
+   "text": "taraf"
+  },
+  {
+   "start": 41.58,
+   "end": 41.76,
+   "text": "diya"
+  },
+  {
+   "start": 41.76,
+   "end": 42.24,
+   "text": "nahi"
+  },
+  {
+   "start": 42.24,
+   "end": 42.66,
+   "text": "paise"
+  },
+  {
+   "start": 42.66,
+   "end": 42.78,
+   "text": "ka"
+  },
+  {
+   "start": 42.78,
+   "end": 43.1,
+   "text": "kharch"
+  },
+  {
+   "start": 43.1,
+   "end": 43.28,
+   "text": "hona"
+  },
+  {
+   "start": 43.28,
+   "end": 43.46,
+   "text": "nahi"
+  },
+  {
+   "start": 43.46,
+   "end": 43.98,
+   "text": "paise"
+  },
+  {
+   "start": 43.98,
+   "end": 44.14,
+   "text": "ka"
+  },
+  {
+   "start": 44.14,
+   "end": 44.5,
+   "text": "aana"
+  },
+  {
+   "start": 44.5,
+   "end": 45.04,
+   "text": "haan"
+  },
+  {
+   "start": 45.04,
+   "end": 45.4,
+   "text": "aapne"
+  },
+  {
+   "start": 45.4,
+   "end": 45.64,
+   "text": "sahi"
+  },
+  {
+   "start": 45.64,
+   "end": 45.98,
+   "text": "samjha"
+  },
+  {
+   "start": 45.98,
+   "end": 46.58,
+   "text": "dahej"
+  },
+  {
+   "start": 46.58,
+   "end": 47.28,
+   "text": "dowry"
+  },
+  {
+   "start": 47.28,
+   "end": 47.78,
+   "text": "jab"
+  },
+  {
+   "start": 47.78,
+   "end": 48.12,
+   "text": "baat"
+  },
+  {
+   "start": 48.12,
+   "end": 48.46,
+   "text": "mol"
+  },
+  {
+   "start": 48.46,
+   "end": 48.66,
+   "text": "bhaav"
+  },
+  {
+   "start": 48.66,
+   "end": 48.82,
+   "text": "pe"
+  },
+  {
+   "start": 48.82,
+   "end": 49.18,
+   "text": "pahunchi,"
+  },
+  {
+   "start": 49.32,
+   "end": 49.54,
+   "text": "toh"
+  },
+  {
+   "start": 49.54,
+   "end": 49.78,
+   "text": "mere"
+  },
+  {
+   "start": 49.78,
+   "end": 50.02,
+   "text": "bua"
+  },
+  {
+   "start": 50.02,
+   "end": 50.14,
+   "text": "ke"
+  },
+  {
+   "start": 50.14,
+   "end": 50.46,
+   "text": "ladke"
+  },
+  {
+   "start": 50.46,
+   "end": 50.76,
+   "text": "ne"
+  },
+  {
+   "start": 50.76,
+   "end": 51.1,
+   "text": "AI"
+  },
+  {
+   "start": 51.1,
+   "end": 51.44,
+   "text": "pe"
+  },
+  {
+   "start": 51.44,
+   "end": 52.12,
+   "text": "kahin"
+  },
+  {
+   "start": 52.12,
+   "end": 52.26,
+   "text": "se"
+  },
+  {
+   "start": 52.26,
+   "end": 52.52,
+   "text": "video"
+  },
+  {
+   "start": 52.52,
+   "end": 52.84,
+   "text": "dekhi"
+  },
+  {
+   "start": 52.84,
+   "end": 53.1,
+   "text": "jis"
+  },
+  {
+   "start": 53.1,
+   "end": 53.32,
+   "text": "pe"
+  },
+  {
+   "start": 53.32,
+   "end": 53.92,
+   "text": "AI"
+  },
+  {
+   "start": 53.92,
+   "end": 54.42,
+   "text": "dowry"
+  },
+  {
+   "start": 54.42,
+   "end": 55.02,
+   "text": "calculator"
+  },
+  {
+   "start": 55.02,
+   "end": 55.18,
+   "text": "ki"
+  },
+  {
+   "start": 55.18,
+   "end": 55.44,
+   "text": "baat"
+  },
+  {
+   "start": 55.44,
+   "end": 55.6,
+   "text": "ho"
+  },
+  {
+   "start": 55.6,
+   "end": 55.74,
+   "text": "rahi"
+  },
+  {
+   "start": 55.74,
+   "end": 56.1,
+   "text": "hai."
+  },
+  {
+   "start": 56.1,
+   "end": 56.48,
+   "text": "usne"
+  },
+  {
+   "start": 56.48,
+   "end": 56.78,
+   "text": "isi"
+  },
+  {
+   "start": 56.78,
+   "end": 57.16,
+   "text": "prompts"
+  },
+  {
+   "start": 57.16,
+   "end": 57.34,
+   "text": "ko"
+  },
+  {
+   "start": 57.34,
+   "end": 58.04,
+   "text": "apne"
+  },
+  {
+   "start": 58.04,
+   "end": 58.28,
+   "text": "AI"
+  },
+  {
+   "start": 58.28,
+   "end": 58.58,
+   "text": "tool"
+  },
+  {
+   "start": 58.58,
+   "end": 58.72,
+   "text": "pe"
+  },
+  {
+   "start": 58.72,
+   "end": 59.02,
+   "text": "daala"
+  },
+  {
+   "start": 59.02,
+   "end": 59.6,
+   "text": "aur"
+  },
+  {
+   "start": 59.6,
+   "end": 59.84,
+   "text": "uske"
+  },
+  {
+   "start": 59.84,
+   "end": 60.46,
+   "text": "responses"
+  },
+  {
+   "start": 60.46,
+   "end": 61.22,
+   "text": "bahut"
+  },
+  {
+   "start": 61.22,
+   "end": 61.5,
+   "text": "ajeeb"
+  },
+  {
+   "start": 61.5,
+   "end": 61.64,
+   "text": "hai."
+  },
+  {
+   "start": 61.64,
+   "end": 62.0,
+   "text": "isse"
+  },
+  {
+   "start": 62.0,
+   "end": 62.54,
+   "text": "inspire"
+  },
+  {
+   "start": 62.54,
+   "end": 62.76,
+   "text": "hoke"
+  },
+  {
+   "start": 62.76,
+   "end": 63.44,
+   "text": "humne"
+  },
+  {
+   "start": 63.44,
+   "end": 63.88,
+   "text": "paanch"
+  },
+  {
+   "start": 63.88,
+   "end": 64.26,
+   "text": "AI"
+  },
+  {
+   "start": 64.26,
+   "end": 64.74,
+   "text": "bots"
+  },
+  {
+   "start": 64.74,
+   "end": 64.9,
+   "text": "ka"
+  },
+  {
+   "start": 64.9,
+   "end": 65.22,
+   "text": "chain"
+  },
+  {
+   "start": 65.22,
+   "end": 65.5,
+   "text": "dekhi"
+  },
+  {
+   "start": 65.5,
+   "end": 66.54,
+   "text": "ismein"
+  },
+  {
+   "start": 66.54,
+   "end": 66.78,
+   "text": "se"
+  },
+  {
+   "start": 66.78,
+   "end": 67.14,
+   "text": "chaar"
+  },
+  {
+   "start": 67.14,
+   "end": 67.34,
+   "text": "ka"
+  },
+  {
+   "start": 67.34,
+   "end": 67.86,
+   "text": "response"
+  },
+  {
+   "start": 67.86,
+   "end": 68.58,
+   "text": "lagbhag"
+  },
+  {
+   "start": 68.58,
+   "end": 69.04,
+   "text": "similar"
+  },
+  {
+   "start": 69.04,
+   "end": 69.3,
+   "text": "tha"
+  },
+  {
+   "start": 69.3,
+   "end": 69.92,
+   "text": "lekin"
+  },
+  {
+   "start": 69.92,
+   "end": 70.24,
+   "text": "ek"
+  },
+  {
+   "start": 70.24,
+   "end": 70.58,
+   "text": "chat"
+  },
+  {
+   "start": 70.58,
+   "end": 70.86,
+   "text": "bot"
+  },
+  {
+   "start": 70.86,
+   "end": 71.38,
+   "text": "mein"
+  },
+  {
+   "start": 71.38,
+   "end": 71.7,
+   "text": "is"
+  },
+  {
+   "start": 71.7,
+   "end": 72.1,
+   "text": "AI"
+  },
+  {
+   "start": 72.1,
+   "end": 72.56,
+   "text": "dowry"
+  },
+  {
+   "start": 72.56,
+   "end": 73.18,
+   "text": "calculator"
+  },
+  {
+   "start": 73.18,
+   "end": 73.34,
+   "text": "ko"
+  },
+  {
+   "start": 73.34,
+   "end": 73.82,
+   "text": "banane"
+  },
+  {
+   "start": 73.82,
+   "end": 74.02,
+   "text": "se"
+  },
+  {
+   "start": 74.02,
+   "end": 74.38,
+   "text": "saaf"
+  },
+  {
+   "start": 74.38,
+   "end": 74.92,
+   "text": "inkaar"
+  },
+  {
+   "start": 74.92,
+   "end": 75.46,
+   "text": "kiya."
+  },
+  {
+   "start": 75.46,
+   "end": 76.02,
+   "text": "lekin"
+  },
+  {
+   "start": 76.02,
+   "end": 76.44,
+   "text": "humara"
+  },
+  {
+   "start": 76.44,
+   "end": 76.84,
+   "text": "focus"
+  },
+  {
+   "start": 76.84,
+   "end": 77.1,
+   "text": "sirf"
+  },
+  {
+   "start": 77.1,
+   "end": 77.26,
+   "text": "is"
+  },
+  {
+   "start": 77.26,
+   "end": 77.52,
+   "text": "baat"
+  },
+  {
+   "start": 77.52,
+   "end": 77.72,
+   "text": "par"
+  },
+  {
+   "start": 77.72,
+   "end": 77.96,
+   "text": "nahi"
+  },
+  {
+   "start": 77.96,
+   "end": 78.18,
+   "text": "tha"
+  },
+  {
+   "start": 78.18,
+   "end": 78.5,
+   "text": "ki"
+  },
+  {
+   "start": 78.5,
+   "end": 78.76,
+   "text": "kaun"
+  },
+  {
+   "start": 78.76,
+   "end": 78.94,
+   "text": "sa"
+  },
+  {
+   "start": 78.94,
+   "end": 79.22,
+   "text": "AI"
+  },
+  {
+   "start": 79.22,
+   "end": 79.76,
+   "text": "sabse"
+  },
+  {
+   "start": 79.76,
+   "end": 80.2,
+   "text": "behtar"
+  },
+  {
+   "start": 80.2,
+   "end": 80.46,
+   "text": "bot"
+  },
+  {
+   "start": 80.46,
+   "end": 80.74,
+   "text": "bana"
+  },
+  {
+   "start": 80.74,
+   "end": 80.92,
+   "text": "kar"
+  },
+  {
+   "start": 80.92,
+   "end": 81.24,
+   "text": "deta"
+  },
+  {
+   "start": 81.24,
+   "end": 81.66,
+   "text": "hai."
+  },
+  {
+   "start": 81.66,
+   "end": 82.08,
+   "text": "humne"
+  },
+  {
+   "start": 82.08,
+   "end": 82.52,
+   "text": "teen"
+  },
+  {
+   "start": 82.52,
+   "end": 82.86,
+   "text": "cheezon"
+  },
+  {
+   "start": 82.86,
+   "end": 83.1,
+   "text": "par"
+  },
+  {
+   "start": 83.1,
+   "end": 83.48,
+   "text": "focus"
+  },
+  {
+   "start": 83.48,
+   "end": 83.84,
+   "text": "kiya."
+  },
+  {
+   "start": 83.84,
+   "end": 84.26,
+   "text": "pehla"
+  },
+  {
+   "start": 84.26,
+   "end": 84.84,
+   "text": "ethics,"
+  },
+  {
+   "start": 84.96,
+   "end": 85.44,
+   "text": "doosra"
+  },
+  {
+   "start": 85.44,
+   "end": 86.16,
+   "text": "legality"
+  },
+  {
+   "start": 86.16,
+   "end": 86.7,
+   "text": "aur"
+  },
+  {
+   "start": 86.7,
+   "end": 87.14,
+   "text": "teesra"
+  },
+  {
+   "start": 87.14,
+   "end": 87.9,
+   "text": "language."
+  },
+  {
+   "start": 87.9,
+   "end": 88.1,
+   "text": "is"
+  },
+  {
+   "start": 88.1,
+   "end": 88.26,
+   "text": "par"
+  },
+  {
+   "start": 88.26,
+   "end": 88.44,
+   "text": "hum"
+  },
+  {
+   "start": 88.44,
+   "end": 88.94,
+   "text": "vistaar"
+  },
+  {
+   "start": 88.94,
+   "end": 89.14,
+   "text": "se"
+  },
+  {
+   "start": 89.14,
+   "end": 89.5,
+   "text": "charcha"
+  },
+  {
+   "start": 89.5,
+   "end": 89.92,
+   "text": "dubara"
+  },
+  {
+   "start": 89.92,
+   "end": 90.48,
+   "text": "karenge."
+  },
+  {
+   "start": 90.48,
+   "end": 90.96,
+   "text": "sabse"
+  },
+  {
+   "start": 90.96,
+   "end": 91.26,
+   "text": "upar"
+  },
+  {
+   "start": 91.26,
+   "end": 91.56,
+   "text": "aaya"
+  },
+  {
+   "start": 91.56,
+   "end": 91.88,
+   "text": "Claude,"
+  },
+  {
+   "start": 92.08,
+   "end": 92.34,
+   "text": "Claude"
+  },
+  {
+   "start": 92.34,
+   "end": 92.48,
+   "text": "ne"
+  },
+  {
+   "start": 92.48,
+   "end": 92.66,
+   "text": "is"
+  },
+  {
+   "start": 92.66,
+   "end": 92.98,
+   "text": "poore"
+  },
+  {
+   "start": 92.98,
+   "end": 93.46,
+   "text": "concept"
+  },
+  {
+   "start": 93.46,
+   "end": 93.62,
+   "text": "ko"
+  },
+  {
+   "start": 93.62,
+   "end": 94.1,
+   "text": "socially"
+  },
+  {
+   "start": 94.1,
+   "end": 94.52,
+   "text": "harmful"
+  },
+  {
+   "start": 94.52,
+   "end": 94.96,
+   "text": "bataya"
+  },
+  {
+   "start": 94.96,
+   "end": 95.18,
+   "text": "aur"
+  },
+  {
+   "start": 95.18,
+   "end": 95.4,
+   "text": "ise"
+  },
+  {
+   "start": 95.4,
+   "end": 95.9,
+   "text": "execute"
+  },
+  {
+   "start": 95.9,
+   "end": 96.26,
+   "text": "karne"
+  },
+  {
+   "start": 96.26,
+   "end": 96.46,
+   "text": "se"
+  },
+  {
+   "start": 96.46,
+   "end": 96.74,
+   "text": "mana"
+  },
+  {
+   "start": 96.74,
+   "end": 96.94,
+   "text": "kar"
+  },
+  {
+   "start": 96.94,
+   "end": 97.3,
+   "text": "diya."
+  },
+  {
+   "start": 97.3,
+   "end": 97.6,
+   "text": "uska"
+  },
+  {
+   "start": 97.6,
+   "end": 98.0,
+   "text": "jawab"
+  },
+  {
+   "start": 98.0,
+   "end": 98.52,
+   "text": "sabse"
+  },
+  {
+   "start": 98.52,
+   "end": 98.96,
+   "text": "zyada"
+  },
+  {
+   "start": 98.96,
+   "end": 99.48,
+   "text": "ethically"
+  },
+  {
+   "start": 99.48,
+   "end": 99.88,
+   "text": "aware"
+  },
+  {
+   "start": 99.88,
+   "end": 100.14,
+   "text": "tha."
+  },
+  {
+   "start": 100.14,
+   "end": 100.44,
+   "text": "doosre"
+  },
+  {
+   "start": 100.44,
+   "end": 100.7,
+   "text": "number"
+  },
+  {
+   "start": 100.7,
+   "end": 100.9,
+   "text": "par"
+  },
+  {
+   "start": 100.9,
+   "end": 101.12,
+   "text": "aata"
+  },
+  {
+   "start": 101.12,
+   "end": 101.22,
+   "text": "hai"
+  },
+  {
+   "start": 101.22,
+   "end": 101.94,
+   "text": "ChatGPT,"
+  },
+  {
+   "start": 102.04,
+   "end": 102.74,
+   "text": "ChatGPT"
+  },
+  {
+   "start": 102.74,
+   "end": 102.94,
+   "text": "ne"
+  },
+  {
+   "start": 102.94,
+   "end": 103.18,
+   "text": "kai"
+  },
+  {
+   "start": 103.18,
+   "end": 103.54,
+   "text": "response"
+  },
+  {
+   "start": 103.54,
+   "end": 104.06,
+   "text": "mein"
+  },
+  {
+   "start": 104.06,
+   "end": 104.46,
+   "text": "saaf"
+  },
+  {
+   "start": 104.46,
+   "end": 104.78,
+   "text": "kaha"
+  },
+  {
+   "start": 104.78,
+   "end": 105.14,
+   "text": "ki"
+  },
+  {
+   "start": 105.14,
+   "end": 105.58,
+   "text": "bharat"
+  },
+  {
+   "start": 105.58,
+   "end": 105.84,
+   "text": "mein"
+  },
+  {
+   "start": 105.84,
+   "end": 106.3,
+   "text": "dowry"
+  },
+  {
+   "start": 106.3,
+   "end": 106.7,
+   "text": "illegal"
+  },
+  {
+   "start": 106.7,
+   "end": 106.92,
+   "text": "hai"
+  },
+  {
+   "start": 106.92,
+   "end": 107.4,
+   "text": "lekin"
+  },
+  {
+   "start": 107.4,
+   "end": 107.9,
+   "text": "response"
+  },
+  {
+   "start": 107.9,
+   "end": 108.32,
+   "text": "ko"
+  },
+  {
+   "start": 108.32,
+   "end": 108.66,
+   "text": "generate"
+  },
+  {
+   "start": 108.66,
+   "end": 109.0,
+   "text": "kar"
+  },
+  {
+   "start": 109.0,
+   "end": 109.32,
+   "text": "diya."
+  },
+  {
+   "start": 109.32,
+   "end": 109.7,
+   "text": "doosre"
+  },
+  {
+   "start": 109.7,
+   "end": 109.92,
+   "text": "number"
+  },
+  {
+   "start": 109.92,
+   "end": 110.12,
+   "text": "par"
+  },
+  {
+   "start": 110.12,
+   "end": 110.38,
+   "text": "aata"
+  },
+  {
+   "start": 110.38,
+   "end": 110.46,
+   "text": "hai"
+  },
+  {
+   "start": 110.46,
+   "end": 110.88,
+   "text": "Gemini,"
+  },
+  {
+   "start": 111.08,
+   "end": 111.42,
+   "text": "Gemini"
+  },
+  {
+   "start": 111.42,
+   "end": 111.6,
+   "text": "ne"
+  },
+  {
+   "start": 111.6,
+   "end": 111.76,
+   "text": "is"
+  },
+  {
+   "start": 111.76,
+   "end": 112.1,
+   "text": "idea"
+  },
+  {
+   "start": 112.1,
+   "end": 112.36,
+   "text": "ko"
+  },
+  {
+   "start": 112.36,
+   "end": 112.74,
+   "text": "kabhi"
+  },
+  {
+   "start": 112.74,
+   "end": 113.5,
+   "text": "satirical"
+  },
+  {
+   "start": 113.5,
+   "end": 113.7,
+   "text": "way"
+  },
+  {
+   "start": 113.7,
+   "end": 113.86,
+   "text": "mein"
+  },
+  {
+   "start": 113.86,
+   "end": 114.06,
+   "text": "aur"
+  },
+  {
+   "start": 114.06,
+   "end": 114.36,
+   "text": "kabhi"
+  },
+  {
+   "start": 114.36,
+   "end": 114.7,
+   "text": "social"
+  },
+  {
+   "start": 114.7,
+   "end": 115.14,
+   "text": "commentary"
+  },
+  {
+   "start": 115.14,
+   "end": 115.44,
+   "text": "ke"
+  },
+  {
+   "start": 115.44,
+   "end": 115.64,
+   "text": "roop"
+  },
+  {
+   "start": 115.64,
+   "end": 115.76,
+   "text": "mein"
+  },
+  {
+   "start": 115.76,
+   "end": 116.2,
+   "text": "rakha."
+  },
+  {
+   "start": 116.2,
+   "end": 116.54,
+   "text": "yaani"
+  },
+  {
+   "start": 116.54,
+   "end": 116.88,
+   "text": "usne"
+  },
+  {
+   "start": 116.88,
+   "end": 117.4,
+   "text": "thoda"
+  },
+  {
+   "start": 117.4,
+   "end": 117.82,
+   "text": "context"
+  },
+  {
+   "start": 117.82,
+   "end": 118.36,
+   "text": "dene"
+  },
+  {
+   "start": 118.36,
+   "end": 118.56,
+   "text": "ki"
+  },
+  {
+   "start": 118.56,
+   "end": 118.92,
+   "text": "koshish"
+  },
+  {
+   "start": 118.92,
+   "end": 119.16,
+   "text": "ki,"
+  },
+  {
+   "start": 119.26,
+   "end": 119.54,
+   "text": "lekin"
+  },
+  {
+   "start": 119.54,
+   "end": 119.76,
+   "text": "phir"
+  },
+  {
+   "start": 119.76,
+   "end": 119.92,
+   "text": "bhi"
+  },
+  {
+   "start": 119.92,
+   "end": 120.62,
+   "text": "implementation"
+  },
+  {
+   "start": 120.62,
+   "end": 121.4,
+   "text": "provide"
+  },
+  {
+   "start": 121.4,
+   "end": 121.6,
+   "text": "kar"
+  },
+  {
+   "start": 121.6,
+   "end": 121.78,
+   "text": "diya."
+  },
+  {
+   "start": 121.86,
+   "end": 122.2,
+   "text": "chauthe"
+  },
+  {
+   "start": 122.2,
+   "end": 122.5,
+   "text": "number"
+  },
+  {
+   "start": 122.5,
+   "end": 122.7,
+   "text": "par"
+  },
+  {
+   "start": 122.7,
+   "end": 123.0,
+   "text": "aata"
+  },
+  {
+   "start": 123.0,
+   "end": 123.08,
+   "text": "hai"
+  },
+  {
+   "start": 123.08,
+   "end": 123.58,
+   "text": "DeepSeek."
+  },
+  {
+   "start": 123.7,
+   "end": 124.22,
+   "text": "DeepSeek"
+  },
+  {
+   "start": 124.22,
+   "end": 124.42,
+   "text": "ne"
+  },
+  {
+   "start": 124.42,
+   "end": 124.52,
+   "text": "is"
+  },
+  {
+   "start": 124.52,
+   "end": 124.9,
+   "text": "poore"
+  },
+  {
+   "start": 124.9,
+   "end": 125.26,
+   "text": "idea"
+  },
+  {
+   "start": 125.26,
+   "end": 125.68,
+   "text": "ko"
+  },
+  {
+   "start": 125.68,
+   "end": 126.0,
+   "text": "ek"
+  },
+  {
+   "start": 126.0,
+   "end": 126.38,
+   "text": "normal"
+  },
+  {
+   "start": 126.38,
+   "end": 127.06,
+   "text": "software"
+  },
+  {
+   "start": 127.06,
+   "end": 127.56,
+   "text": "project"
+  },
+  {
+   "start": 127.56,
+   "end": 127.88,
+   "text": "ki"
+  },
+  {
+   "start": 127.88,
+   "end": 128.02,
+   "text": "tarah"
+  },
+  {
+   "start": 128.02,
+   "end": 128.38,
+   "text": "treat"
+  },
+  {
+   "start": 128.38,
+   "end": 128.7,
+   "text": "kiya."
+  },
+  {
+   "start": 128.78,
+   "end": 129.12,
+   "text": "usmein"
+  },
+  {
+   "start": 129.12,
+   "end": 129.4,
+   "text": "ethical"
+  },
+  {
+   "start": 129.4,
+   "end": 129.96,
+   "text": "ya"
+  },
+  {
+   "start": 129.96,
+   "end": 130.22,
+   "text": "legal"
+  },
+  {
+   "start": 130.22,
+   "end": 130.6,
+   "text": "warning"
+  },
+  {
+   "start": 130.6,
+   "end": 131.14,
+   "text": "bahut"
+  },
+  {
+   "start": 131.14,
+   "end": 131.36,
+   "text": "kam"
+  },
+  {
+   "start": 131.36,
+   "end": 131.56,
+   "text": "thi."
+  },
+  {
+   "start": 131.68,
+   "end": 131.92,
+   "text": "aur"
+  },
+  {
+   "start": 131.92,
+   "end": 132.3,
+   "text": "sabse"
+  },
+  {
+   "start": 132.3,
+   "end": 132.64,
+   "text": "neeche"
+  },
+  {
+   "start": 132.64,
+   "end": 132.96,
+   "text": "aata"
+  },
+  {
+   "start": 132.96,
+   "end": 133.14,
+   "text": "hai"
+  },
+  {
+   "start": 133.14,
+   "end": 133.44,
+   "text": "Grok."
+  },
+  {
+   "start": 133.44,
+   "end": 133.8,
+   "text": "Grok"
+  },
+  {
+   "start": 133.8,
+   "end": 134.02,
+   "text": "ne"
+  },
+  {
+   "start": 134.02,
+   "end": 134.16,
+   "text": "is"
+  },
+  {
+   "start": 134.16,
+   "end": 134.44,
+   "text": "poore"
+  },
+  {
+   "start": 134.44,
+   "end": 134.86,
+   "text": "concept"
+  },
+  {
+   "start": 134.86,
+   "end": 135.22,
+   "text": "ko"
+  },
+  {
+   "start": 135.22,
+   "end": 135.6,
+   "text": "almost"
+  },
+  {
+   "start": 135.6,
+   "end": 136.18,
+   "text": "ek"
+  },
+  {
+   "start": 136.18,
+   "end": 136.78,
+   "text": "exciting"
+  },
+  {
+   "start": 136.78,
+   "end": 137.46,
+   "text": "startup"
+  },
+  {
+   "start": 137.46,
+   "end": 137.84,
+   "text": "idea"
+  },
+  {
+   "start": 137.84,
+   "end": 138.14,
+   "text": "ki"
+  },
+  {
+   "start": 138.14,
+   "end": 138.38,
+   "text": "tarah"
+  },
+  {
+   "start": 138.38,
+   "end": 138.76,
+   "text": "treat"
+  },
+  {
+   "start": 138.76,
+   "end": 139.1,
+   "text": "kiya."
+  },
+  {
+   "start": 139.14,
+   "end": 139.48,
+   "text": "uska"
+  },
+  {
+   "start": 139.48,
+   "end": 139.96,
+   "text": "jawab"
+  },
+  {
+   "start": 139.96,
+   "end": 140.36,
+   "text": "social"
+  },
+  {
+   "start": 140.36,
+   "end": 140.82,
+   "text": "harm"
+  },
+  {
+   "start": 140.82,
+   "end": 141.1,
+   "text": "ya"
+  },
+  {
+   "start": 141.1,
+   "end": 141.6,
+   "text": "legality"
+  },
+  {
+   "start": 141.6,
+   "end": 141.86,
+   "text": "ki"
+  },
+  {
+   "start": 141.86,
+   "end": 142.34,
+   "text": "understanding"
+  },
+  {
+   "start": 142.34,
+   "end": 142.78,
+   "text": "se"
+  },
+  {
+   "start": 142.78,
+   "end": 143.32,
+   "text": "lagbhag"
+  },
+  {
+   "start": 143.32,
+   "end": 143.66,
+   "text": "poori"
+  },
+  {
+   "start": 143.66,
+   "end": 144.08,
+   "text": "tarike"
+  },
+  {
+   "start": 144.08,
+   "end": 144.24,
+   "text": "se"
+  },
+  {
+   "start": 144.24,
+   "end": 144.52,
+   "text": "door"
+  },
+  {
+   "start": 144.52,
+   "end": 144.72,
+   "text": "tha."
+  },
+  {
+   "start": 144.8,
+   "end": 145.2,
+   "text": "testing"
+  },
+  {
+   "start": 145.2,
+   "end": 145.38,
+   "text": "se"
+  },
+  {
+   "start": 145.38,
+   "end": 145.48,
+   "text": "ek"
+  },
+  {
+   "start": 145.48,
+   "end": 145.78,
+   "text": "bahut"
+  },
+  {
+   "start": 145.78,
+   "end": 146.06,
+   "text": "badi"
+  },
+  {
+   "start": 146.06,
+   "end": 146.32,
+   "text": "baat"
+  },
+  {
+   "start": 146.32,
+   "end": 146.74,
+   "text": "saamne"
+  },
+  {
+   "start": 146.74,
+   "end": 147.04,
+   "text": "aati"
+  },
+  {
+   "start": 147.04,
+   "end": 147.16,
+   "text": "hai."
+  },
+  {
+   "start": 147.24,
+   "end": 147.5,
+   "text": "AI"
+  },
+  {
+   "start": 147.5,
+   "end": 147.86,
+   "text": "sirf"
+  },
+  {
+   "start": 147.86,
+   "end": 148.34,
+   "text": "technology"
+  },
+  {
+   "start": 148.34,
+   "end": 148.78,
+   "text": "nahi"
+  },
+  {
+   "start": 148.78,
+   "end": 148.9,
+   "text": "hai."
+  },
+  {
+   "start": 149.0,
+   "end": 149.24,
+   "text": "har"
+  },
+  {
+   "start": 149.24,
+   "end": 149.54,
+   "text": "AI"
+  },
+  {
+   "start": 149.54,
+   "end": 149.92,
+   "text": "model"
+  },
+  {
+   "start": 149.92,
+   "end": 150.46,
+   "text": "apne"
+  },
+  {
+   "start": 150.46,
+   "end": 150.78,
+   "text": "saath"
+  },
+  {
+   "start": 150.78,
+   "end": 151.28,
+   "text": "values,"
+  },
+  {
+   "start": 151.52,
+   "end": 151.8,
+   "text": "training"
+  },
+  {
+   "start": 151.8,
+   "end": 152.32,
+   "text": "priorities"
+  },
+  {
+   "start": 152.32,
+   "end": 152.8,
+   "text": "aur"
+  },
+  {
+   "start": 152.8,
+   "end": 153.12,
+   "text": "social"
+  },
+  {
+   "start": 153.12,
+   "end": 153.66,
+   "text": "understanding"
+  },
+  {
+   "start": 153.66,
+   "end": 154.08,
+   "text": "bhi"
+  },
+  {
+   "start": 154.08,
+   "end": 154.52,
+   "text": "lekar"
+  },
+  {
+   "start": 154.52,
+   "end": 154.82,
+   "text": "aata"
+  },
+  {
+   "start": 154.82,
+   "end": 154.92,
+   "text": "hai."
+  },
+  {
+   "start": 154.92,
+   "end": 155.22,
+   "text": "kuch"
+  },
+  {
+   "start": 155.22,
+   "end": 155.52,
+   "text": "AI"
+  },
+  {
+   "start": 155.52,
+   "end": 156.0,
+   "text": "system"
+  },
+  {
+   "start": 156.0,
+   "end": 156.64,
+   "text": "sirf"
+  },
+  {
+   "start": 156.64,
+   "end": 157.14,
+   "text": "helpful"
+  },
+  {
+   "start": 157.14,
+   "end": 157.6,
+   "text": "banne"
+  },
+  {
+   "start": 157.6,
+   "end": 157.78,
+   "text": "ki"
+  },
+  {
+   "start": 157.78,
+   "end": 158.16,
+   "text": "koshish"
+  },
+  {
+   "start": 158.16,
+   "end": 158.54,
+   "text": "karte"
+  },
+  {
+   "start": 158.54,
+   "end": 158.7,
+   "text": "hain,"
+  },
+  {
+   "start": 158.74,
+   "end": 158.9,
+   "text": "jab"
+  },
+  {
+   "start": 158.9,
+   "end": 159.06,
+   "text": "ki"
+  },
+  {
+   "start": 159.06,
+   "end": 159.3,
+   "text": "kuch"
+  },
+  {
+   "start": 159.3,
+   "end": 159.72,
+   "text": "system"
+  },
+  {
+   "start": 159.72,
+   "end": 160.06,
+   "text": "ye"
+  },
+  {
+   "start": 160.06,
+   "end": 160.18,
+   "text": "bhi"
+  },
+  {
+   "start": 160.18,
+   "end": 160.74,
+   "text": "samajhte"
+  },
+  {
+   "start": 160.74,
+   "end": 160.94,
+   "text": "hain"
+  },
+  {
+   "start": 160.94,
+   "end": 161.2,
+   "text": "ki"
+  },
+  {
+   "start": 161.2,
+   "end": 161.6,
+   "text": "har"
+  },
+  {
+   "start": 161.6,
+   "end": 162.1,
+   "text": "technically"
+  },
+  {
+   "start": 162.1,
+   "end": 162.84,
+   "text": "possible"
+  },
+  {
+   "start": 162.84,
+   "end": 163.4,
+   "text": "cheez"
+  },
+  {
+   "start": 163.4,
+   "end": 164.04,
+   "text": "socially"
+  },
+  {
+   "start": 164.04,
+   "end": 164.64,
+   "text": "acceptable"
+  },
+  {
+   "start": 164.64,
+   "end": 165.12,
+   "text": "nahi"
+  },
+  {
+   "start": 165.12,
+   "end": 165.46,
+   "text": "hoti"
+  },
+  {
+   "start": 165.46,
+   "end": 165.74,
+   "text": "hai."
+  },
+  {
+   "start": 165.74,
+   "end": 166.06,
+   "text": "humne"
+  },
+  {
+   "start": 166.06,
+   "end": 166.36,
+   "text": "sirf"
+  },
+  {
+   "start": 166.36,
+   "end": 166.62,
+   "text": "English"
+  },
+  {
+   "start": 166.62,
+   "end": 166.88,
+   "text": "mein"
+  },
+  {
+   "start": 166.88,
+   "end": 167.04,
+   "text": "test"
+  },
+  {
+   "start": 167.04,
+   "end": 167.4,
+   "text": "nahi"
+  },
+  {
+   "start": 167.4,
+   "end": 167.64,
+   "text": "kiya."
+  },
+  {
+   "start": 167.76,
+   "end": 168.1,
+   "text": "humne"
+  },
+  {
+   "start": 168.1,
+   "end": 168.48,
+   "text": "saare"
+  },
+  {
+   "start": 168.48,
+   "end": 168.82,
+   "text": "prompts"
+  },
+  {
+   "start": 168.82,
+   "end": 169.22,
+   "text": "aur"
+  },
+  {
+   "start": 169.22,
+   "end": 169.5,
+   "text": "unke"
+  },
+  {
+   "start": 169.5,
+   "end": 169.9,
+   "text": "responses"
+  },
+  {
+   "start": 169.9,
+   "end": 170.34,
+   "text": "ko"
+  },
+  {
+   "start": 170.34,
+   "end": 170.64,
+   "text": "alag"
+  },
+  {
+   "start": 170.64,
+   "end": 170.86,
+   "text": "-alag"
+  },
+  {
+   "start": 170.86,
+   "end": 171.3,
+   "text": "languages"
+  },
+  {
+   "start": 171.3,
+   "end": 171.58,
+   "text": "mein"
+  },
+  {
+   "start": 171.58,
+   "end": 171.74,
+   "text": "bhi"
+  },
+  {
+   "start": 171.74,
+   "end": 172.0,
+   "text": "test"
+  },
+  {
+   "start": 172.0,
+   "end": 172.3,
+   "text": "kiya."
+  },
+  {
+   "start": 172.3,
+   "end": 172.78,
+   "text": "kyunki"
+  },
+  {
+   "start": 172.78,
+   "end": 173.0,
+   "text": "AI"
+  },
+  {
+   "start": 173.0,
+   "end": 173.38,
+   "text": "kya"
+  },
+  {
+   "start": 173.38,
+   "end": 173.86,
+   "text": "bolta"
+  },
+  {
+   "start": 173.86,
+   "end": 174.02,
+   "text": "hai,"
+  },
+  {
+   "start": 174.16,
+   "end": 174.52,
+   "text": "utna"
+  },
+  {
+   "start": 174.52,
+   "end": 174.64,
+   "text": "hi"
+  },
+  {
+   "start": 174.64,
+   "end": 175.0,
+   "text": "important"
+  },
+  {
+   "start": 175.0,
+   "end": 175.36,
+   "text": "hai"
+  },
+  {
+   "start": 175.36,
+   "end": 175.72,
+   "text": "ye"
+  },
+  {
+   "start": 175.72,
+   "end": 176.2,
+   "text": "jaanna"
+  },
+  {
+   "start": 176.2,
+   "end": 176.42,
+   "text": "ki"
+  },
+  {
+   "start": 176.42,
+   "end": 176.64,
+   "text": "AI"
+  },
+  {
+   "start": 176.64,
+   "end": 177.04,
+   "text": "kis"
+  },
+  {
+   "start": 177.04,
+   "end": 177.36,
+   "text": "language"
+  },
+  {
+   "start": 177.36,
+   "end": 177.7,
+   "text": "mein"
+  },
+  {
+   "start": 177.7,
+   "end": 177.96,
+   "text": "kya"
+  },
+  {
+   "start": 177.96,
+   "end": 178.38,
+   "text": "bolta"
+  },
+  {
+   "start": 178.38,
+   "end": 178.52,
+   "text": "hai."
+  },
+  {
+   "start": 178.58,
+   "end": 178.76,
+   "text": "aur"
+  },
+  {
+   "start": 178.76,
+   "end": 179.06,
+   "text": "yahin"
+  },
+  {
+   "start": 179.06,
+   "end": 179.24,
+   "text": "is"
+  },
+  {
+   "start": 179.24,
+   "end": 179.74,
+   "text": "experiment"
+  },
+  {
+   "start": 179.74,
+   "end": 180.12,
+   "text": "ka"
+  },
+  {
+   "start": 180.12,
+   "end": 180.56,
+   "text": "sabse"
+  },
+  {
+   "start": 180.56,
+   "end": 180.96,
+   "text": "bada"
+  },
+  {
+   "start": 180.96,
+   "end": 181.48,
+   "text": "revelation"
+  },
+  {
+   "start": 181.48,
+   "end": 181.78,
+   "text": "hai."
+  },
+  {
+   "start": 181.9,
+   "end": 182.32,
+   "text": "sabse"
+  },
+  {
+   "start": 182.32,
+   "end": 182.64,
+   "text": "pehle"
+  },
+  {
+   "start": 182.64,
+   "end": 182.9,
+   "text": "baat"
+  },
+  {
+   "start": 182.9,
+   "end": 183.24,
+   "text": "karte"
+  },
+  {
+   "start": 183.24,
+   "end": 183.3,
+   "text": "hain"
+  },
+  {
+   "start": 183.3,
+   "end": 183.72,
+   "text": "angrezi."
+  },
+  {
+   "start": 183.84,
+   "end": 184.34,
+   "text": "angrezi"
+  },
+  {
+   "start": 184.34,
+   "end": 184.46,
+   "text": "mein"
+  },
+  {
+   "start": 184.46,
+   "end": 184.92,
+   "text": "almost"
+  },
+  {
+   "start": 184.92,
+   "end": 185.48,
+   "text": "sabhi"
+  },
+  {
+   "start": 185.48,
+   "end": 185.7,
+   "text": "AI"
+  },
+  {
+   "start": 185.7,
+   "end": 186.08,
+   "text": "bots"
+  },
+  {
+   "start": 186.08,
+   "end": 186.94,
+   "text": "comparatively"
+  },
+  {
+   "start": 186.94,
+   "end": 187.76,
+   "text": "zyada"
+  },
+  {
+   "start": 187.76,
+   "end": 188.14,
+   "text": "cautious"
+  },
+  {
+   "start": 188.14,
+   "end": 188.46,
+   "text": "the."
+  },
+  {
+   "start": 188.56,
+   "end": 188.76,
+   "text": "kai"
+  },
+  {
+   "start": 188.76,
+   "end": 189.06,
+   "text": "bots"
+  },
+  {
+   "start": 189.06,
+   "end": 189.4,
+   "text": "ne"
+  },
+  {
+   "start": 189.4,
+   "end": 189.76,
+   "text": "ethical"
+  },
+  {
+   "start": 189.76,
+   "end": 190.18,
+   "text": "warnings"
+  },
+  {
+   "start": 190.18,
+   "end": 190.48,
+   "text": "di,"
+  },
+  {
+   "start": 190.62,
+   "end": 190.8,
+   "text": "kuch"
+  },
+  {
+   "start": 190.8,
+   "end": 190.98,
+   "text": "ne"
+  },
+  {
+   "start": 190.98,
+   "end": 191.46,
+   "text": "legality"
+  },
+  {
+   "start": 191.46,
+   "end": 191.84,
+   "text": "mentions"
+  },
+  {
+   "start": 191.84,
+   "end": 192.22,
+   "text": "ki"
+  },
+  {
+   "start": 192.22,
+   "end": 192.54,
+   "text": "aur"
+  },
+  {
+   "start": 192.54,
+   "end": 192.74,
+   "text": "kuch"
+  },
+  {
+   "start": 192.74,
+   "end": 192.9,
+   "text": "ne"
+  },
+  {
+   "start": 192.9,
+   "end": 193.18,
+   "text": "harmful"
+  },
+  {
+   "start": 193.18,
+   "end": 193.82,
+   "text": "implications"
+  },
+  {
+   "start": 193.82,
+   "end": 194.18,
+   "text": "ko"
+  },
+  {
+   "start": 194.18,
+   "end": 194.5,
+   "text": "recognize"
+  },
+  {
+   "start": 194.5,
+   "end": 194.9,
+   "text": "kiya."
+  },
+  {
+   "start": 194.9,
+   "end": 195.24,
+   "text": "kyunki"
+  },
+  {
+   "start": 195.24,
+   "end": 195.54,
+   "text": "English"
+  },
+  {
+   "start": 195.54,
+   "end": 196.02,
+   "text": "internet"
+  },
+  {
+   "start": 196.02,
+   "end": 196.44,
+   "text": "par"
+  },
+  {
+   "start": 196.44,
+   "end": 196.66,
+   "text": "AI"
+  },
+  {
+   "start": 196.66,
+   "end": 197.1,
+   "text": "safety"
+  },
+  {
+   "start": 197.1,
+   "end": 197.52,
+   "text": "training"
+  },
+  {
+   "start": 197.52,
+   "end": 198.0,
+   "text": "sabse"
+  },
+  {
+   "start": 198.0,
+   "end": 198.38,
+   "text": "zyada"
+  },
+  {
+   "start": 198.38,
+   "end": 198.58,
+   "text": "ho"
+  },
+  {
+   "start": 198.58,
+   "end": 198.74,
+   "text": "gayi."
+  },
+  {
+   "start": 198.8,
+   "end": 199.06,
+   "text": "lekin"
+  },
+  {
+   "start": 199.06,
+   "end": 199.36,
+   "text": "jaise"
+  },
+  {
+   "start": 199.36,
+   "end": 199.48,
+   "text": "hi"
+  },
+  {
+   "start": 199.48,
+   "end": 199.74,
+   "text": "prompt"
+  },
+  {
+   "start": 199.74,
+   "end": 200.12,
+   "text": "hindi"
+  },
+  {
+   "start": 200.12,
+   "end": 200.24,
+   "text": "mein"
+  },
+  {
+   "start": 200.24,
+   "end": 200.52,
+   "text": "gaya,"
+  },
+  {
+   "start": 200.58,
+   "end": 201.08,
+   "text": "responses"
+  },
+  {
+   "start": 201.08,
+   "end": 201.64,
+   "text": "badalne"
+  },
+  {
+   "start": 201.64,
+   "end": 201.88,
+   "text": "lage."
+  },
+  {
+   "start": 201.92,
+   "end": 202.14,
+   "text": "kuch"
+  },
+  {
+   "start": 202.14,
+   "end": 202.48,
+   "text": "bots"
+  },
+  {
+   "start": 202.48,
+   "end": 202.78,
+   "text": "ka"
+  },
+  {
+   "start": 202.78,
+   "end": 203.06,
+   "text": "tone"
+  },
+  {
+   "start": 203.06,
+   "end": 203.5,
+   "text": "zyada"
+  },
+  {
+   "start": 203.5,
+   "end": 203.82,
+   "text": "casual"
+  },
+  {
+   "start": 203.82,
+   "end": 204.1,
+   "text": "ho"
+  },
+  {
+   "start": 204.1,
+   "end": 204.24,
+   "text": "gaya,"
+  },
+  {
+   "start": 204.32,
+   "end": 204.5,
+   "text": "kai"
+  },
+  {
+   "start": 204.5,
+   "end": 204.8,
+   "text": "jagah"
+  },
+  {
+   "start": 204.8,
+   "end": 205.1,
+   "text": "ethical"
+  },
+  {
+   "start": 205.1,
+   "end": 205.54,
+   "text": "warnings"
+  },
+  {
+   "start": 205.54,
+   "end": 205.92,
+   "text": "kam"
+  },
+  {
+   "start": 205.92,
+   "end": 206.12,
+   "text": "ho"
+  },
+  {
+   "start": 206.12,
+   "end": 206.26,
+   "text": "gayi,"
+  },
+  {
+   "start": 206.42,
+   "end": 206.54,
+   "text": "aur"
+  },
+  {
+   "start": 206.54,
+   "end": 206.84,
+   "text": "technical"
+  },
+  {
+   "start": 206.84,
+   "end": 207.58,
+   "text": "execution"
+  },
+  {
+   "start": 207.58,
+   "end": 208.26,
+   "text": "zyada"
+  },
+  {
+   "start": 208.26,
+   "end": 208.62,
+   "text": "detail"
+  },
+  {
+   "start": 208.62,
+   "end": 208.88,
+   "text": "ho"
+  },
+  {
+   "start": 208.88,
+   "end": 209.02,
+   "text": "gaya."
+  },
+  {
+   "start": 209.08,
+   "end": 209.4,
+   "text": "urdu"
+  },
+  {
+   "start": 209.4,
+   "end": 209.78,
+   "text": "mein"
+  },
+  {
+   "start": 209.78,
+   "end": 210.34,
+   "text": "badlaav"
+  },
+  {
+   "start": 210.34,
+   "end": 210.6,
+   "text": "aur"
+  },
+  {
+   "start": 210.6,
+   "end": 210.78,
+   "text": "bhi"
+  },
+  {
+   "start": 210.78,
+   "end": 211.12,
+   "text": "interesting"
+  },
+  {
+   "start": 211.12,
+   "end": 211.42,
+   "text": "hai."
+  },
+  {
+   "start": 211.52,
+   "end": 211.78,
+   "text": "kai"
+  },
+  {
+   "start": 211.78,
+   "end": 212.36,
+   "text": "bots"
+  },
+  {
+   "start": 212.36,
+   "end": 213.24,
+   "text": "culturally"
+  },
+  {
+   "start": 213.24,
+   "end": 213.82,
+   "text": "sensitive"
+  },
+  {
+   "start": 213.82,
+   "end": 214.26,
+   "text": "hone"
+  },
+  {
+   "start": 214.26,
+   "end": 214.46,
+   "text": "ki"
+  },
+  {
+   "start": 214.46,
+   "end": 214.82,
+   "text": "koshish"
+  },
+  {
+   "start": 214.82,
+   "end": 215.12,
+   "text": "karte"
+  },
+  {
+   "start": 215.12,
+   "end": 215.36,
+   "text": "dikhe,"
+  },
+  {
+   "start": 215.36,
+   "end": 215.78,
+   "text": "lekin"
+  },
+  {
+   "start": 215.78,
+   "end": 216.08,
+   "text": "usi"
+  },
+  {
+   "start": 216.08,
+   "end": 216.4,
+   "text": "process"
+  },
+  {
+   "start": 216.4,
+   "end": 216.76,
+   "text": "mein"
+  },
+  {
+   "start": 216.76,
+   "end": 217.24,
+   "text": "unhone"
+  },
+  {
+   "start": 217.24,
+   "end": 217.5,
+   "text": "issue"
+  },
+  {
+   "start": 217.5,
+   "end": 217.84,
+   "text": "ko"
+  },
+  {
+   "start": 217.84,
+   "end": 218.18,
+   "text": "challenge"
+  },
+  {
+   "start": 218.18,
+   "end": 218.7,
+   "text": "karne"
+  },
+  {
+   "start": 218.7,
+   "end": 218.88,
+   "text": "ki"
+  },
+  {
+   "start": 218.88,
+   "end": 219.22,
+   "text": "bajaye,"
+  },
+  {
+   "start": 219.36,
+   "end": 219.86,
+   "text": "softer"
+  },
+  {
+   "start": 219.86,
+   "end": 220.38,
+   "text": "language"
+  },
+  {
+   "start": 220.38,
+   "end": 220.72,
+   "text": "use"
+  },
+  {
+   "start": 220.72,
+   "end": 220.82,
+   "text": "ki"
+  },
+  {
+   "start": 220.82,
+   "end": 221.16,
+   "text": "kuch"
+  },
+  {
+   "start": 221.16,
+   "end": 221.64,
+   "text": "responses"
+  },
+  {
+   "start": 221.64,
+   "end": 222.02,
+   "text": "mein"
+  },
+  {
+   "start": 222.02,
+   "end": 222.5,
+   "text": "legality"
+  },
+  {
+   "start": 222.5,
+   "end": 223.16,
+   "text": "lagbhag"
+  },
+  {
+   "start": 223.16,
+   "end": 223.52,
+   "text": "gayab"
+  },
+  {
+   "start": 223.52,
+   "end": 223.7,
+   "text": "thi,"
+  },
+  {
+   "start": 223.9,
+   "end": 224.0,
+   "text": "aur"
+  },
+  {
+   "start": 224.0,
+   "end": 224.3,
+   "text": "focus,"
+  },
+  {
+   "start": 224.6,
+   "end": 225.02,
+   "text": "relationship,"
+  },
+  {
+   "start": 225.34,
+   "end": 225.62,
+   "text": "marriage,"
+  },
+  {
+   "start": 225.82,
+   "end": 226.08,
+   "text": "culture"
+  },
+  {
+   "start": 226.08,
+   "end": 226.48,
+   "text": "ya"
+  },
+  {
+   "start": 226.48,
+   "end": 226.8,
+   "text": "family"
+  },
+  {
+   "start": 226.8,
+   "end": 227.56,
+   "text": "expectations"
+  },
+  {
+   "start": 227.56,
+   "end": 228.04,
+   "text": "par"
+  },
+  {
+   "start": 228.04,
+   "end": 228.46,
+   "text": "shift"
+  },
+  {
+   "start": 228.46,
+   "end": 228.7,
+   "text": "ho"
+  },
+  {
+   "start": 228.7,
+   "end": 228.84,
+   "text": "gaya."
+  },
+  {
+   "start": 228.94,
+   "end": 229.34,
+   "text": "yahan"
+  },
+  {
+   "start": 229.34,
+   "end": 229.7,
+   "text": "ethical"
+  },
+  {
+   "start": 229.7,
+   "end": 230.18,
+   "text": "framing"
+  },
+  {
+   "start": 230.18,
+   "end": 231.04,
+   "text": "dilute"
+  },
+  {
+   "start": 231.04,
+   "end": 231.14,
+   "text": "ho"
+  },
+  {
+   "start": 231.14,
+   "end": 231.42,
+   "text": "gaya."
+  },
+  {
+   "start": 231.42,
+   "end": 231.74,
+   "text": "aur"
+  },
+  {
+   "start": 231.74,
+   "end": 231.94,
+   "text": "phir"
+  },
+  {
+   "start": 231.94,
+   "end": 232.18,
+   "text": "aaya"
+  },
+  {
+   "start": 232.18,
+   "end": 232.28,
+   "text": "hai"
+  },
+  {
+   "start": 232.28,
+   "end": 232.62,
+   "text": "Spanish."
+  },
+  {
+   "start": 232.94,
+   "end": 233.4,
+   "text": "Spanish"
+  },
+  {
+   "start": 233.4,
+   "end": 234.2,
+   "text": "responses"
+  },
+  {
+   "start": 234.2,
+   "end": 234.94,
+   "text": "comparatively"
+  },
+  {
+   "start": 234.94,
+   "end": 235.52,
+   "text": "sabse"
+  },
+  {
+   "start": 235.52,
+   "end": 235.86,
+   "text": "neutral"
+  },
+  {
+   "start": 235.86,
+   "end": 236.36,
+   "text": "aur"
+  },
+  {
+   "start": 236.36,
+   "end": 236.66,
+   "text": "technical"
+  },
+  {
+   "start": 236.66,
+   "end": 237.12,
+   "text": "lage."
+  },
+  {
+   "start": 237.22,
+   "end": 237.5,
+   "text": "kai"
+  },
+  {
+   "start": 237.5,
+   "end": 237.8,
+   "text": "bots"
+  },
+  {
+   "start": 237.8,
+   "end": 238.52,
+   "text": "ne"
+  },
+  {
+   "start": 238.52,
+   "end": 238.96,
+   "text": "context"
+  },
+  {
+   "start": 238.96,
+   "end": 239.4,
+   "text": "ko"
+  },
+  {
+   "start": 239.4,
+   "end": 239.78,
+   "text": "Indian"
+  },
+  {
+   "start": 239.78,
+   "end": 240.2,
+   "text": "dowry"
+  },
+  {
+   "start": 240.2,
+   "end": 240.54,
+   "text": "system"
+  },
+  {
+   "start": 240.54,
+   "end": 240.82,
+   "text": "ki"
+  },
+  {
+   "start": 240.82,
+   "end": 241.16,
+   "text": "bajaye,"
+  },
+  {
+   "start": 241.16,
+   "end": 241.72,
+   "text": "generic"
+  },
+  {
+   "start": 241.72,
+   "end": 242.52,
+   "text": "marriage"
+  },
+  {
+   "start": 242.52,
+   "end": 243.16,
+   "text": "expenses"
+  },
+  {
+   "start": 243.16,
+   "end": 243.6,
+   "text": "ya"
+  },
+  {
+   "start": 243.6,
+   "end": 244.12,
+   "text": "compatibility"
+  },
+  {
+   "start": 244.12,
+   "end": 245.2,
+   "text": "scoring"
+  },
+  {
+   "start": 245.2,
+   "end": 245.52,
+   "text": "ki"
+  },
+  {
+   "start": 245.52,
+   "end": 245.76,
+   "text": "tarah"
+  },
+  {
+   "start": 245.76,
+   "end": 246.22,
+   "text": "interpret"
+  },
+  {
+   "start": 246.22,
+   "end": 246.68,
+   "text": "kiya."
+  },
+  {
+   "start": 246.76,
+   "end": 247.12,
+   "text": "isse"
+  },
+  {
+   "start": 247.12,
+   "end": 247.66,
+   "text": "legality"
+  },
+  {
+   "start": 247.66,
+   "end": 247.94,
+   "text": "aur"
+  },
+  {
+   "start": 247.94,
+   "end": 248.2,
+   "text": "social"
+  },
+  {
+   "start": 248.2,
+   "end": 248.52,
+   "text": "harm"
+  },
+  {
+   "start": 248.52,
+   "end": 249.22,
+   "text": "dono"
+  },
+  {
+   "start": 249.22,
+   "end": 249.58,
+   "text": "weaken"
+  },
+  {
+   "start": 249.58,
+   "end": 249.76,
+   "text": "ho"
+  },
+  {
+   "start": 249.76,
+   "end": 249.92,
+   "text": "gaya"
+  },
+  {
+   "start": 249.92,
+   "end": 249.92,
+   "text": "hai."
+  },
+  {
+   "start": 250.0,
+   "end": 250.22,
+   "text": "kuch"
+  },
+  {
+   "start": 250.22,
+   "end": 250.52,
+   "text": "bots"
+  },
+  {
+   "start": 250.52,
+   "end": 250.76,
+   "text": "ne"
+  },
+  {
+   "start": 250.76,
+   "end": 250.9,
+   "text": "toh"
+  },
+  {
+   "start": 250.9,
+   "end": 251.18,
+   "text": "ise"
+  },
+  {
+   "start": 251.18,
+   "end": 251.38,
+   "text": "ek"
+  },
+  {
+   "start": 251.38,
+   "end": 251.74,
+   "text": "normal"
+  },
+  {
+   "start": 251.74,
+   "end": 252.44,
+   "text": "calculator"
+  },
+  {
+   "start": 252.44,
+   "end": 252.86,
+   "text": "app"
+  },
+  {
+   "start": 252.86,
+   "end": 253.14,
+   "text": "ki"
+  },
+  {
+   "start": 253.14,
+   "end": 253.24,
+   "text": "tarah"
+  },
+  {
+   "start": 253.24,
+   "end": 253.7,
+   "text": "explain"
+  },
+  {
+   "start": 253.7,
+   "end": 254.2,
+   "text": "karna"
+  },
+  {
+   "start": 254.2,
+   "end": 254.54,
+   "text": "shuru"
+  },
+  {
+   "start": 254.54,
+   "end": 254.72,
+   "text": "kar"
+  },
+  {
+   "start": 254.72,
+   "end": 254.94,
+   "text": "diya."
+  },
+  {
+   "start": 255.1,
+   "end": 255.48,
+   "text": "isse"
+  },
+  {
+   "start": 255.48,
+   "end": 255.66,
+   "text": "ek"
+  },
+  {
+   "start": 255.66,
+   "end": 255.92,
+   "text": "bahut"
+  },
+  {
+   "start": 255.92,
+   "end": 256.18,
+   "text": "bada"
+  },
+  {
+   "start": 256.18,
+   "end": 256.54,
+   "text": "sawaal"
+  },
+  {
+   "start": 256.54,
+   "end": 256.8,
+   "text": "hota"
+  },
+  {
+   "start": 256.8,
+   "end": 256.9,
+   "text": "hai"
+  },
+  {
+   "start": 256.9,
+   "end": 257.08,
+   "text": "ki"
+  },
+  {
+   "start": 257.08,
+   "end": 257.36,
+   "text": "kya"
+  },
+  {
+   "start": 257.36,
+   "end": 257.62,
+   "text": "AI"
+  },
+  {
+   "start": 257.62,
+   "end": 258.06,
+   "text": "sabhi"
+  },
+  {
+   "start": 258.06,
+   "end": 258.48,
+   "text": "zubaan"
+  },
+  {
+   "start": 258.48,
+   "end": 258.68,
+   "text": "mein"
+  },
+  {
+   "start": 258.68,
+   "end": 258.96,
+   "text": "safe"
+  },
+  {
+   "start": 258.96,
+   "end": 259.18,
+   "text": "hai"
+  },
+  {
+   "start": 259.18,
+   "end": 259.7,
+   "text": "ya"
+  },
+  {
+   "start": 259.7,
+   "end": 260.06,
+   "text": "AI"
+  },
+  {
+   "start": 260.06,
+   "end": 260.48,
+   "text": "safety"
+  },
+  {
+   "start": 260.48,
+   "end": 260.98,
+   "text": "abhi"
+  },
+  {
+   "start": 260.98,
+   "end": 261.16,
+   "text": "bhi"
+  },
+  {
+   "start": 261.16,
+   "end": 261.56,
+   "text": "largely"
+  },
+  {
+   "start": 261.56,
+   "end": 262.2,
+   "text": "English"
+  },
+  {
+   "start": 262.2,
+   "end": 262.88,
+   "text": "centric"
+  },
+  {
+   "start": 262.88,
+   "end": 263.1,
+   "text": "hai?"
+  },
+  {
+   "start": 263.22,
+   "end": 263.5,
+   "text": "What"
+  },
+  {
+   "start": 263.5,
+   "end": 263.64,
+   "text": "do"
+  },
+  {
+   "start": 263.64,
+   "end": 263.74,
+   "text": "you"
+  },
+  {
+   "start": 263.74,
+   "end": 263.96,
+   "text": "think"
+  },
+  {
+   "start": 263.96,
+   "end": 264.24,
+   "text": "about"
+  },
+  {
+   "start": 264.24,
+   "end": 264.6,
+   "text": "this?"
+  },
+  {
+   "start": 264.8,
+   "end": 265.04,
+   "text": "Please"
+  },
+  {
+   "start": 265.04,
+   "end": 265.34,
+   "text": "let"
+  },
+  {
+   "start": 265.34,
+   "end": 265.52,
+   "text": "us"
+  },
+  {
+   "start": 265.52,
+   "end": 265.68,
+   "text": "know"
+  },
+  {
+   "start": 265.68,
+   "end": 265.82,
+   "text": "in"
+  },
+  {
+   "start": 265.82,
+   "end": 265.92,
+   "text": "the"
+  },
+  {
+   "start": 265.92,
+   "end": 266.2,
+   "text": "comment"
+  },
+  {
+   "start": 266.2,
+   "end": 266.52,
+   "text": "box."
+  },
+  {
+   "start": 266.74,
+   "end": 266.88,
+   "text": "Thank"
+  },
+  {
+   "start": 266.88,
+   "end": 267.08,
+   "text": "you."
+  }
+ ],
+ "filler_indices": [],
+ "known_real_words": [
+  15,
+  43,
+  124,
+  140,
+  152,
+  266,
+  267,
+  296,
+  297,
+  321,
+  322,
+  339,
+  359,
+  360,
+  387,
+  388,
+  489,
+  490,
+  529,
+  530,
+  662,
+  663,
+  704
+ ]
+}

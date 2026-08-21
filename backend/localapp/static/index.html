@@ -107,6 +107,29 @@
   .downloads { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.9rem; }
   .downloads a { color: var(--accent); text-decoration: none; font-size: 0.92rem; }
   .downloads a:hover { text-decoration: underline; }
+  /* Tighten */
+  .tighten-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
+  .meter { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+  .meter .was { color: var(--muted); text-decoration: line-through; }
+  .meter .now { color: var(--accent); font-weight: 600; }
+  .meter .saved { color: var(--muted); font-size: 0.8rem; }
+  .track { display: flex; gap: 2px; height: 46px; margin: 0.5rem 0 0.6rem; }
+  .seg {
+    border: none; border-radius: 4px; padding: 0; cursor: pointer;
+    background: #33373f; border-bottom: 3px solid var(--accent);
+    position: relative; overflow: hidden; min-width: 2px;
+  }
+  .seg.cut { background: #1b1d22; border-bottom-color: var(--cut-color, #6b7280); opacity: 0.75; }
+  .seg:hover { filter: brightness(1.35); }
+  .seg:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .seg.playing { background: var(--accent); }
+  .toggles { display: flex; gap: 0.9rem; flex-wrap: wrap; align-items: center; font-size: 0.82rem; color: var(--muted); }
+  .toggles label { display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; }
+  .toggles input[type="range"] { width: 110px; vertical-align: middle; }
+  .legend { display: flex; gap: 0.9rem; flex-wrap: wrap; font-size: 0.72rem; color: var(--muted); margin-top: 0.5rem; }
+  .legend i { width: 12px; height: 3px; border-radius: 2px; display: inline-block; margin-right: 0.3rem; }
+  .word.struck { opacity: 0.4; text-decoration: line-through; }
+  .warn { font-size: 0.76rem; color: var(--muted); margin-top: 0.55rem; line-height: 1.45; }
   .hidden { display: none; }
   .hint { font-size: 0.78rem; color: var(--muted); margin-top: 0.6rem; }
 </style>
@@ -183,6 +206,49 @@
           <button class="small" data-script="text">Devanagari</button>
         </div>
         <div class="words" id="words"></div>
+      </div>
+
+      <div class="card hidden" id="tighten-card">
+        <h2>Tighten — remove dead air and fillers</h2>
+        <div class="tighten-head">
+          <p class="meter" id="tighten-meter">
+            <span class="was" id="t-was"></span>
+            <span class="now" id="t-now"></span>
+            <span class="saved" id="t-saved"></span>
+          </p>
+          <button class="small" id="t-analyze">Analyze</button>
+        </div>
+
+        <div class="track" id="track" role="group"
+             aria-label="Timeline — click a segment to cut or restore it"></div>
+
+        <div class="toggles">
+          <label><input type="checkbox" id="t-silence" checked> silence</label>
+          <label><input type="checkbox" id="t-fillers" checked> fillers</label>
+          <label><input type="checkbox" id="t-repeats" checked> stutters</label>
+          <label title="Real words like toh, matlab, yaani — only cut when the pauses around them say the speaker was stalling">
+            <input type="checkbox" id="t-lexical"> filler-like real words
+          </label>
+          <label>pause
+            <input type="range" id="t-gap" min="0.2" max="1.5" step="0.05" value="0.4">
+            <span id="t-gap-val">0.40s</span>
+          </label>
+        </div>
+
+        <div class="legend">
+          <span><i style="background:var(--accent)"></i>kept</span>
+          <span><i style="background:#6b7280"></i>silence</span>
+          <span><i style="background:#e0885c"></i>filler</span>
+          <span><i style="background:#a38be6"></i>stutter</span>
+          <span id="t-hint">click a segment to keep or drop it</span>
+        </div>
+
+        <p class="warn" id="t-lexical-warn">
+          Words like <b>toh</b>, <b>na</b> and <b>yaani</b> are usually doing real
+          grammatical work, so they are left alone by default. Turn on
+          &ldquo;filler-like real words&rdquo; only if this speaker leans on them —
+          then check the struck-out words in the transcript before exporting.
+        </p>
       </div>
 
       <div class="card">
@@ -323,7 +389,9 @@ function onTranscribed(job) {
   setStatus(`Transcribed — ${words.length} words (${job.transcript.backend})`, "done");
   renderWords();
   show("editor");
+  show("tighten-card");
   sizePreview();
+  analyze();          // detect on arrival, apply nothing the user didn't ask for
 }
 
 // ── Transcript editor ───────────────────────────────────────────────────────
@@ -341,6 +409,9 @@ function renderWords() {
     el.setAttribute("role", "button");
     el.dataset.idx = i;
     el.textContent = wordText(w);
+    if (typeof wordDropped === "function" && wordDropped(w)) {
+      el.classList.add("struck");
+    }
     el.title = `${w.start.toFixed(2)}s — click/Enter: seek · double-click/F2: edit`;
     el.onclick = () => { if (editingIdx !== i) seekTo(w.start); };
     el.ondblclick = (e) => { e.preventDefault(); startEdit(el, i); };
@@ -640,6 +711,132 @@ function drawPreview() {
 }
 requestAnimationFrame(drawPreview);
 
+// ── Tighten ─────────────────────────────────────────────────────────────────
+let cuts = [];          // [{start,end,reason,confidence,duration,enabled}]
+const REASON_COLOR = { silence: "#6b7280", filler: "#e0885c", repeat: "#a38be6" };
+
+const cfgEls = () => ({
+  silence: $("t-silence").checked,
+  fillers: $("t-fillers").checked,
+  repeats: $("t-repeats").checked,
+  lexical_fillers: $("t-lexical").checked,
+  min_gap: parseFloat($("t-gap").value),
+});
+
+async function analyze() {
+  if (!jobId) return;
+  const btn = $("t-analyze");
+  btn.disabled = true; btn.textContent = "Analyzing…";
+  try {
+    const c = cfgEls();
+    const fd = new FormData();
+    fd.append("job_id", jobId);
+    Object.entries(c).forEach(([k, v]) => fd.append(k, v));
+    const res = await fetch("/api/tighten", { method: "POST", body: fd });
+    if (!res.ok) throw new Error((await res.json()).detail || "Analyze failed");
+    const data = await res.json();
+    // Only auto-confidence cuts start enabled; suggestions wait to be asked for.
+    cuts = data.cuts.map(c => ({ ...c, enabled: c.auto }));
+    renderTrack();
+    renderWords();
+  } catch (err) {
+    setStatus(err.message, "error");
+  } finally {
+    btn.disabled = false; btn.textContent = "Analyze";
+  }
+}
+
+function totalDuration() { return videoInfo ? videoInfo.duration : 0; }
+function enabledCuts() { return cuts.filter(c => c.enabled); }
+
+function fmtTime(s) {
+  const m = Math.floor(s / 60);
+  return `${m}:${(s - m * 60).toFixed(1).padStart(4, "0")}`;
+}
+
+function renderTrack() {
+  const total = totalDuration();
+  const track = $("track");
+  track.replaceChildren();
+  if (!total) return;
+
+  // Build alternating kept / cut segments across the whole timeline.
+  const segs = [];
+  let pos = 0;
+  for (const c of [...cuts].sort((a, b) => a.start - b.start)) {
+    if (c.start > pos) segs.push({ start: pos, end: c.start, cut: null });
+    segs.push({ start: c.start, end: c.end, cut: c });
+    pos = Math.max(pos, c.end);
+  }
+  if (pos < total) segs.push({ start: pos, end: total, cut: null });
+
+  for (const seg of segs) {
+    const el = document.createElement("button");
+    el.type = "button";
+    const dropped = seg.cut && seg.cut.enabled;
+    el.className = "seg" + (dropped ? " cut" : "");
+    el.style.flex = `${Math.max(0.02, seg.end - seg.start)} 1 0`;
+    if (seg.cut) el.style.setProperty("--cut-color", REASON_COLOR[seg.cut.reason] || "#6b7280");
+    el.dataset.start = seg.start;
+    el.dataset.end = seg.end;
+    if (seg.cut) {
+      el.title = `${seg.cut.reason} · ${seg.cut.duration}s · ${dropped ? "removed" : "kept"} — click to ${dropped ? "restore" : "remove"}`;
+      el.setAttribute("aria-label", el.title);
+      el.onclick = () => { seg.cut.enabled = !seg.cut.enabled; renderTrack(); renderWords(); };
+    } else {
+      el.title = `${fmtTime(seg.start)}–${fmtTime(seg.end)} — click to play from here`;
+      el.onclick = () => { const v = $("video"); v.currentTime = seg.start + 0.01; v.play(); };
+    }
+    track.appendChild(el);
+  }
+
+  const removed = enabledCuts().reduce((a, c) => a + (c.end - c.start), 0);
+  $("t-was").textContent = fmtTime(total);
+  $("t-now").textContent = fmtTime(total - removed);
+  $("t-saved").textContent = removed < 0.05
+    ? "nothing removed"
+    : `−${removed.toFixed(1)}s (${Math.round(removed / total * 100)}%)`;
+  const sugg = cuts.filter(c => !c.auto).length;
+  $("t-hint").textContent = sugg
+    ? `click a segment to keep or drop it · ${sugg} lower-confidence suggestion${sugg > 1 ? "s" : ""} not applied`
+    : "click a segment to keep or drop it";
+}
+
+function isCutAt(t) {
+  return enabledCuts().find(c => t >= c.start && t < c.end - 0.02);
+}
+
+// A word only disappears from the export if the cuts leave nothing of it.
+// This mirrors apply_cuts on the server, which assigns each word to the
+// kept span it overlaps most — striking by midpoint instead showed words
+// as removed that the export actually keeps.
+function wordDropped(w) {
+  let survives = w.end - w.start;
+  if (survives <= 0) {                     // zero-length word: containment
+    return !!isCutAt(w.start);
+  }
+  for (const c of enabledCuts()) {
+    survives -= Math.max(0, Math.min(w.end, c.end) - Math.max(w.start, c.start));
+  }
+  return survives <= 1e-6;
+}
+
+// Preview skips removed spans. There is a small audible seam at each jump
+// that the exported file will not have — the export is a real cut.
+$("video").addEventListener("timeupdate", () => {
+  const v = $("video");
+  const c = isCutAt(v.currentTime);
+  if (c && !v.paused) v.currentTime = c.end + 0.01;
+});
+
+["t-silence", "t-fillers", "t-repeats", "t-lexical"].forEach(id =>
+  $(id).addEventListener("change", analyze));
+$("t-gap").addEventListener("input", () => {
+  $("t-gap-val").textContent = parseFloat($("t-gap").value).toFixed(2) + "s";
+});
+$("t-gap").addEventListener("change", analyze);
+$("t-analyze").onclick = analyze;
+
 // ── Export ──────────────────────────────────────────────────────────────────
 document.querySelectorAll(".exports button").forEach(btn => {
   btn.onclick = async () => {
@@ -655,6 +852,11 @@ document.querySelectorAll(".exports button").forEach(btn => {
     fd.append("export", exportFmt);
     fd.append("text_key", scriptKey);
     fd.append("transcript", JSON.stringify({ words }));   // edits included
+    const active = enabledCuts();
+    if (active.length) {
+      fd.append("cuts", JSON.stringify(
+        active.map(c => ({ start: c.start, end: c.end, reason: c.reason }))));
+    }
     try {
       const res = await fetch("/api/render", { method: "POST", body: fd });
       if (!res.ok) throw new Error((await res.json()).detail || "Render failed");
