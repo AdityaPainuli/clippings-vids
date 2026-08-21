@@ -130,3 +130,74 @@ PyInstaller onedir, GitHub Actions matrix (windows-x64, macos-arm64, macos-x64,
 linux-x64), artifacts attached to GitHub Releases on tag push, CI smoke test
 renders a 5s fixture before publishing. Gatekeeper/SmartScreen stance is
 decided before the first release (#9), not after the issue reports.
+
+## Tighten (dead air, fillers, stutters)
+
+### Never cut a word on spelling alone
+The reference transcript settled this with data. It contains 7 filler-list
+words — `kahin na kahin`, `pehla toh ye ki`, `yaani usne thoda context...`,
+`haan aapne sahi samjha` — and **all 7 are genuine vocabulary**. A word-list
+cutter scores 0% precision on real Hinglish. So words are classed, not matched:
+
+- **non-lexical** (`umm`, `uh`, `hmm`) are not words in any language and are
+  cut on sight;
+- **lexical** (`matlab`, `toh`, `yaani`, `like`, `actually`) are real
+  vocabulary that is *sometimes* filler, and list membership only makes an
+  occurrence a candidate.
+
+### Context decides, and pauses are the signal
+Every genuine use in the reference transcript had **no pause on either side**.
+So a lexical candidate is scored: pause before (+0.35), pause after (+0.35),
+duration ≥1.6× that speaker's own median for that same token (+0.20), and ≥4
+occurrences within 15s (+0.15). At ≥0.70 it is cut, 0.45–0.70 it is suggested
+but not applied, below that it is not mentioned. The weights are deliberate:
+pauses on both sides alone reach the threshold, and nothing else can get there
+without them.
+
+### Lexical fillers are opt-in
+Off by default, in the CLI (`--aggressive-fillers`) and in the app (a
+"filler-like real words" toggle). Whether `toh` is filler depends entirely on
+the speaker and the use case, so it is the user's call, not a default. Out of
+the box the tool cannot touch a real word.
+
+### Precision is gated, recall is only reported
+`scripts/eval_tighten.py` fails the run if any non-filler word is cut, and
+prints recall without gating it. A wrongly cut word is a hole the user has to
+hunt for; a missed filler is one click. Fixtures pair real speech (the
+negatives) with staged stalling (the positives). The staged positives are the
+weak half of that evidence — real loose takes would be worth more than any
+tuning.
+
+### Repeats are usually deliberate
+All 8 repeated words in the reference transcript were intentional: 7
+rhetorical restarts across a clause boundary (`sabse upar aaya Claude. Claude
+ne...`) and one `alag-alag`, Hindi reduplication where saying it twice *is*
+the word. Guards: clause punctuation on the first word, hyphenation, a known
+reduplicative list, and a pause between the two.
+
+### Silence comes from the audio, not from word timings
+The spec assumed a gap between words means silence. It doesn't. Whisper emits
+back-to-back word spans and stretches a word's end time across the pause after
+it — on a clip with a real 2-second gap, every word-to-word gap was `0.00` and
+one "word" lasted 2.44s. Silence is measured with ffmpeg `silencedetect`,
+which is one cheap pass and is the only honest source. `silencedetect` failing
+raises rather than reporting "no silence found".
+
+### Cuts and captions re-time together
+`apply_cuts` maps the transcript onto the cut timeline, so captions can never
+drift from the edit. Words are assigned to kept spans by **largest overlap**,
+not midpoint: Whisper's stretched spans put a real word's midpoint inside a
+silence, and midpoint assignment silently deleted it from the captions.
+Zero-length words fall back to containment for the same reason.
+
+### Splices get a 15ms fade
+Cutting audio at an arbitrary sample pops. Every kept segment fades in and out
+over ~15ms — inaudible as a fade, and the difference between "sounds edited"
+and "sounds broken". Frame-accurate cuts mean a real re-encode; stream copy can
+only cut on keyframes.
+
+### The preview skips, the export cuts
+Browser playback jumps over removed spans so there is nothing to wait for. That
+leaves a small audible seam the exported file will not have. The UI's
+struck-through words use the same largest-overlap rule as the server, so what
+looks removed and what is removed always agree.
