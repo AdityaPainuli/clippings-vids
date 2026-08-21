@@ -1,6 +1,6 @@
 <img src="backend/localapp/icons/bolcap.png" width="88" align="right" alt="Bolcap icon">
 
-# Clippings
+# BolCAP
 
 Turn long videos into viral short-form clips with animated Hinglish captions.
 
