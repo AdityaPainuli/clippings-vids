@@ -90,8 +90,11 @@ up automatically.
 
 - Nothing is uploaded. The app binds to `127.0.0.1` and has no accounts.
 - Working files live in `~/.bolcap/work` and are cleaned up after three days.
+- Bolcap is Apache-2.0 licensed — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 - Bundled fonts (Archivo Black, Inter, Noto Sans Devanagari) are OFL-licensed;
   see [`backend/localapp/fonts/LICENSE.md`](backend/localapp/fonts/LICENSE.md).
+- ffmpeg isn't shipped inside the app — it's downloaded to your machine on
+  first run (or your existing one is used) and called as a separate program.
 - Prefer not to install anything? The same engine runs as a hosted web app —
   same captions, no setup, and transcription on a GPU instead of your laptop.
 
