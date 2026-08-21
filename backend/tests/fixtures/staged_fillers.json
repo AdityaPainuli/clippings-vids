@@ -1,0 +1,49 @@
+{
+ "name": "staged-hinglish-fillers",
+ "source": "Hand-built from the delivery pattern of a real stalling take: filler words surrounded by dead air, drawn out, and leaned on repeatedly.",
+ "note": "Positives are the crutch-word uses of the SAME tokens that appear as real words in real_hinglish.json. If a detector passes both fixtures it is reading context, not spelling.",
+ "duration": 24.0,
+ "words": [
+  {"start": 0.20, "end": 0.54, "text": "toh"},
+  {"start": 0.56, "end": 0.94, "text": "dekhiye"},
+  {"start": 0.96, "end": 1.42, "text": "hamare"},
+  {"start": 1.44, "end": 1.92, "text": "paas"},
+  {"start": 1.94, "end": 2.46, "text": "do"},
+  {"start": 2.48, "end": 3.02, "text": "options"},
+  {"start": 3.04, "end": 3.30, "text": "hain"},
+
+  {"start": 3.95, "end": 4.62, "text": "matlab"},
+  {"start": 5.30, "end": 5.72, "text": "pehla"},
+  {"start": 5.74, "end": 6.10, "text": "option"},
+  {"start": 6.12, "end": 6.55, "text": "hai"},
+
+  {"start": 7.20, "end": 7.68, "text": "umm"},
+  {"start": 8.10, "end": 8.52, "text": "yeh"},
+  {"start": 8.54, "end": 8.98, "text": "wala"},
+
+  {"start": 9.60, "end": 10.28, "text": "matlab"},
+  {"start": 10.95, "end": 11.38, "text": "agar"},
+  {"start": 11.40, "end": 11.86, "text": "aap"},
+  {"start": 11.88, "end": 12.34, "text": "chahein"},
+
+  {"start": 13.00, "end": 13.40, "text": "uh"},
+  {"start": 13.80, "end": 14.32, "text": "doosra"},
+  {"start": 14.34, "end": 14.80, "text": "option"},
+
+  {"start": 15.50, "end": 16.20, "text": "matlab"},
+  {"start": 16.85, "end": 17.30, "text": "thoda"},
+  {"start": 17.32, "end": 17.80, "text": "mushkil"},
+  {"start": 17.82, "end": 18.15, "text": "hai"},
+
+  {"start": 18.90, "end": 19.55, "text": "matlab"},
+  {"start": 20.20, "end": 20.68, "text": "lekin"},
+  {"start": 20.70, "end": 21.15, "text": "possible"},
+  {"start": 21.17, "end": 21.50, "text": "hai"},
+
+  {"start": 22.10, "end": 22.44, "text": "hmm"},
+  {"start": 22.90, "end": 23.40, "text": "bilkul"},
+  {"start": 23.42, "end": 23.80, "text": "sahi"}
+ ],
+ "filler_indices": [7, 11, 14, 18, 21, 25, 29],
+ "known_real_words": [0]
+}

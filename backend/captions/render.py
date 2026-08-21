@@ -118,3 +118,46 @@ def render_overlay(ass_path: str, out_path: str, width: int, height: int,
     if r.returncode != 0:
         raise RuntimeError(f"Overlay render failed: {r.stderr[-400:]}")
     return out_path
+
+
+def render_cut(video_path: str, keep: list, out_path: str,
+               crf: int = 20, fade: float = 0.015) -> str:
+    """
+    Render only the kept spans, concatenated, from `keep` = [(start, end), ...].
+
+    Splicing audio at arbitrary points pops, so every segment gets a ~15ms
+    fade at each edge — inaudible as a fade, and the difference between
+    "sounds edited" and "sounds broken". Cuts are frame-accurate, which
+    means a real re-encode; stream copy can only cut on keyframes.
+    """
+    if not keep:
+        raise RuntimeError("Nothing left to render — every span was cut")
+
+    parts, vlabels, alabels = [], [], []
+    for i, (s, e) in enumerate(keep):
+        dur = e - s
+        f = min(fade, dur / 3) if dur > 0 else 0
+        parts.append(f"[0:v]trim=start={s:.3f}:end={e:.3f},setpts=PTS-STARTPTS[v{i}]")
+        afilters = [f"atrim=start={s:.3f}:end={e:.3f}", "asetpts=PTS-STARTPTS"]
+        if f > 0:
+            afilters.append(f"afade=t=in:st=0:d={f:.3f}")
+            afilters.append(f"afade=t=out:st={max(0, dur - f):.3f}:d={f:.3f}")
+        parts.append(f"[0:a]{','.join(afilters)}[a{i}]")
+        vlabels.append(f"[v{i}]")
+        alabels.append(f"[a{i}]")
+
+    pairs = "".join(v + a for v, a in zip(vlabels, alabels))
+    parts.append(f"{pairs}concat=n={len(keep)}:v=1:a=1[vout][aout]")
+    filtergraph = ";".join(parts)
+
+    cmd = [
+        "ffmpeg", "-y", "-i", video_path,
+        "-filter_complex", filtergraph,
+        "-map", "[vout]", "-map", "[aout]",
+        "-c:v", "libx264", "-preset", "fast", "-crf", str(crf),
+        "-c:a", "aac", out_path,
+    ]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"Cut render failed: {r.stderr[-400:]}")
+    return out_path
