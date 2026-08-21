@@ -4,10 +4,18 @@
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
+import sys
+
 datas = [
     ("localapp/static", "localapp/static"),
     ("localapp/fonts", "localapp/fonts"),   # OFL fonts for libass fontsdir
+    ("localapp/icons", "localapp/icons"),
 ]
+
+# PyInstaller wants .ico on Windows and .icns on macOS; Linux ignores it
+icon = ("localapp/icons/bolcap.ico" if sys.platform == "win32"
+        else "localapp/icons/bolcap.icns" if sys.platform == "darwin"
+        else None)
 # These packages ship data files PyInstaller misses on its own
 datas += collect_data_files("ctranslate2")
 datas += collect_data_files("faster_whisper", includes=["**/*.json", "assets/*"])
@@ -42,6 +50,7 @@ exe = EXE(
     exclude_binaries=True,
     name="bolcap",
     console=True,   # visible console = visible errors; windowed build later
+    icon=icon,
 )
 
 coll = COLLECT(exe, a.binaries, a.datas, name="bolcap")

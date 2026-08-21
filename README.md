@@ -5,7 +5,7 @@ Turn long videos into viral short-form clips with animated Hinglish captions.
 Two products live in this repo:
 
 1. **Clipper** — paste a YouTube URL or upload a video, Gemini finds the 3-5 most viral moments, and each one is rendered as a vertical 9:16 clip with blur-pad background, face-aware cropping, and burned word-by-word captions.
-2. **Bolcap** — a transcribe → edit → render caption pipeline for editors ("bol" = speak, + captions). Word-level Whisper transcription (Hindi/English code-switched speech supported), natural Hinglish romanization, fully customizable caption styles (fonts, colors, animations), and editor-friendly exports including transparent alpha overlays for Premiere/Final Cut/Resolve. Ships two ways: a hosted web app, and a free cross-platform local app (in progress, tracked in [#3](https://github.com/AdityaPainuli/clippings-vids/issues/3)).
+2. **Bolcap** — a transcribe → edit → render caption pipeline for editors ("bol" = speak, + captions). Word-level Whisper transcription (Hindi/English code-switched speech supported), natural Hinglish romanization, fully customizable caption styles (fonts, colors, animations), and editor-friendly exports including transparent alpha overlays for Premiere/Final Cut/Resolve. Ships two ways: a hosted web app, and a **free cross-platform desktop app — see [BOLCAP.md](BOLCAP.md) to download and install it**.
 
 All technical choices and their rationale live in [DECISIONS.md](DECISIONS.md).
 
