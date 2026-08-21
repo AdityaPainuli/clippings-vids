@@ -1,13 +1,22 @@
+<img src="backend/localapp/icons/bolcap.png" width="88" align="right" alt="Bolcap icon">
+
 # Clippings
 
 Turn long videos into viral short-form clips with animated Hinglish captions.
+
+<img src="docs/demo-captions.gif" width="230" align="right" alt="Word-by-word Hinglish captions animating on a vertical video">
 
 Two products live in this repo:
 
 1. **Clipper** — paste a YouTube URL or upload a video, Gemini finds the 3-5 most viral moments, and each one is rendered as a vertical 9:16 clip with blur-pad background, face-aware cropping, and burned word-by-word captions.
 2. **Bolcap** — a transcribe → edit → render caption pipeline for editors ("bol" = speak, + captions). Word-level Whisper transcription (Hindi/English code-switched speech supported), natural Hinglish romanization, fully customizable caption styles (fonts, colors, animations), and editor-friendly exports including transparent alpha overlays for Premiere/Final Cut/Resolve. Ships two ways: a hosted web app, and a **free cross-platform desktop app — see [BOLCAP.md](BOLCAP.md) to download and install it**.
 
+The GIF is real output: word-by-word Hinglish captions with the spoken word
+highlighted, burned by the engine in this repo.
+
 All technical choices and their rationale live in [DECISIONS.md](DECISIONS.md).
+
+<br clear="right">
 
 ## Structure
 
@@ -31,6 +40,18 @@ frontend/           Next.js app (Supabase auth, clip dashboard)
 ```
 
 ## Bolcap caption engine
+
+### The desktop app
+
+Drop in a video, and everything happens on your machine. Whisper transcribes it,
+the words are romanized into natural Hinglish, and you get a transcript you can
+correct word by word plus a live caption preview over your own footage.
+
+![The Bolcap window: video with live caption preview, editable transcript, and style controls](docs/ui.jpg)
+
+Click any word to jump the video there, double-click to retype it, then style
+the captions and export — burned into an MP4, or as a transparent overlay `.mov`
+for your editing timeline. [Download and install it →](BOLCAP.md)
 
 ### Flow
 
