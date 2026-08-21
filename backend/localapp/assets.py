@@ -31,12 +31,15 @@ BIN_DIR = BOLCAP_HOME / "bin"
 MODEL_DIR = BOLCAP_HOME / "models"
 CONFIG_PATH = BOLCAP_HOME / "config.json"
 
-DEFAULT_MODEL = os.getenv("BOLCAP_MODEL", "small")
+# medium is the default: small garbles Hindi badly enough to undercut the
+# whole point of the product (measured on the reference clip — small gave
+# "kisi bitar ka visakar", medium/large give "kisi bhi tarah ka avishkar").
+DEFAULT_MODEL = os.getenv("BOLCAP_MODEL", "medium")
 MODEL_CHOICES = {
     # size label shown in the UI — honest speed expectations, per DECISIONS.md
-    "small":  {"disk": "~500MB", "note": "Fast on any machine, decent Hinglish"},
-    "medium": {"disk": "~1.5GB", "note": "Better accuracy, slow without GPU"},
-    "large-v3": {"disk": "~3GB", "note": "Best accuracy, needs GPU or patience"},
+    "small":  {"disk": "~500MB", "note": "Fastest, but rough on Hindi — fine for English"},
+    "medium": {"disk": "~1.5GB", "note": "Recommended for Hinglish. Slow on CPU-only"},
+    "large-v3": {"disk": "~3GB", "note": "Best accuracy, needs a GPU or patience"},
 }
 # Allowed for CI/testing but not shown in the UI
 _HIDDEN_MODELS = {"tiny"}

@@ -63,9 +63,12 @@ Pick your model with your hardware in mind:
 
 | Model | Download | Honest expectation |
 |---|---|---|
-| `small` | ~500 MB | Fast anywhere. Good enough for most Hinglish clips. |
-| `medium` | ~1.5 GB | Noticeably better, but slow on a CPU-only machine. |
+| `small` | ~500 MB | Fastest, and fine for English — but it mangles Hindi. On our reference clip it produced "kisi bitar ka visakar" where the bigger models got "kisi bhi tarah ka avishkar". |
+| `medium` | ~1.5 GB | **Recommended for Hinglish**, and the default. Slow on a CPU-only machine. |
 | `large-v3` | ~3 GB | Best accuracy. Bring a GPU or patience. |
+
+You can always fix words by hand in the transcript editor, but starting from a
+better transcript means fixing far fewer of them.
 
 Rough timing: a CPU-only laptop transcribes roughly half a minute of audio per
 minute of waiting on `small`. An NVIDIA GPU is many times faster and is picked
