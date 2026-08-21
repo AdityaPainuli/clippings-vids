@@ -37,7 +37,9 @@ NONLEXICAL_FILLERS = {
 
 # Devanagari spellings of the same non-lexical sounds, for transcripts kept
 # in the original script.
-NONLEXICAL_FILLERS |= {"अं", "उम", "हम्म", "अः", "आ"}
+# Only sounds with no lexical meaning. Deliberately excludes "आ" (the
+# imperative "come") and other single vowels, which are real words.
+NONLEXICAL_FILLERS |= {"उम", "उम्म", "हम्म", "हूँ", "अःः"}
 
 # Real vocabulary that is *sometimes* filler. Never cut on spelling alone.
 LEXICAL_FILLERS = {
@@ -45,8 +47,12 @@ LEXICAL_FILLERS = {
     "matlab", "yaani", "yani", "toh", "na", "bas", "aisa", "waise",
     "arre", "achha", "acha", "haan", "samjhe", "yaar",
     # English
+    # Single tokens only — detection compares one word at a time, so
+    # multi-word crutches ("you know", "i mean") would silently never match.
+    # They need n-gram matching over adjacent words; listing them here
+    # without it would be a lie about what is supported.
     "like", "actually", "basically", "literally", "obviously", "right",
-    "so", "well", "okay", "ok", "you know", "i mean", "sort of", "kind of",
+    "so", "well", "okay", "ok",
     # Devanagari forms of the Hinglish entries above
     "मतलब", "यानी", "तो", "ना", "बस", "ऐसा", "वैसे", "अरे", "अच्छा", "हाँ", "हां",
 }
@@ -145,7 +151,11 @@ def detect_silences_from_audio(media_path: str, cfg: TightenConfig) -> list:
            f"silencedetect=noise={cfg.silence_db}dB:d={cfg.min_gap:.3f}",
            "-f", "null", "-"]
     r = subprocess.run(cmd, capture_output=True, text=True)
-    # silencedetect reports on stderr regardless of exit status
+    if r.returncode != 0:
+        # Otherwise an unreadable file parses as "no silence found" and
+        # dead-air detection is skipped without anyone noticing.
+        raise RuntimeError(f"silencedetect failed: {r.stderr[-300:]}")
+    # silencedetect reports its events on stderr
     starts = [float(m) for m in re.findall(r"silence_start: (-?[\d.]+)", r.stderr)]
     ends = [float(m) for m in re.findall(r"silence_end: (-?[\d.]+)", r.stderr)]
 
@@ -289,9 +299,21 @@ def detect_fillers(words: list, cfg: TightenConfig) -> list:
 
 
 def _merge(cuts: list, edge_padding: float, duration: float | None) -> list:
-    """Sort, pad, and merge overlapping cuts into a clean disjoint list."""
+    """
+    Sort, pad, and merge overlapping cuts.
+
+    Auto cuts and suggestions are merged separately. Merging them together
+    would let a low-confidence suggestion swallow a safe silence cut and
+    demote the whole span to "ask first", so applying auto cuts would
+    silently drop it.
+    """
     if not cuts:
         return []
+    if any(c.auto for c in cuts) and any(not c.auto for c in cuts):
+        return sorted(
+            _merge([c for c in cuts if c.auto], edge_padding, duration)
+            + _merge([c for c in cuts if not c.auto], edge_padding, duration),
+            key=lambda c: c.start)
     padded = []
     for c in sorted(cuts, key=lambda c: c.start):
         start = max(0.0, c.start - edge_padding)
@@ -309,7 +331,6 @@ def _merge(cuts: list, edge_padding: float, duration: float | None) -> list:
             last.end = max(last.end, c.end)
             if c.confidence > last.confidence:
                 last.reason, last.confidence, last.text = c.reason, c.confidence, c.text
-            last.auto = last.auto and c.auto
         else:
             merged.append(c)
     return merged
@@ -377,8 +398,14 @@ def apply_cuts(words: list, cuts: list, duration: float) -> dict:
         # can have its midpoint land inside a silence cut — midpoint
         # assignment silently deleted "bhali" from a test clip's captions.
         best_idx, best_overlap = None, 0.0
+        zero_length = w["end"] <= w["start"]
         for idx, (s, e) in enumerate(kept):
             overlap = min(w["end"], e) - max(w["start"], s)
+            # A zero-length word can never win on overlap, so fall back to
+            # containment — otherwise real words with identical start/end
+            # timestamps disappear from the captions.
+            if zero_length and s <= w["start"] <= e:
+                overlap = max(overlap, 1e-6)
             if overlap > best_overlap:
                 best_idx, best_overlap = idx, overlap
         if best_idx is None:

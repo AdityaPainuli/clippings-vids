@@ -60,7 +60,7 @@ def evaluate(path, cfg):
     real_cut = [(i, t) for i, t in damaged if i in real]
 
     return {
-        "name": fx["name"], "words": len(words),
+        "name": fx["name"], "path": path, "words": len(words),
         "tp": tp, "fp": fp, "fn": fn,
         "precision": precision, "recall": recall,
         "damaged": damaged, "real_words_cut": real_cut,
@@ -91,11 +91,17 @@ def main():
         if r["damaged"]:
             print(f"   cut non-filler words: {r['damaged']}")
 
-    failures = [r for r in results if r["real_words_cut"]]
+    # These fixtures are fully labelled: filler_indices is the complete
+    # ground truth, so any other word being cut is a real false positive.
+    # Gating only on the known_real_words subset let precision regressions
+    # through with a "PASS".
+    failures = [r for r in results if r["damaged"]]
     if failures:
-        print("\nFAIL — real words were cut:")
+        print("\nFAIL — words that are not fillers were cut:")
         for r in failures:
-            print(f"  {r['name']}: {r['real_words_cut']}")
+            flagged = [f"{t}{' (protected)' if i in set(json.load(open(r['path'], encoding='utf-8')).get('known_real_words', [])) else ''}"
+                       for i, t in r["damaged"]]
+            print(f"  {r['name']}: {flagged}")
         return 1
 
     total_recall = (sum(r["tp"] for r in results) /
