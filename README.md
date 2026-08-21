@@ -123,3 +123,13 @@ Environment:
 | `RESEND_API_KEY`, `CAPTION_FROM_EMAIL` | completion emails (optional — skipped if unset) |
 | `APP_URL` | link target in notification emails |
 | `CAPTION_STALE_SECONDS` | orphaned-job timeout, default 1800 |
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+ffmpeg is not redistributed here. The desktop app downloads official
+prebuilt binaries into the user's own machine on first run (or uses the
+ones already on their PATH) and calls them as separate programs, so their
+GPL terms cover those binaries rather than this source. NOTICE has the
+details.

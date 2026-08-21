@@ -1,0 +1,48 @@
+Clippings / Bolcap
+Copyright 2026 Aditya Painuli
+
+This product includes software developed as part of the Clippings project,
+licensed under the Apache License, Version 2.0 (see LICENSE).
+
+--------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------
+
+Bundled with the Bolcap desktop app
+-----------------------------------
+Fonts, under the SIL Open Font License 1.1 (see
+backend/localapp/fonts/LICENSE.md):
+  - Archivo Black          (c) The Archivo Black Project Authors
+  - Inter                  (c) The Inter Project Authors
+  - Noto Sans Devanagari   (c) The Noto Project Authors
+
+Python dependencies, resolved at install time and each under its own
+license (MIT/BSD/Apache-2.0): FastAPI, Starlette, Uvicorn, Pydantic,
+requests, faster-whisper, CTranslate2, indic-transliteration, and their
+transitive dependencies.
+
+NOT bundled — downloaded at runtime by the user
+-----------------------------------------------
+ffmpeg and ffprobe are NOT distributed with this project. On first run,
+Bolcap downloads official prebuilt binaries from third parties (BtbN's
+FFmpeg-Builds on Windows and Linux, evermeet.cx on macOS) into the user's
+own ~/.bolcap directory, verified against pinned checksums.
+
+Those builds are licensed under the GPL by their respective authors.
+Bolcap invokes them as separate programs via subprocess and never links
+against, modifies, or redistributes them, so their terms apply to those
+binaries alone and do not extend to this project's source.
+
+Users who already have ffmpeg/ffprobe on PATH keep theirs; nothing is
+downloaded in that case.
+
+Whisper speech recognition models are likewise downloaded on demand from
+Hugging Face rather than bundled. The Whisper models are released by
+OpenAI under the MIT License.
+
+Optional integrations
+---------------------
+When configured with the user's own API keys, this project can call
+Google Gemini (clip analysis, Hinglish romanization) and Resend
+(notification email). Neither is required, and no key ships with the
+project.
