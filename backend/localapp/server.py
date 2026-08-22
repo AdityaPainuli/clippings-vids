@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
-from captions import engine, render, romanize, styles, tighten, transcribe
+from captions import engine, render, romanize, styles, tighten, timeline, transcribe
 from . import assets
 
 # Loopback only — there is no auth. LAN exposure requires the explicit
@@ -184,19 +184,22 @@ async def style_schema():
 
 # ── Render ───────────────────────────────────────────────────────────────────
 
-ExportFormat = Literal["burned", "overlay", "ass", "srt"]
+ExportFormat = Literal["burned", "overlay", "ass", "srt", "edl", "fcpxml"]
 
 
 def _render_worker(job_id: str, export: str, style: styles.CaptionStyle,
-                   text_key: str, words: list, cuts: list | None = None):
+                   text_key: str, words: list, cuts: list | None = None,
+                   markers: list | None = None):
     job = jobs[job_id]
     try:
         job["status"] = "rendering"
+        job.pop("error", None)      # a retry must not report the last failure
         info = job["video_info"]
         base = WORK_DIR / job_id
         stem = os.path.splitext(job.get("filename") or "video")[0]
         source = job["video_path"]
 
+        kept = None
         if cuts:
             # Cut first, then re-time the words onto the new timeline so the
             # captions and the cuts can never disagree.
@@ -206,9 +209,39 @@ def _render_worker(job_id: str, export: str, style: styles.CaptionStyle,
             if not result["kept"]:
                 raise RuntimeError("Every part of the video was cut")
             words = result["words"]
-            source = str(base) + "_cut.mp4"
-            render.render_cut(job["video_path"], result["kept"], source)
+            kept = result["kept"]
             info = {**info, "duration": result["duration"]}
+            # Only the burned MP4 needs the media physically cut. Subtitle and
+            # timeline exports need nothing but the re-timed words, and
+            # re-encoding for them costs minutes to produce a file nobody opens.
+            if export == "burned":
+                source = str(base) + "_cut.mp4"
+                render.render_cut(job["video_path"], kept, source)
+
+        if export in ("edl", "fcpxml"):
+            if not kept:
+                raise RuntimeError("A timeline export describes cuts — run Tighten first")
+            # Deliberately the *original* media's geometry: the NLE relinks to
+            # the untouched file and applies these cuts itself.
+            src_info = job["video_info"]
+            marker_objs = [tighten.Cut(m["start"], m.get("end", m["start"]),
+                                       m.get("reason", "cut"), 0.0,
+                                       text=m.get("text", "")) for m in (markers or [])]
+            if export == "edl":
+                out = timeline.export_edl(kept, src_info["fps"],
+                                          job.get("filename") or "video",
+                                          f"{base}.edl", title=stem.upper()[:40])
+            else:
+                out = timeline.export_fcpxml(kept, src_info["fps"], src_info["width"],
+                                             src_info["height"], job["video_path"],
+                                             src_info["duration"], f"{base}.fcpxml",
+                                             name=stem, markers=marker_objs,
+                                             clip_name=os.path.basename(
+                                                 job.get("filename") or "video.mp4"))
+            ext = os.path.splitext(out)[1]
+            job["outputs"][export] = {"path": out, "name": f"{stem}_tighten{ext}"}
+            job["status"] = "ready"
+            return
 
         ass_path = f"{base}.ass"
         with open(ass_path, "w", encoding="utf-8") as f:
@@ -244,6 +277,7 @@ async def render_endpoint(
     text_key: str = Form("hinglish"),
     transcript: Optional[str] = Form(None),  # edited transcript override
     cuts: Optional[str] = Form(None),        # JSON list of spans to remove
+    markers: Optional[str] = Form(None),     # JSON list of flagged-but-kept spans
 ):
     job = _job(job_id)
     if not job.get("transcript"):
@@ -281,11 +315,15 @@ async def render_endpoint(
         cut_list = json.loads(cuts) if cuts else None
         if cut_list is not None and not isinstance(cut_list, list):
             raise ValueError("cuts must be a JSON array")
+        marker_list = json.loads(markers) if markers else None
+        if marker_list is not None and not isinstance(marker_list, list):
+            raise ValueError("markers must be a JSON array")
     except (json.JSONDecodeError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Bad cuts: {e}")
 
     threading.Thread(target=_render_worker,
-                     args=(job_id, export, style, text_key, words, cut_list),
+                     args=(job_id, export, style, text_key, words, cut_list,
+                           marker_list),
                      daemon=True).start()
     return {"job_id": job_id, "export": export}
 

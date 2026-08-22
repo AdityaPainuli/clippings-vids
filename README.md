@@ -30,6 +30,8 @@ backend/            FastAPI service
     romanize.py     Devanagari → natural Hinglish (LLM pass with rule-based fallback)
     engine.py       word timings + style → animated ASS subtitles
     render.py       exports: burned MP4, alpha overlay .mov, .ass, .srt
+    tighten.py      finds dead air, filler words, and stutters worth cutting
+    timeline.py     cuts as an EDL / FCPXML timeline (no re-encode)
     storage.py      durable jobs + Supabase Storage (signed uploads, retention cleanup)
     notify.py       completion notifications (in-app feed + Resend email)
     api.py          /captions/* routes
@@ -53,12 +55,32 @@ Click any word to jump the video there, double-click to retype it, then style
 the captions and export — burned into an MP4, or as a transparent overlay `.mov`
 for your editing timeline. [Download and install it →](BOLCAP.md)
 
+### Tighten
+
+Bolcap can find the parts of a take worth cutting: dead air, filler words, and
+stutters. Cuts show up on a timeline you can argue with — click a greyed span to
+bring it back, and playback skips whatever is still removed.
+
+Filler detection does not work off a word list. In a real 757-word transcript,
+every occurrence of "toh", "na", "haan", and "yaani" was doing grammatical work,
+so a list-matching cutter would have deleted seven real words and scored 0%
+precision. Instead, sounds with no lexical meaning ("umm", "uh", "hmm") are cut
+on sight, and real words that are *sometimes* fillers are scored on context and
+left alone by default. The reasoning is in [DECISIONS.md](DECISIONS.md), and
+`scripts/eval_tighten.py` fails the build if any real word gets cut.
+
+Cuts leave two ways. A flattened MP4 with the captions burned on, or an **EDL /
+FCPXML timeline** that carries the cuts into Premiere, Resolve, or Final Cut and
+relinks your original file, so nothing is re-encoded and every cut stays
+draggable. Cuts you turned down travel along as markers.
+
 ### Flow
 
 1. **Transcribe** — Whisper with word timestamps.
 2. **Romanize** — Devanagari → natural Hinglish, alignment preserved.
-3. **Style** — a `CaptionStyle` JSON or a preset (`default`, `bold_impact`, `subtle`, `karaoke`).
-4. **Export** — `burned` MP4, `overlay` alpha .mov, `ass`, or `srt`.
+3. **Tighten** (optional) — find dead air, fillers, and stutters, and cut them.
+4. **Style** — a `CaptionStyle` JSON or a preset (`default`, `bold_impact`, `subtle`, `karaoke`).
+5. **Export** — `burned` MP4, `overlay` alpha .mov, `ass`, `srt`, or an `edl` / `fcpxml` timeline.
 
 ### CLI
 
@@ -68,6 +90,10 @@ python -m captions.cli video.mp4                          # transcribe + burn, b
 python -m captions.cli video.mp4 --export overlay         # alpha overlay for editors
 python -m captions.cli video.mp4 --style my_style.json    # custom style JSON
 python -m captions.cli video.mp4 --transcript saved.json  # reuse a transcript, skip Whisper
+
+python -m captions.cli video.mp4 --tighten-report          # what would be cut, and why
+python -m captions.cli video.mp4 --tighten                 # cut it, captions re-timed to match
+python -m captions.cli video.mp4 --tighten --export fcpxml # cuts to your NLE, no re-encode
 ```
 
 Transcripts are saved next to the video (`*_transcript.json`) so re-styling never re-transcribes.

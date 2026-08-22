@@ -193,7 +193,15 @@
           <button data-export="overlay">Overlay .mov</button>
           <button data-export="srt">.srt</button>
           <button data-export="ass">.ass</button>
+          <button data-export="fcpxml" data-needs-cuts="1" disabled>FCPXML timeline</button>
+          <button data-export="edl" data-needs-cuts="1" disabled>EDL timeline</button>
         </div>
+        <p class="hint" id="timeline-hint">
+          Timeline exports carry the cuts to Premiere, Resolve, or Final Cut so
+          nothing is re-encoded. They need cuts — run Tighten first. The clip
+          keeps your original filename, so point your NLE at your own copy if it
+          asks to relink. Export the .srt too for captions matching the cut.
+        </p>
         <div class="downloads" id="downloads"></div>
       </div>
     </div>
@@ -790,6 +798,12 @@ function renderTrack() {
     track.appendChild(el);
   }
 
+  // A timeline export with no cuts is a one-event EDL saying "keep
+  // everything", so the buttons stay off until there is a cut to describe.
+  document.querySelectorAll("[data-needs-cuts]").forEach(b => {
+    b.disabled = enabledCuts().length === 0;
+  });
+
   const removed = enabledCuts().reduce((a, c) => a + (c.end - c.start), 0);
   $("t-was").textContent = fmtTime(total);
   $("t-now").textContent = fmtTime(total - removed);
@@ -842,8 +856,11 @@ document.querySelectorAll(".exports button").forEach(btn => {
   btn.onclick = async () => {
     const exportFmt = btn.dataset.export;
     const renderJobId = jobId;   // capture — a new upload must not hijack this render
-    const enableButtons = () =>
+    const enableButtons = () => {
       document.querySelectorAll(".exports button").forEach(b => b.disabled = false);
+      const noCuts = enabledCuts().length === 0;
+      document.querySelectorAll("[data-needs-cuts]").forEach(b => b.disabled = noCuts);
+    };
     document.querySelectorAll(".exports button").forEach(b => b.disabled = true);
     show("status-card"); setStatus(`Rendering ${exportFmt}…`);
     const fd = new FormData();
@@ -856,6 +873,15 @@ document.querySelectorAll(".exports button").forEach(btn => {
     if (active.length) {
       fd.append("cuts", JSON.stringify(
         active.map(c => ({ start: c.start, end: c.end, reason: c.reason }))));
+      // Cuts we proposed and the user switched off ride along as timeline
+      // markers, so the flag survives into the NLE instead of being lost.
+      const off = cuts.filter(c => !c.enabled);
+      if (off.length) {
+        fd.append("markers", JSON.stringify(off.map(c => ({
+          start: c.start, end: c.end, reason: c.reason,
+          text: c.text || c.reason,
+        }))));
+      }
     }
     try {
       const res = await fetch("/api/render", { method: "POST", body: fd });
