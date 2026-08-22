@@ -421,6 +421,88 @@ def apply_cuts(words: list, cuts: list, duration: float) -> dict:
     return {"words": out, "duration": round(running, 3), "kept": kept}
 
 
+# ── Fitting to a target length ───────────────────────────────────────────────
+
+# Retakes are excluded from automatic selection. A retake cut is seconds of
+# real speech chosen by a cloud model, and letting a length target apply one
+# without being asked would quietly undo the rule that they are always
+# confirmed by a person.
+PROTECTED_REASONS = ("retake",)
+
+
+def fit_to_length(cuts: list, duration: float, target: float,
+                  protect: tuple = PROTECTED_REASONS) -> dict:
+    """
+    Pick which cuts to apply so the video lands at or under `target` seconds.
+
+    Auto cuts come free — they are safe by definition — so they are always in.
+    Suggestions are then added cheapest-first, where cost is how much doubt
+    each second of saving carries: `(1 - confidence) / duration`. That prefers
+    a long confident cut over three short shaky ones, which is what a person
+    trimming by hand does.
+
+    Length is recomputed from the real kept spans after every addition rather
+    than by summing durations, because cuts overlap and summing would claim
+    savings twice and stop early.
+
+    Returns the chosen cuts, the length they produce, and — when the target
+    cannot be reached without cutting real speech — how far short it fell.
+    Never silently gives up: `reachable` says so and `shortfall` says by how
+    much.
+    """
+    if duration <= 0:
+        raise ValueError("duration must be positive")
+    if target <= 0:
+        raise ValueError("target must be positive")
+
+    chosen = [c for c in cuts if c.auto]
+    pool = [c for c in cuts
+            if not c.auto and c.reason not in protect and c.duration > 0]
+
+    def _length(selected):
+        kept = keep_segments(selected, duration)
+        return sum(e - s for s, e in kept)
+
+    length = _length(chosen)
+
+    # Cheapest doubt per second first; a longer cut breaks ties, since it buys
+    # more for the same risk.
+    pool.sort(key=lambda c: ((1.0 - c.confidence) / c.duration, -c.duration))
+
+    added = []
+    for cut in pool:
+        if length <= target:
+            break
+        candidate = chosen + [cut]
+        new_length = _length(candidate)
+        if new_length >= length:
+            continue                    # fully overlapped by something already in
+        chosen, length = candidate, new_length
+        added.append(cut)
+
+    # Greedy overshoots: it keeps adding until the target is met, and the cut
+    # that crosses the line often makes an earlier one unnecessary. Walk back
+    # over what was added, shakiest first, and drop anything the target no
+    # longer needs — cutting more than asked is removing the user's content
+    # for nothing.
+    for cut in sorted(added, key=lambda c: c.confidence):
+        trimmed = [c for c in chosen if c is not cut]
+        if _length(trimmed) <= target:
+            chosen, length = trimmed, _length(trimmed)
+            added = [c for c in added if c is not cut]
+
+    skipped = [c for c in cuts if c.reason in protect and not c.auto]
+    return {
+        "cuts": sorted(chosen, key=lambda c: c.start),
+        "added": added,
+        "duration": round(length, 3),
+        "target": round(target, 3),
+        "reachable": length <= target + 1e-6,
+        "shortfall": round(max(0.0, length - target), 3),
+        "protected": len(skipped),
+    }
+
+
 def summarize(cuts: list, duration: float) -> dict:
     """Numbers for the UI: what was found, and what it buys."""
     applied = [c for c in cuts if c.auto]

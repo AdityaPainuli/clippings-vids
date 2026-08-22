@@ -182,6 +182,54 @@ async def tighten_endpoint(
     }
 
 
+@app.post("/api/fit")
+async def fit_endpoint(job_id: str = Form(...), target: float = Form(...),
+                       cuts: str = Form(...)):
+    """
+    Choose which of the proposed cuts to apply to reach a target length.
+
+    Takes the cut list the UI is holding rather than re-detecting, so the
+    selection is made against exactly what the user is looking at — and so
+    there is one implementation of the choice, in tighten.fit_to_length,
+    instead of one here and another in the browser.
+
+    Returns the indices to switch on. Retakes are never among them.
+    """
+    job = _job(job_id)
+    if not job.get("video_info"):
+        raise HTTPException(status_code=409, detail="Transcribe first")
+
+    try:
+        raw = json.loads(cuts)
+        if not isinstance(raw, list) or not raw:
+            raise ValueError("cuts must be a non-empty JSON array")
+        parsed = [tighten.Cut(float(c["start"]), float(c["end"]),
+                              c.get("reason", "silence"),
+                              float(c.get("confidence", 1.0)),
+                              str(c.get("text", ""))[:200],
+                              auto=bool(c.get("auto")))
+                  for c in raw]
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Bad cuts: {e}")
+
+    duration = job["video_info"]["duration"]
+    try:
+        result = tighten.fit_to_length(parsed, duration, target)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    picked = {id(c) for c in result["cuts"]}
+    return {
+        "selected": [i for i, c in enumerate(parsed) if id(c) in picked],
+        "duration": result["duration"],
+        "target": result["target"],
+        "reachable": result["reachable"],
+        "shortfall": result["shortfall"],
+        "protected": result["protected"],
+        "original_duration": round(duration, 3),
+    }
+
+
 @app.post("/api/settings/api-key")
 async def set_api_key(provider: str = Form(...), key: str = Form("")):
     """

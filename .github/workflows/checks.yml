@@ -36,3 +36,6 @@ jobs:
       # becoming an edit. The model itself is stubbed — no key, no network.
       - name: Retake detection
         run: python scripts/eval_retakes.py
+
+      - name: Fit to length
+        run: python scripts/check_fit.py

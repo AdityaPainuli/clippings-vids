@@ -353,3 +353,41 @@ needs and takes the key inline instead of hiding. The CLI says so plainly.
 Bolcap's promise is that nothing leaves the machine, so this one exception is
 stated where the user will read it: transcript **text** is sent, never audio or
 video.
+
+
+## Fit to length ("get this under 60 seconds")
+
+### Cheapest doubt per second, not shortest cut first
+Auto cuts are free — safe by definition — so they are always in. Suggestions
+are then added cheapest-first, where cost is `(1 - confidence) / duration`:
+how much doubt each second of saving carries. That prefers one long confident
+cut over three short shaky ones, which is what a person trimming by hand does.
+
+### Length is recomputed, never summed
+Cuts overlap. Adding up their durations claims the same second twice and stops
+short of the target while reporting success, so the remaining length is
+recomputed from the real kept spans after every addition.
+
+### Over-cutting is a bug, not a rounding error
+Greedy selection overshoots: the cut that finally crosses the line often makes
+an earlier one unnecessary. A backward pass drops the shakiest cut the target
+can do without, one at a time. Without it, a 52-second target on a 56-second
+clip removed 8 seconds where 6 would do. `check_fit.py` asserts that every
+applied suggestion is one the target could not reach without.
+
+### A length target never applies a retake
+A retake cut is seconds of real speech chosen by a cloud model, and it is the
+one kind of cut that always waits for a person. Letting a number in a text box
+apply one would undo that rule quietly. Retakes are excluded from selection and
+the count left alone is reported.
+
+### A target that cannot be met is said out loud
+When every available cut still leaves the video over the target, the rest is
+speech — and cutting speech to hit a number is the user's call, not the
+software's. The shortfall is reported in both the CLI and the UI rather than
+silently delivering something longer than asked for.
+
+### The choice is made once, on the server
+`tighten.fit_to_length` picks the cuts; the browser only switches on the
+indices it returns. Reimplementing the choice in JavaScript is exactly how the
+timeline and the export came to disagree about which words survived.

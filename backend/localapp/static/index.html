@@ -265,6 +265,16 @@
           <span id="t-hint">click a segment to keep or drop it</span>
         </div>
 
+        <div class="key-row" style="margin-top:0.9rem">
+          <label for="fit-target" style="font-size:0.78rem;color:var(--muted)">
+            Fit to
+          </label>
+          <input id="fit-target" style="flex:0 0 6.5rem" inputmode="numeric"
+                 placeholder="1:00" aria-label="Target length, seconds or m:ss" />
+          <button class="small" id="fit-go">Fit</button>
+          <span class="hint" id="fit-note" style="margin:0;flex:1"></span>
+        </div>
+
         <p class="warn" id="t-lexical-warn">
           Words like <b>toh</b>, <b>na</b> and <b>yaani</b> are usually doing real
           grammatical work, so they are left alone by default. Turn on
@@ -920,6 +930,64 @@ $("t-gap").addEventListener("input", () => {
 });
 $("t-gap").addEventListener("change", analyze);
 $("t-analyze").onclick = analyze;
+
+// ── Fit to length ───────────────────────────────────────────────────────────
+// The choice of which cuts to apply is made server-side by
+// tighten.fit_to_length. Reimplementing it here is how the timeline and the
+// export ended up disagreeing before.
+$("fit-go").onclick = async () => {
+  const note = $("fit-note");
+  if (!jobId || !cuts.length) {
+    note.textContent = "Run Analyze first — Fit chooses from the cuts it finds.";
+    return;
+  }
+  const btn = $("fit-go");
+  btn.disabled = true;
+  note.textContent = "";
+  try {
+    const fd = new FormData();
+    fd.append("job_id", jobId);
+    fd.append("target", parseLength($("fit-target").value));
+    fd.append("cuts", JSON.stringify(cuts.map(c => ({
+      start: c.start, end: c.end, reason: c.reason,
+      confidence: c.confidence, text: c.text || "", auto: !!c.auto,
+    }))));
+    const res = await fetch("/api/fit", { method: "POST", body: fd });
+    if (!res.ok) throw new Error((await res.json()).detail || "Fit failed");
+    const data = await res.json();
+    const picked = new Set(data.selected);
+    cuts.forEach((c, i) => { c.enabled = picked.has(i); });
+    renderTrack(); renderWords();
+    const notes = [`Now ${fmtTime(data.duration)}.`];
+    if (!data.reachable) {
+      // Never let a target quietly go unmet.
+      notes.push(`${data.shortfall.toFixed(1)}s over — the rest is speech, so that is your call.`);
+    }
+    if (data.protected) {
+      notes.push(`${data.protected} retake suggestion${data.protected > 1 ? "s" : ""} left alone.`);
+    }
+    note.textContent = notes.join(" ");
+  } catch (err) {
+    note.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+$("fit-target").onkeydown = (e) => { if (e.key === "Enter") $("fit-go").click(); };
+
+// Seconds from "60", "1:00", or "1:02.5" — the same shapes the CLI accepts.
+function parseLength(text) {
+  const parts = String(text || "").trim().split(":");
+  let seconds = 0;
+  for (const part of parts) {
+    const n = Number(part);
+    if (part === "" || Number.isNaN(n)) throw new Error(`Could not read a length from "${text}"`);
+    seconds = seconds * 60 + n;
+  }
+  if (!(seconds > 0)) throw new Error("Length must be greater than zero");
+  return seconds;
+}
 
 // ── Retakes ─────────────────────────────────────────────────────────────────
 // A retake cut is seconds of real speech, so these arrive switched off and are
