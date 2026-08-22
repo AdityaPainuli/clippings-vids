@@ -19,7 +19,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
-from captions import engine, render, romanize, styles, tighten, timeline, transcribe
+from captions import (engine, llm, render, retakes, romanize, styles, tighten,
+                      timeline, transcribe)
 from . import assets
 
 # Loopback only — there is no auth. LAN exposure requires the explicit
@@ -62,6 +63,13 @@ jobs: Dict[str, dict] = {}
 setup_progress: Dict[str, object] = {"status": "idle"}
 
 
+def _retakes_payload(job: dict) -> dict | None:
+    r = job.get("retakes")
+    if not r:
+        return None
+    return {**r, "cuts": [c.to_dict() for c in r["cuts"]]}
+
+
 def _job(job_id: str) -> dict:
     job = jobs.get(job_id)
     if not job:
@@ -73,7 +81,11 @@ def _job(job_id: str) -> dict:
 
 @app.get("/api/setup/status")
 async def setup_status():
-    return {**assets.setup_status(), "progress": setup_progress}
+    # `llm` tells the UI whether to offer retake detection at all. Everything
+    # else in Bolcap runs offline; this is the one feature that needs a key,
+    # so it is surfaced rather than failing when clicked.
+    return {**assets.setup_status(), "progress": setup_progress,
+            "llm": llm.provider()}
 
 
 @app.post("/api/setup/run")
@@ -168,6 +180,59 @@ async def tighten_endpoint(
         "summary": tighten.summarize(cuts, duration),
         "duration": duration,
     }
+
+
+# ── Retakes ──────────────────────────────────────────────────────────────────
+
+def _retake_worker(job_id: str, words: list):
+    job = jobs[job_id]
+    try:
+        job["status"] = "finding-retakes"
+        job.pop("error", None)
+        job["retakes"] = retakes.detect(words, media_path=job["video_path"])
+        job["status"] = "ready"
+    except Exception as e:
+        job["status"] = "failed"
+        job["error"] = str(e)[:500]
+
+
+@app.post("/api/retakes")
+async def retakes_endpoint(job_id: str = Form(...),
+                           transcript: Optional[str] = Form(None)):
+    """
+    Start retake detection. Unlike everything else in Bolcap this sends text
+    to a cloud model, so it only runs when the user asks for it and only if a
+    key is configured.
+
+    The edited transcript is accepted for the same reason /api/render takes it:
+    the user's corrections are what they can see on screen. Detecting against
+    the raw Whisper output would send stale text to the provider and return
+    attempts whose wording disagrees with the transcript in front of them.
+    """
+    job = _job(job_id)
+    if not job.get("transcript"):
+        raise HTTPException(status_code=409, detail="Transcribe first")
+    if not llm.available():
+        raise HTTPException(
+            status_code=409,
+            detail="Retake detection needs a cloud model. Set ANTHROPIC_API_KEY "
+                   "or GOOGLE_API_KEY and restart Bolcap.")
+
+    words = job["transcript"]["words"]
+    if transcript:
+        try:
+            data = json.loads(transcript)
+            if not isinstance(data, dict) or not isinstance(data.get("words"), list):
+                raise ValueError("transcript must be an object with a words array")
+            if not data["words"]:
+                raise ValueError("empty transcript")
+            words = data["words"]
+        except (json.JSONDecodeError, ValueError) as e:
+            raise HTTPException(status_code=400, detail=f"Bad transcript: {e}")
+
+    threading.Thread(target=_retake_worker, args=(job_id, words),
+                     daemon=True).start()
+    return {"job_id": job_id, "provider": llm.provider()}
 
 
 # ── Styles ───────────────────────────────────────────────────────────────────
@@ -347,6 +412,7 @@ async def job_status(job_id: str):
         "transcript": job.get("transcript"),
         "video_info": job.get("video_info"),
         "outputs": {k: v["name"] for k, v in job["outputs"].items()},
+        "retakes": _retakes_payload(job),
     }
 
 

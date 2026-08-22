@@ -31,3 +31,8 @@ jobs:
 
       - name: Timeline timecode arithmetic
         run: python scripts/check_timeline.py
+
+      # Stage 1 recall plus the rules that keep a bad model reply from
+      # becoming an edit. The model itself is stubbed — no key, no network.
+      - name: Retake detection
+        run: python scripts/eval_retakes.py

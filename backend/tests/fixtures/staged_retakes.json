@@ -1,0 +1,943 @@
+{
+ "name": "staged-retakes",
+ "source": "Hand-built to the shape of a loose take: an attempt that dies mid-sentence, a beat of silence, then the line delivered properly. Includes two traps that are NOT retakes — a parallel-structure list and a deliberate emphasis repetition.",
+ "note": "Stage 1 is scored on whether it groups the real retakes together. The traps are expected to reach stage 1; killing them is the model's job.",
+ "duration": 72.12,
+ "words": [
+  {
+   "start": 0.0,
+   "end": 0.34,
+   "text": "toh"
+  },
+  {
+   "start": 0.37,
+   "end": 0.71,
+   "text": "jab"
+  },
+  {
+   "start": 0.74,
+   "end": 1.08,
+   "text": "aap"
+  },
+  {
+   "start": 1.11,
+   "end": 1.45,
+   "text": "compound"
+  },
+  {
+   "start": 1.48,
+   "end": 1.82,
+   "text": "interest"
+  },
+  {
+   "start": 1.85,
+   "end": 2.19,
+   "text": "ke"
+  },
+  {
+   "start": 2.22,
+   "end": 2.56,
+   "text": "baare"
+  },
+  {
+   "start": 2.59,
+   "end": 2.93,
+   "text": "mein"
+  },
+  {
+   "start": 2.96,
+   "end": 3.3,
+   "text": "sochte"
+  },
+  {
+   "start": 3.33,
+   "end": 3.67,
+   "text": "ho"
+  },
+  {
+   "start": 3.7,
+   "end": 4.04,
+   "text": "toh"
+  },
+  {
+   "start": 4.07,
+   "end": 4.41,
+   "text": "sabse"
+  },
+  {
+   "start": 4.44,
+   "end": 4.78,
+   "text": "pehle"
+  },
+  {
+   "start": 6.11,
+   "end": 6.45,
+   "text": "toh"
+  },
+  {
+   "start": 6.48,
+   "end": 6.82,
+   "text": "jab"
+  },
+  {
+   "start": 6.85,
+   "end": 7.19,
+   "text": "aap"
+  },
+  {
+   "start": 7.22,
+   "end": 7.56,
+   "text": "compound"
+  },
+  {
+   "start": 7.59,
+   "end": 7.93,
+   "text": "interest"
+  },
+  {
+   "start": 7.96,
+   "end": 8.3,
+   "text": "ke"
+  },
+  {
+   "start": 8.33,
+   "end": 8.67,
+   "text": "baare"
+  },
+  {
+   "start": 8.7,
+   "end": 9.04,
+   "text": "mein"
+  },
+  {
+   "start": 9.07,
+   "end": 9.41,
+   "text": "sochte"
+  },
+  {
+   "start": 9.44,
+   "end": 9.78,
+   "text": "hain"
+  },
+  {
+   "start": 9.81,
+   "end": 10.15,
+   "text": "na"
+  },
+  {
+   "start": 10.18,
+   "end": 10.52,
+   "text": "sabse"
+  },
+  {
+   "start": 10.55,
+   "end": 10.89,
+   "text": "pehli"
+  },
+  {
+   "start": 10.92,
+   "end": 11.26,
+   "text": "cheez"
+  },
+  {
+   "start": 11.29,
+   "end": 11.63,
+   "text": "jo"
+  },
+  {
+   "start": 11.66,
+   "end": 12.0,
+   "text": "dimaag"
+  },
+  {
+   "start": 12.03,
+   "end": 12.37,
+   "text": "mein"
+  },
+  {
+   "start": 12.4,
+   "end": 12.74,
+   "text": "aati"
+  },
+  {
+   "start": 12.77,
+   "end": 13.11,
+   "text": "hai"
+  },
+  {
+   "start": 13.14,
+   "end": 13.48,
+   "text": "wo"
+  },
+  {
+   "start": 13.51,
+   "end": 13.85,
+   "text": "hai"
+  },
+  {
+   "start": 13.88,
+   "end": 14.22,
+   "text": "time."
+  },
+  {
+   "start": 14.95,
+   "end": 15.29,
+   "text": "kyunki"
+  },
+  {
+   "start": 15.32,
+   "end": 15.66,
+   "text": "paisa"
+  },
+  {
+   "start": 15.69,
+   "end": 16.03,
+   "text": "time"
+  },
+  {
+   "start": 16.06,
+   "end": 16.4,
+   "text": "ke"
+  },
+  {
+   "start": 16.43,
+   "end": 16.77,
+   "text": "saath"
+  },
+  {
+   "start": 16.8,
+   "end": 17.14,
+   "text": "badhta"
+  },
+  {
+   "start": 17.17,
+   "end": 17.51,
+   "text": "hai"
+  },
+  {
+   "start": 17.54,
+   "end": 17.88,
+   "text": "aur"
+  },
+  {
+   "start": 17.91,
+   "end": 18.25,
+   "text": "ye"
+  },
+  {
+   "start": 18.28,
+   "end": 18.62,
+   "text": "baat"
+  },
+  {
+   "start": 18.65,
+   "end": 18.99,
+   "text": "sunne"
+  },
+  {
+   "start": 19.02,
+   "end": 19.36,
+   "text": "mein"
+  },
+  {
+   "start": 19.39,
+   "end": 19.73,
+   "text": "simple"
+  },
+  {
+   "start": 19.76,
+   "end": 20.1,
+   "text": "lagti"
+  },
+  {
+   "start": 20.13,
+   "end": 20.47,
+   "text": "hai."
+  },
+  {
+   "start": 21.4,
+   "end": 21.74,
+   "text": "lekin"
+  },
+  {
+   "start": 21.77,
+   "end": 22.11,
+   "text": "asli"
+  },
+  {
+   "start": 22.14,
+   "end": 22.48,
+   "text": "fayda"
+  },
+  {
+   "start": 22.51,
+   "end": 22.85,
+   "text": "tab"
+  },
+  {
+   "start": 22.88,
+   "end": 23.22,
+   "text": "hota"
+  },
+  {
+   "start": 23.25,
+   "end": 23.59,
+   "text": "hai"
+  },
+  {
+   "start": 23.62,
+   "end": 23.96,
+   "text": "jab"
+  },
+  {
+   "start": 23.99,
+   "end": 24.33,
+   "text": "aap"
+  },
+  {
+   "start": 24.36,
+   "end": 24.7,
+   "text": "jaldi"
+  },
+  {
+   "start": 24.73,
+   "end": 25.07,
+   "text": "shuru"
+  },
+  {
+   "start": 25.1,
+   "end": 25.44,
+   "text": "karte"
+  },
+  {
+   "start": 27.07,
+   "end": 27.41,
+   "text": "lekin"
+  },
+  {
+   "start": 27.44,
+   "end": 27.78,
+   "text": "asli"
+  },
+  {
+   "start": 27.81,
+   "end": 28.15,
+   "text": "fayda"
+  },
+  {
+   "start": 28.18,
+   "end": 28.52,
+   "text": "tab"
+  },
+  {
+   "start": 28.55,
+   "end": 28.89,
+   "text": "hota"
+  },
+  {
+   "start": 28.92,
+   "end": 29.26,
+   "text": "hai"
+  },
+  {
+   "start": 29.29,
+   "end": 29.63,
+   "text": "jab"
+  },
+  {
+   "start": 29.66,
+   "end": 30.0,
+   "text": "aap"
+  },
+  {
+   "start": 30.03,
+   "end": 30.37,
+   "text": "jaldi"
+  },
+  {
+   "start": 30.4,
+   "end": 30.74,
+   "text": "jaldi"
+  },
+  {
+   "start": 30.77,
+   "end": 31.11,
+   "text": "shuru"
+  },
+  {
+   "start": 32.34,
+   "end": 32.68,
+   "text": "lekin"
+  },
+  {
+   "start": 32.71,
+   "end": 33.05,
+   "text": "asli"
+  },
+  {
+   "start": 33.08,
+   "end": 33.42,
+   "text": "fayda"
+  },
+  {
+   "start": 33.45,
+   "end": 33.79,
+   "text": "tab"
+  },
+  {
+   "start": 33.82,
+   "end": 34.16,
+   "text": "milta"
+  },
+  {
+   "start": 34.19,
+   "end": 34.53,
+   "text": "hai"
+  },
+  {
+   "start": 34.56,
+   "end": 34.9,
+   "text": "jab"
+  },
+  {
+   "start": 34.93,
+   "end": 35.27,
+   "text": "aap"
+  },
+  {
+   "start": 35.3,
+   "end": 35.64,
+   "text": "jitni"
+  },
+  {
+   "start": 35.67,
+   "end": 36.01,
+   "text": "jaldi"
+  },
+  {
+   "start": 36.04,
+   "end": 36.38,
+   "text": "ho"
+  },
+  {
+   "start": 36.41,
+   "end": 36.75,
+   "text": "sake"
+  },
+  {
+   "start": 36.78,
+   "end": 37.12,
+   "text": "utni"
+  },
+  {
+   "start": 37.15,
+   "end": 37.49,
+   "text": "jaldi"
+  },
+  {
+   "start": 37.52,
+   "end": 37.86,
+   "text": "shuru"
+  },
+  {
+   "start": 37.89,
+   "end": 38.23,
+   "text": "kar"
+  },
+  {
+   "start": 38.26,
+   "end": 38.6,
+   "text": "dete"
+  },
+  {
+   "start": 38.63,
+   "end": 38.97,
+   "text": "hain."
+  },
+  {
+   "start": 39.8,
+   "end": 40.14,
+   "text": "pehla"
+  },
+  {
+   "start": 40.17,
+   "end": 40.51,
+   "text": "point"
+  },
+  {
+   "start": 40.54,
+   "end": 40.88,
+   "text": "hai"
+  },
+  {
+   "start": 40.91,
+   "end": 41.25,
+   "text": "ki"
+  },
+  {
+   "start": 41.28,
+   "end": 41.62,
+   "text": "aap"
+  },
+  {
+   "start": 41.65,
+   "end": 41.99,
+   "text": "har"
+  },
+  {
+   "start": 42.02,
+   "end": 42.36,
+   "text": "mahine"
+  },
+  {
+   "start": 42.39,
+   "end": 42.73,
+   "text": "thoda"
+  },
+  {
+   "start": 42.76,
+   "end": 43.1,
+   "text": "invest"
+  },
+  {
+   "start": 43.13,
+   "end": 43.47,
+   "text": "karein."
+  },
+  {
+   "start": 44.25,
+   "end": 44.59,
+   "text": "doosra"
+  },
+  {
+   "start": 44.62,
+   "end": 44.96,
+   "text": "point"
+  },
+  {
+   "start": 44.99,
+   "end": 45.33,
+   "text": "hai"
+  },
+  {
+   "start": 45.36,
+   "end": 45.7,
+   "text": "ki"
+  },
+  {
+   "start": 45.73,
+   "end": 46.07,
+   "text": "aap"
+  },
+  {
+   "start": 46.1,
+   "end": 46.44,
+   "text": "us"
+  },
+  {
+   "start": 46.47,
+   "end": 46.81,
+   "text": "paise"
+  },
+  {
+   "start": 46.84,
+   "end": 47.18,
+   "text": "ko"
+  },
+  {
+   "start": 47.21,
+   "end": 47.55,
+   "text": "haath"
+  },
+  {
+   "start": 47.58,
+   "end": 47.92,
+   "text": "na"
+  },
+  {
+   "start": 47.95,
+   "end": 48.29,
+   "text": "lagayein."
+  },
+  {
+   "start": 49.02,
+   "end": 49.36,
+   "text": "teesra"
+  },
+  {
+   "start": 49.39,
+   "end": 49.73,
+   "text": "point"
+  },
+  {
+   "start": 49.76,
+   "end": 50.1,
+   "text": "hai"
+  },
+  {
+   "start": 50.13,
+   "end": 50.47,
+   "text": "ki"
+  },
+  {
+   "start": 50.5,
+   "end": 50.84,
+   "text": "aap"
+  },
+  {
+   "start": 50.87,
+   "end": 51.21,
+   "text": "patience"
+  },
+  {
+   "start": 51.24,
+   "end": 51.58,
+   "text": "rakhein."
+  },
+  {
+   "start": 52.41,
+   "end": 52.75,
+   "text": "ye"
+  },
+  {
+   "start": 52.78,
+   "end": 53.12,
+   "text": "baat"
+  },
+  {
+   "start": 53.15,
+   "end": 53.49,
+   "text": "bahut"
+  },
+  {
+   "start": 53.52,
+   "end": 53.86,
+   "text": "important"
+  },
+  {
+   "start": 53.89,
+   "end": 54.23,
+   "text": "hai."
+  },
+  {
+   "start": 54.86,
+   "end": 55.2,
+   "text": "ye"
+  },
+  {
+   "start": 55.23,
+   "end": 55.57,
+   "text": "baat"
+  },
+  {
+   "start": 55.6,
+   "end": 55.94,
+   "text": "sach"
+  },
+  {
+   "start": 55.97,
+   "end": 56.31,
+   "text": "mein"
+  },
+  {
+   "start": 56.34,
+   "end": 56.68,
+   "text": "bahut"
+  },
+  {
+   "start": 56.71,
+   "end": 57.05,
+   "text": "important"
+  },
+  {
+   "start": 57.08,
+   "end": 57.42,
+   "text": "hai."
+  },
+  {
+   "start": 58.35,
+   "end": 58.69,
+   "text": "aur"
+  },
+  {
+   "start": 58.72,
+   "end": 59.06,
+   "text": "last"
+  },
+  {
+   "start": 59.09,
+   "end": 59.43,
+   "text": "mein"
+  },
+  {
+   "start": 59.46,
+   "end": 59.8,
+   "text": "ek"
+  },
+  {
+   "start": 59.83,
+   "end": 60.17,
+   "text": "chhoti"
+  },
+  {
+   "start": 60.2,
+   "end": 60.54,
+   "text": "si"
+  },
+  {
+   "start": 60.57,
+   "end": 60.91,
+   "text": "baat"
+  },
+  {
+   "start": 60.94,
+   "end": 61.28,
+   "text": "jo"
+  },
+  {
+   "start": 61.31,
+   "end": 61.65,
+   "text": "log"
+  },
+  {
+   "start": 61.68,
+   "end": 62.02,
+   "text": "aksar"
+  },
+  {
+   "start": 63.85,
+   "end": 64.19,
+   "text": "aur"
+  },
+  {
+   "start": 64.22,
+   "end": 64.56,
+   "text": "last"
+  },
+  {
+   "start": 64.59,
+   "end": 64.93,
+   "text": "mein"
+  },
+  {
+   "start": 64.96,
+   "end": 65.3,
+   "text": "ek"
+  },
+  {
+   "start": 65.33,
+   "end": 65.67,
+   "text": "chhoti"
+  },
+  {
+   "start": 65.7,
+   "end": 66.04,
+   "text": "si"
+  },
+  {
+   "start": 66.07,
+   "end": 66.41,
+   "text": "baat"
+  },
+  {
+   "start": 66.44,
+   "end": 66.78,
+   "text": "jo"
+  },
+  {
+   "start": 66.81,
+   "end": 67.15,
+   "text": "log"
+  },
+  {
+   "start": 67.18,
+   "end": 67.52,
+   "text": "aksar"
+  },
+  {
+   "start": 67.55,
+   "end": 67.89,
+   "text": "bhool"
+  },
+  {
+   "start": 67.92,
+   "end": 68.26,
+   "text": "jaate"
+  },
+  {
+   "start": 68.29,
+   "end": 68.63,
+   "text": "hain"
+  },
+  {
+   "start": 68.66,
+   "end": 69.0,
+   "text": "wo"
+  },
+  {
+   "start": 69.03,
+   "end": 69.37,
+   "text": "ye"
+  },
+  {
+   "start": 69.4,
+   "end": 69.74,
+   "text": "ki"
+  },
+  {
+   "start": 69.77,
+   "end": 70.11,
+   "text": "inflation"
+  },
+  {
+   "start": 70.14,
+   "end": 70.48,
+   "text": "bhi"
+  },
+  {
+   "start": 70.51,
+   "end": 70.85,
+   "text": "chal"
+  },
+  {
+   "start": 70.88,
+   "end": 71.22,
+   "text": "raha"
+  },
+  {
+   "start": 71.25,
+   "end": 71.59,
+   "text": "hai."
+  }
+ ],
+ "silences": [
+  [
+   4.81,
+   6.11
+  ],
+  [
+   14.25,
+   14.95
+  ],
+  [
+   20.5,
+   21.4
+  ],
+  [
+   25.47,
+   27.07
+  ],
+  [
+   31.14,
+   32.34
+  ],
+  [
+   39.0,
+   39.8
+  ],
+  [
+   43.5,
+   44.25
+  ],
+  [
+   48.32,
+   49.02
+  ],
+  [
+   51.61,
+   52.41
+  ],
+  [
+   54.26,
+   54.86
+  ],
+  [
+   57.45,
+   58.35
+  ],
+  [
+   62.05,
+   63.85
+  ]
+ ],
+ "phrase_spans": [
+  [
+   0.0,
+   4.78
+  ],
+  [
+   6.11,
+   14.22
+  ],
+  [
+   14.95,
+   20.47
+  ],
+  [
+   21.4,
+   25.44
+  ],
+  [
+   27.07,
+   31.11
+  ],
+  [
+   32.34,
+   38.97
+  ],
+  [
+   39.8,
+   43.47
+  ],
+  [
+   44.25,
+   48.29
+  ],
+  [
+   49.02,
+   51.58
+  ],
+  [
+   52.41,
+   54.23
+  ],
+  [
+   54.86,
+   57.42
+  ],
+  [
+   58.35,
+   62.02
+  ],
+  [
+   63.85,
+   71.59
+  ]
+ ],
+ "retake_groups": [
+  [
+   0,
+   1
+  ],
+  [
+   3,
+   4,
+   5
+  ],
+  [
+   11,
+   12
+  ]
+ ],
+ "trap_groups": [
+  [
+   6,
+   7,
+   8
+  ],
+  [
+   9,
+   10
+  ]
+ ]
+}
