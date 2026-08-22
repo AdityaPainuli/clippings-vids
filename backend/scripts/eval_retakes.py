@@ -22,7 +22,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from captions import retakes  # noqa: E402
+from captions import llm, retakes  # noqa: E402
 
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "..", "tests", "fixtures")
@@ -104,20 +104,73 @@ def main():
     if quiet["cuts"]:
         failures.append("a rejecting model still produced cuts")
 
-    # Junk from the model must not become an edit.
+    # Junk from the model must not become an edit. Truthiness is not enough:
+    # JSON "false" is a truthy string and Python counts True as an int, so
+    # loose checks turn these into real cuts.
     for bad in ('not json at all', '{"retake": true}',
-                '{"retake": true, "keep": 99, "confidence": 1.0}', ''):
+                '{"retake": true, "keep": 99, "confidence": 1.0}', '',
+                '{"retake": "false", "keep": 0}',
+                '{"retake": 1, "keep": 0}',
+                '{"retake": true, "keep": true}',
+                '{"retake": true, "keep": "1"}',
+                '{"retake": true, "keep": 1.0}'):
         junk = retakes.detect(fx["words"],
                               silences=[tuple(s) for s in fx["silences"]],
                               complete=lambda *a, **k: bad)
         if junk["cuts"]:
             failures.append(f"malformed model reply {bad!r} produced cuts")
 
-    # No key configured must be distinguishable from "found nothing".
-    if retakes.detect(fx["words"], complete=None)["status"] not in ("no-model", "ok",
-                                                                   "none-found",
-                                                                   "none-confirmed"):
-        failures.append("detect() returned an unknown status")
+    # No key configured must be distinguishable from "found nothing" — the
+    # earlier version of this check accepted every status, so a regression to
+    # "none-found" would have passed while telling the user there were no
+    # retakes in a run that never happened.
+    saved = {k: os.environ.pop(k) for k in ("ANTHROPIC_API_KEY", "GOOGLE_API_KEY")
+             if k in os.environ}
+    try:
+        keyless = retakes.detect(fx["words"], complete=None)
+    finally:
+        os.environ.update(saved)
+    if keyless["status"] != "no-model":
+        failures.append(f"with no key configured, status was "
+                        f"{keyless['status']!r}, expected 'no-model'")
+    if keyless["cuts"]:
+        failures.append("a keyless run produced cuts")
+
+    # An outage is not an answer. Collapsing it into "none found" told the user
+    # their take was clean when nothing had actually been checked.
+    def explode(*a, **k):
+        raise llm.LLMError("Anthropic rejected the API key (HTTP 401)")
+
+    outage = retakes.detect(fx["words"],
+                            silences=[tuple(s) for s in fx["silences"]],
+                            complete=explode)
+    if outage["status"] != "model-error":
+        failures.append(f"a failed call reported {outage['status']!r}, "
+                        "expected 'model-error'")
+    if not outage.get("error"):
+        failures.append("a failed call carried no reason for the user")
+    if outage["asked"] != 1:
+        failures.append(f"kept calling after a failure ({outage['asked']} calls) "
+                        "— a rejected key does not start working")
+    if outage["skipped"] < 1:
+        failures.append("a failed run must report what it never checked")
+
+    # The cost cap must be visible, not silent.
+    capped = retakes.detect(fx["words"],
+                            silences=[tuple(s) for s in fx["silences"]],
+                            complete=fake_complete, max_groups=1)
+    if capped["skipped"] != len(groups) - 1:
+        failures.append(f"cap reported {capped['skipped']} skipped, "
+                        f"expected {len(groups) - 1}")
+
+    # A measured silence list with no qualifying pause is an answer: the
+    # speaker never stopped. Falling back to punctuation there invents
+    # boundaries against the evidence.
+    real = _load("real_hinglish.json")
+    if len(retakes.split_phrases(real["words"], [])) != 1:
+        failures.append("measured-but-empty silence still split on punctuation")
+    if len(retakes.split_phrases(real["words"], None)) < 2:
+        failures.append("unmeasured audio should still fall back to punctuation")
 
     print()
     for n in notes:

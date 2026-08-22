@@ -276,6 +276,27 @@ rewrites no text, and a reply naming an out-of-range attempt is discarded. A
 hallucination therefore cannot invent a cut inside a good sentence — the worst
 it can do is decline to help.
 
+### The model's reply is checked by exact type, not truthiness
+JSON `"false"` is a truthy string and Python counts `True` as an `int`, so
+`{"retake": "false"}` and `{"keep": true}` both survive a casual check and
+become real cuts. The verdict must be the JSON boolean `true` and the index an
+actual `int`. This is the difference between the guarantee holding and merely
+being claimed, so `eval_retakes.py` asserts every one of those shapes cuts
+nothing.
+
+### A failed call is not a "no"
+A rejected key, a quota wall, and the model saying "these are not retakes" are
+three different outcomes. Collapsing them into `None` made an outage read to
+the user as "your take is clean" — the worst possible failure for a feature
+whose whole job is to find something. `llm.LLMError` carries a reason the user
+can act on, detection stops at the first one (a rejected key does not start
+working on the next call), and both callers say so.
+
+### Caps are reported, never silent
+Detection stops after 12 groups to bound cost on a long recording. A cap the
+user cannot see reads as "we checked everything", so the number skipped is
+returned and surfaced in both the CLI and the UI.
+
 ### Retakes never auto-apply
 A filler cut is 300ms; a retake cut is eight seconds of speech, and a wrong one
 destroys the take. Every retake arrives switched off, shown beside the take we
@@ -289,6 +310,11 @@ silence. Real pauses come from ffmpeg. Clause punctuation is the fallback when
 there is no media, and it is genuinely worse — in the reference transcript the
 first 151 words carry no punctuation at all, which ran them together into one
 49-second "phrase" that then matched everything by containment.
+
+"Measured, and there were none" is not the same as "not measured". An empty
+silence list is an answer — the speaker never stopped, so there are no restarts
+to find — and falling back to punctuation there invents boundaries against the
+evidence. `None` means unmeasured; `[]` means measured and empty.
 
 ### Similarity uses overlap, with floors
 A second attempt is routinely longer or shorter than the first, so Jaccard

@@ -132,7 +132,9 @@
   .row { display: flex; align-items: flex-start; gap: 0.8rem; }
   .take-group { border: 1px solid var(--line); border-radius: 8px; padding: 0.7rem 0.8rem; margin-top: 0.7rem; }
   .take-group > header { display: flex; align-items: center; gap: 0.6rem; font-size: 0.76rem; color: var(--muted); margin-bottom: 0.5rem; }
-  .take { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.3rem 0; font-size: 0.82rem; line-height: 1.4; cursor: pointer; }
+  .take { display: flex; gap: 0.6rem; align-items: baseline; width: 100%; text-align: left; padding: 0.3rem 0.2rem; font-size: 0.82rem; line-height: 1.4; cursor: pointer; background: none; border: 0; border-radius: 4px; color: inherit; font: inherit; }
+  .take:hover { background: rgba(255,255,255,0.04); }
+  .take:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .take .at { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 0.74rem; white-space: nowrap; }
   .take.keeper { color: var(--fg); }
   .take.dropped { color: var(--muted); text-decoration: line-through; }
@@ -378,6 +380,12 @@ async function upload(file) {
   jobId = null;
   cuts = [];
   words = [];
+  // Retake attempts carry timestamps into the old clip; leaving them on screen
+  // means clicking one seeks the new video to a moment that never existed.
+  retakeGroups = [];
+  hide("retake-card");
+  $("retake-groups").replaceChildren();
+  hide("r-status");
   renderTrack();
   // The browser plays the local file directly — it never re-downloads.
   const video = $("video");
@@ -403,6 +411,7 @@ const STAGE_TEXT = {
   transcribing: "Transcribing with Whisper (this is the slow part)…",
   romanizing: "Romanizing to Hinglish…",
   rendering: "Rendering…",
+  "finding-retakes": "Looking for retakes…",
 };
 
 function poll(id, onReady, onFail) {
@@ -780,7 +789,11 @@ async function analyze() {
     if (!res.ok) throw new Error((await res.json()).detail || "Analyze failed");
     const data = await res.json();
     // Only auto-confidence cuts start enabled; suggestions wait to be asked for.
-    cuts = data.cuts.map(c => ({ ...c, enabled: c.auto }));
+    // Retake cuts survive re-analysis: they come from a separate (paid) pass
+    // that Tighten knows nothing about, and dropping them here left the
+    // retakes card showing takes as cut that the export would have kept.
+    const keptRetakes = cuts.filter(c => c.reason === "retake");
+    cuts = data.cuts.map(c => ({ ...c, enabled: c.auto })).concat(keptRetakes);
     renderTrack();
     renderWords();
   } catch (err) {
@@ -917,7 +930,10 @@ function renderRetakes() {
     wrap.appendChild(head);
 
     g.attempts.forEach((a, i) => {
-      const row = document.createElement("div");
+      // A real button: the transcript words are already keyboard-operable and
+      // these are the same kind of control, so they behave the same way.
+      const row = document.createElement("button");
+      row.type = "button";
       const dropped = i !== g.keep && g.cuts[i] && g.cuts[i].enabled;
       row.className = "take" + (i === g.keep ? " keeper" : dropped ? " dropped" : "");
       const at = document.createElement("span");
@@ -933,7 +949,8 @@ function renderRetakes() {
         tag.textContent = "keep";
         row.appendChild(tag);
       }
-      row.title = "click to play this take";
+      row.title = `${fmtTime(a.start)} — play this take`;
+      row.setAttribute("aria-label", `Play take ${i + 1}: ${a.text}`);
       row.onclick = () => { const v = $("video"); v.currentTime = a.start + 0.01; v.play(); };
       wrap.appendChild(row);
     });
@@ -950,6 +967,7 @@ $("r-find").onclick = async () => {
   try {
     const fd = new FormData();
     fd.append("job_id", jobId);
+    fd.append("transcript", JSON.stringify({ words }));   // edits included
     const res = await fetch("/api/retakes", { method: "POST", body: fd });
     if (!res.ok) throw new Error((await res.json()).detail || "Retake search failed");
     poll(jobId, (job) => {
@@ -970,10 +988,20 @@ $("r-find").onclick = async () => {
       });
       retakeGroups.forEach(g => Object.values(g.cuts).forEach(c => cuts.push(c)));
       renderRetakes(); renderTrack(); renderWords();
-      if (!retakeGroups.length) {
-        status.textContent = r.status === "none-found"
+      const notes = [];
+      if (r.status === "model-error") {
+        notes.push(`Detection did not finish: ${r.error}`);
+      } else if (!retakeGroups.length) {
+        notes.push(r.status === "none-found"
           ? "No lines looked repeated."
-          : "Found some repeated-looking lines, but none were actually retakes.";
+          : "Found some repeated-looking lines, but none were actually retakes.");
+      }
+      // Never let the cost cap read as "we checked everything".
+      if (r.skipped) {
+        notes.push(`${r.skipped} more repeated-looking group${r.skipped > 1 ? "s were" : " was"} not checked.`);
+      }
+      if (notes.length) {
+        status.textContent = notes.join(" ");
         status.classList.remove("hidden");
       }
     }, () => { btn.disabled = false; btn.textContent = "Find retakes"; });

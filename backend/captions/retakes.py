@@ -46,6 +46,9 @@ WINDOW = 45.0
 # long recording.
 LOOKBACK = 8
 
+# Cost ceiling per run. Whatever this drops is reported, never swallowed.
+DEFAULT_MAX_GROUPS = 12
+
 MIN_WORDS = 6           # shorter phrases match each other by accident
 # A re-recorded line is a line. Anything this long is a transcription artifact
 # — the punctuation fallback can run 150 words together when Whisper emits no
@@ -88,13 +91,17 @@ def split_phrases(words: list, silences: list | None = None) -> list:
     """
     Break the transcript where the speaker actually stopped.
 
-    `silences` is [(start, end), ...] from ffmpeg. Without it, clause
-    punctuation stands in — worse, but it is the only signal a bare transcript
-    carries.
+    `silences` is [(start, end), ...] from ffmpeg. Passing None means nothing
+    was measured, and clause punctuation stands in — worse, but the only signal
+    a bare transcript carries. Passing an empty list means the audio *was*
+    measured and holds no qualifying pause, which is an answer: the speaker did
+    not stop, so there are no restarts to find. Treating those two the same
+    invented phrase boundaries from punctuation against measured evidence.
     """
     if not words:
         return []
 
+    measured = silences is not None
     pauses = [(s, e) for s, e in (silences or []) if e - s >= MIN_PAUSE]
     out, start_idx = [], 0
 
@@ -112,7 +119,7 @@ def split_phrases(words: list, silences: list | None = None) -> list:
 
     for i, w in enumerate(words):
         boundary = False
-        if pauses:
+        if measured:
             # A pause counts as a boundary when it sits at or after this word's
             # end and before the next word starts.
             nxt = words[i + 1]["start"] if i + 1 < len(words) else w["end"]
@@ -232,16 +239,21 @@ def _ask(group: list, complete) -> dict | None:
     )
     raw = complete(PROMPT.format(attempts=attempts), system=SYSTEM, max_tokens=300)
     data = llm.parse_json(raw)
-    if not isinstance(data, dict) or not data.get("retake"):
+    if not isinstance(data, dict):
+        return None
+    # Exact types, not truthiness. JSON "false" is a truthy string, and Python
+    # counts True as an int — so a sloppy check turns {"retake": "false"} and
+    # {"keep": true} into real cuts, which is the one thing this must not do.
+    if data.get("retake") is not True:
         return None
     keep = data.get("keep")
-    if not isinstance(keep, int) or not 0 <= keep < len(group):
+    if type(keep) is not int or not 0 <= keep < len(group):
         return None
     return data
 
 
 def detect(words: list, media_path: str | None = None, silences: list | None = None,
-           complete=None, max_groups: int = 12) -> dict:
+           complete=None, max_groups: int = DEFAULT_MAX_GROUPS) -> dict:
     """
     Retake suggestions for a transcript.
 
@@ -250,15 +262,20 @@ def detect(words: list, media_path: str | None = None, silences: list | None = N
     by a person, every time.
 
     `complete` is injectable so the detector can be exercised without a network
-    call. `status` explains an empty result, since "no retakes" and "no API key"
-    look identical from the outside and mean very different things.
+    call. `status` explains an empty result: "no retakes", "no API key", and
+    "the key was rejected" look identical from the outside and mean very
+    different things.
+
+    `max_groups` bounds cost on a long recording. Whatever it drops is reported
+    in `skipped` and surfaced by both callers — a cap the user cannot see reads
+    as "we checked everything".
     """
     from . import llm, tighten
 
     if complete is None:
         if not llm.available():
-            return {"cuts": [], "groups": [],
-                    "status": "no-model"}
+            return {"cuts": [], "groups": [], "status": "no-model",
+                    "error": None, "asked": 0, "skipped": 0}
         complete = llm.complete
 
     if silences is None and media_path:
@@ -272,16 +289,28 @@ def detect(words: list, media_path: str | None = None, silences: list | None = N
     phrases = split_phrases(words, silences)
     groups = find_candidates(phrases)
     if not groups:
-        return {"cuts": [], "groups": [], "status": "none-found"}
+        return {"cuts": [], "groups": [], "status": "none-found",
+                "error": None, "asked": 0, "skipped": 0}
 
     cuts, reported, asked = [], [], 0
     for group in groups[:max_groups]:
         asked += 1
-        verdict = _ask(group, complete)
+        try:
+            verdict = _ask(group, complete)
+        except llm.LLMError as e:
+            # One failure means the rest will fail the same way — a rejected
+            # key does not start working on the next call. Stop and say so,
+            # rather than burning quota to report "nothing found".
+            return {"cuts": cuts, "groups": reported, "status": "model-error",
+                    "error": str(e), "asked": asked,
+                    "skipped": max(0, len(groups) - asked)}
         if not verdict:
             continue
         keep = verdict["keep"]
-        confidence = float(verdict.get("confidence") or 0.0)
+        try:
+            confidence = min(1.0, max(0.0, float(verdict.get("confidence") or 0.0)))
+        except (TypeError, ValueError):
+            confidence = 0.0
         dropped = []
         for i, p in enumerate(group):
             if i == keep:
@@ -299,5 +328,5 @@ def detect(words: list, media_path: str | None = None, silences: list | None = N
 
     skipped = max(0, len(groups) - max_groups)
     status = "ok" if reported else "none-confirmed"
-    return {"cuts": cuts, "groups": reported, "status": status,
+    return {"cuts": cuts, "groups": reported, "status": status, "error": None,
             "asked": asked, "skipped": skipped}
