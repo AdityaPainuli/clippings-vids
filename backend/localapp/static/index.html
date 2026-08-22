@@ -130,6 +130,10 @@
   .legend i { width: 12px; height: 3px; border-radius: 2px; display: inline-block; margin-right: 0.3rem; }
   .word.struck { opacity: 0.4; text-decoration: line-through; }
   .row { display: flex; align-items: flex-start; gap: 0.8rem; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .key-row { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.7rem; }
+  .key-row select, .key-row input { background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 0.42rem 0.55rem; font: inherit; font-size: 0.82rem; }
+  .key-row input { flex: 1; min-width: 0; font-family: ui-monospace, monospace; }
   .take-group { border: 1px solid var(--line); border-radius: 8px; padding: 0.7rem 0.8rem; margin-top: 0.7rem; }
   .take-group > header { display: flex; align-items: center; gap: 0.6rem; font-size: 0.76rem; color: var(--muted); margin-bottom: 0.5rem; }
   .take { display: flex; gap: 0.6rem; align-items: baseline; width: 100%; text-align: left; padding: 0.3rem 0.2rem; font-size: 0.82rem; line-height: 1.4; cursor: pointer; background: none; border: 0; border-radius: 4px; color: inherit; font: inherit; }
@@ -262,6 +266,16 @@
           <span id="t-hint">click a segment to keep or drop it</span>
         </div>
 
+        <div class="key-row" style="margin-top:0.9rem">
+          <label for="fit-target" style="font-size:0.78rem;color:var(--muted)">
+            Fit to
+          </label>
+          <input id="fit-target" style="flex:0 0 6.5rem" inputmode="numeric"
+                 placeholder="1:00" aria-label="Target length, seconds or m:ss" />
+          <button class="small" id="fit-go">Fit</button>
+          <span class="hint" id="fit-note" style="margin:0;flex:1"></span>
+        </div>
+
         <p class="warn" id="t-lexical-warn">
           Words like <b>toh</b>, <b>na</b> and <b>yaani</b> are usually doing real
           grammatical work, so they are left alone by default. Turn on
@@ -280,6 +294,27 @@
           </p>
           <button id="r-find">Find retakes</button>
         </div>
+
+        <div id="key-setup" class="hidden">
+          <div class="key-row">
+            <label class="sr-only" for="key-provider">Cloud model provider</label>
+            <select id="key-provider">
+              <option value="anthropic">Anthropic</option>
+              <option value="gemini">Google Gemini</option>
+            </select>
+            <label class="sr-only" for="key-value">API key</label>
+            <input id="key-value" type="password" autocomplete="off"
+                   spellcheck="false" placeholder="Paste an API key" />
+            <button id="key-save">Save</button>
+          </div>
+          <p class="warn" id="key-note">
+            Stored on this machine, in <code>~/.bolcap/config.json</code>,
+            readable by your user account alone. It is sent to the provider you
+            pick, as the authentication header on each request — nowhere else,
+            and never to Bolcap.
+          </p>
+        </div>
+
         <div id="retake-groups"></div>
         <p class="warn hidden" id="r-status"></p>
       </div>
@@ -308,12 +343,14 @@ const PRESET_LABELS = {
 
 // ── First-run setup ─────────────────────────────────────────────────────────
 let chosenModel = null;
-let llmProvider = null;   // null when no cloud key is set — retakes stay hidden
+let llmProvider = null;   // null when no cloud key is set
+let apiKeys = {};
 
 async function checkSetup() {
   const s = await (await fetch("/api/setup/status")).json();
   chosenModel = chosenModel || s.default_model;
   llmProvider = s.llm || null;
+  apiKeys = s.api_keys || {};
   const modelReady = Object.values(s.models).some(Boolean) || s.mlx;
   if (!s.ffmpeg_needed && modelReady) {
     hide("setup-card"); show("drop"); show("lang-field"); return true;
@@ -382,6 +419,7 @@ async function upload(file) {
   words = [];
   // Retake attempts carry timestamps into the old clip; leaving them on screen
   // means clicking one seeks the new video to a moment that never existed.
+  analyzed = false;
   retakeGroups = [];
   hide("retake-card");
   $("retake-groups").replaceChildren();
@@ -440,9 +478,8 @@ function onTranscribed(job) {
   renderWords();
   show("editor");
   show("tighten-card");
-  // Retakes need a cloud key. Offering a button that can only fail is worse
-  // than not offering it, so the card appears only when one is configured.
-  if (llmProvider) show("retake-card");
+  show("retake-card");
+  renderKeyState();
   sizePreview();
   analyze();          // detect on arrival, apply nothing the user didn't ask for
 }
@@ -766,6 +803,7 @@ requestAnimationFrame(drawPreview);
 
 // ── Tighten ─────────────────────────────────────────────────────────────────
 let cuts = [];          // [{start,end,reason,confidence,duration,enabled}]
+let analyzed = false;   // an empty `cuts` after a real analysis is a result
 const REASON_COLOR = { silence: "#6b7280", filler: "#e0885c", repeat: "#a38be6", retake: "#5c9ae0" };
 
 const cfgEls = () => ({
@@ -794,6 +832,7 @@ async function analyze() {
     // retakes card showing takes as cut that the export would have kept.
     const keptRetakes = cuts.filter(c => c.reason === "retake");
     cuts = data.cuts.map(c => ({ ...c, enabled: c.auto })).concat(keptRetakes);
+    analyzed = true;
     renderTrack();
     renderWords();
   } catch (err) {
@@ -853,7 +892,7 @@ function renderTrack() {
     b.disabled = enabledCuts().length === 0;
   });
 
-  const removed = enabledCuts().reduce((a, c) => a + (c.end - c.start), 0);
+  const removed = removedSeconds();
   $("t-was").textContent = fmtTime(total);
   $("t-now").textContent = fmtTime(total - removed);
   $("t-saved").textContent = removed < 0.05
@@ -873,13 +912,32 @@ function isCutAt(t) {
 // This mirrors apply_cuts on the server, which assigns each word to the
 // kept span it overlaps most — striking by midpoint instead showed words
 // as removed that the export actually keeps.
+// Union of the enabled cut spans, mirroring tighten.keep_segments on the
+// server. Cuts overlap — _merge deliberately leaves auto and suggested spans
+// able to overlap — so anything that walks the raw list counts the same second
+// twice: the meter read shorter than the export, and a word covered by two
+// overlapping cuts was struck out even though the export kept it.
+function cutSpans() {
+  const spans = [];
+  for (const c of enabledCuts().slice().sort((a, b) => a.start - b.start)) {
+    const last = spans[spans.length - 1];
+    if (last && c.start <= last[1]) last[1] = Math.max(last[1], c.end);
+    else spans.push([c.start, c.end]);
+  }
+  return spans;
+}
+
+function removedSeconds() {
+  return cutSpans().reduce((total, [s, e]) => total + (e - s), 0);
+}
+
 function wordDropped(w) {
   let survives = w.end - w.start;
   if (survives <= 0) {                     // zero-length word: containment
     return !!isCutAt(w.start);
   }
-  for (const c of enabledCuts()) {
-    survives -= Math.max(0, Math.min(w.end, c.end) - Math.max(w.start, c.start));
+  for (const [s, e] of cutSpans()) {
+    survives -= Math.max(0, Math.min(w.end, e) - Math.max(w.start, s));
   }
   return survives <= 1e-6;
 }
@@ -899,6 +957,67 @@ $("t-gap").addEventListener("input", () => {
 });
 $("t-gap").addEventListener("change", analyze);
 $("t-analyze").onclick = analyze;
+
+// ── Fit to length ───────────────────────────────────────────────────────────
+// The choice of which cuts to apply is made server-side by
+// tighten.fit_to_length. Reimplementing it here is how the timeline and the
+// export ended up disagreeing before.
+$("fit-go").onclick = async () => {
+  const note = $("fit-note");
+  // An analysed clip can genuinely have nothing to cut, and Fit still has
+  // something to say then: whether the target is already met, or by how much
+  // it is missed.
+  if (!jobId || !analyzed) {
+    note.textContent = "Run Analyze first — Fit chooses from the cuts it finds.";
+    return;
+  }
+  const btn = $("fit-go");
+  btn.disabled = true;
+  note.textContent = "";
+  try {
+    const fd = new FormData();
+    fd.append("job_id", jobId);
+    fd.append("target", parseLength($("fit-target").value));
+    fd.append("cuts", JSON.stringify(cuts.map(c => ({
+      start: c.start, end: c.end, reason: c.reason,
+      confidence: c.confidence, text: c.text || "", auto: !!c.auto,
+    }))));
+    const res = await fetch("/api/fit", { method: "POST", body: fd });
+    if (!res.ok) throw new Error((await res.json()).detail || "Fit failed");
+    const data = await res.json();
+    const picked = new Set(data.selected);
+    cuts.forEach((c, i) => { c.enabled = picked.has(i); });
+    renderTrack(); renderWords();
+    const notes = [`Now ${fmtTime(data.duration)}.`];
+    if (!data.reachable) {
+      // Never let a target quietly go unmet.
+      notes.push(`${data.shortfall.toFixed(1)}s over — the rest is speech, so that is your call.`);
+    }
+    if (data.protected) {
+      notes.push(`${data.protected} retake suggestion${data.protected > 1 ? "s" : ""} left alone.`);
+    }
+    note.textContent = notes.join(" ");
+  } catch (err) {
+    note.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+$("fit-target").onkeydown = (e) => { if (e.key === "Enter") $("fit-go").click(); };
+
+// Seconds from "60", "1:00", or "1:02.5" — the same shapes the CLI accepts.
+function parseLength(text) {
+  const parts = String(text || "").trim().split(":");
+  let seconds = 0;
+  for (const part of parts) {
+    const n = Number(part);
+    if (part === "" || Number.isNaN(n)) throw new Error(`Could not read a length from "${text}"`);
+    seconds = seconds * 60 + n;
+  }
+  if (!(seconds > 0)) throw new Error("Length must be greater than zero");
+  return seconds;
+}
 
 // ── Retakes ─────────────────────────────────────────────────────────────────
 // A retake cut is seconds of real speech, so these arrive switched off and are
@@ -957,6 +1076,50 @@ function renderRetakes() {
     box.appendChild(wrap);
   });
 }
+
+// The key used to come from the environment only, which a double-clicked app
+// never sees — so the card showed nothing and the feature looked broken. Now
+// the card explains itself and takes the key inline.
+function renderKeyState() {
+  const configured = !!llmProvider;
+  $("r-find").disabled = !configured;
+  $("key-setup").classList.toggle("hidden", configured);
+  if (!configured) {
+    $("key-note").textContent =
+      "Retakes need a cloud model. A key is stored on this machine, in "
+      + "~/.bolcap/config.json, readable by your user account alone, and is "
+      + "sent only to the provider you pick, to authenticate each request.";
+    return;
+  }
+  const info = apiKeys[llmProvider] || {};
+  const where = info.source === "environment"
+    ? "from the environment" : "saved on this machine";
+  $("r-status").textContent = "";
+  $("key-note").textContent = `Using ${llmProvider} ${info.hint || ""} (${where}).`;
+}
+
+$("key-save").onclick = async () => {
+  const btn = $("key-save");
+  const value = $("key-value").value.trim();
+  if (!value) return;
+  btn.disabled = true; btn.textContent = "Saving…";
+  try {
+    const fd = new FormData();
+    fd.append("provider", $("key-provider").value);
+    fd.append("key", value);
+    const res = await fetch("/api/settings/api-key", { method: "POST", body: fd });
+    if (!res.ok) throw new Error((await res.json()).detail || "Could not save key");
+    const data = await res.json();
+    apiKeys = data.api_keys || {};
+    llmProvider = data.llm || null;
+    $("key-value").value = "";       // never keep it in the DOM
+    renderKeyState();
+  } catch (err) {
+    $("key-note").textContent = err.message;
+  } finally {
+    btn.disabled = false; btn.textContent = "Save";
+  }
+};
 
 $("r-find").onclick = async () => {
   if (!jobId) return;

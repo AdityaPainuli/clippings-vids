@@ -330,8 +330,93 @@ not, and adding one would put tens of megabytes into every platform build to
 save a dozen lines. `captions/llm.py` posts to either API directly and picks
 whichever key is set.
 
+### The key is configured in the app, not the environment
+Reading the key from `os.environ` alone made the feature unreachable for the way
+Bolcap actually ships. A double-clicked app inherits launchd's environment on
+macOS, not the shell's, and Windows behaves the same for a double-clicked exe —
+so `export ANTHROPIC_API_KEY=...` in a terminal never arrived, and the retakes
+card silently never appeared. Worst kind of failure: no error, nothing to
+search for.
+
+The key now lives in `~/.bolcap/config.json` (0600, in a 0700 directory) and is
+pushed into the environment at startup, which keeps `captions/llm.py` reading
+nothing but `os.environ` and keeps the engine layer unaware of the app's
+config. A key already in the environment wins and cannot be overwritten from
+the UI: CI, the CLI, and anyone running from a shell set it deliberately.
+
+The key is never read back — the UI gets "configured", the provider, and the
+last four characters.
+
+It is written through a 0600 temporary file and swapped in with `os.replace`.
+Writing first and chmod-ing after leaves a window where the default umask has
+already put the key on disk as 0644, and a write that fails never reaches the
+chmod at all.
+
+"Never leaves the machine" was wrong and is not what the UI says any more: the
+key is sent to the provider as the authentication header on every request.
+What stays local is the audio, the video, and the key at rest.
+
+An environment key also decides *which* provider is used. Injecting a saved
+Anthropic key alongside an exported `GOOGLE_API_KEY` made `provider()` pick
+Anthropic and silently ignore the choice the user had made, so the environment's
+provider is recorded at startup and honoured explicitly.
+
 ### The key is the feature switch
-No key means the retakes card never appears and the CLI says so plainly.
-Offering a button that can only fail is worse than not offering it. Bolcap's
-promise is that nothing leaves the machine, so this one exception is stated in
-the UI: transcript **text** is sent, never audio or video.
+Without one the retakes card still appears, but it explains what the feature
+needs and takes the key inline instead of hiding. The CLI says so plainly.
+Bolcap's promise is that nothing leaves the machine, so this one exception is
+stated where the user will read it: transcript **text** is sent, never audio or
+video.
+
+
+## Fit to length ("get this under 60 seconds")
+
+### Cheapest doubt per second, not shortest cut first
+Auto cuts are free — safe by definition — so they are always in. Suggestions
+are then added cheapest-first, where cost is `(1 - confidence) / duration`:
+how much doubt each second of saving carries. That prefers one long confident
+cut over three short shaky ones, which is what a person trimming by hand does.
+
+### Length is recomputed, never summed
+Cuts overlap. Adding up their durations claims the same second twice and stops
+short of the target while reporting success, so the remaining length is
+recomputed from the real kept spans after every addition.
+
+### Over-cutting is a bug, not a rounding error
+Greedy selection overshoots: the cut that finally crosses the line often makes
+an earlier one unnecessary. A backward pass drops the shakiest cut the target
+can do without, one at a time. Without it, a 52-second target on a 56-second
+clip removed 8 seconds where 6 would do. `check_fit.py` asserts that every
+applied suggestion is one the target could not reach without.
+
+### A length target never applies a retake
+A retake cut is seconds of real speech chosen by a cloud model, and it is the
+one kind of cut that always waits for a person. Letting a number in a text box
+apply one would undo that rule quietly. Retakes are excluded from selection and
+the count left alone is reported.
+
+### A target that cannot be met is said out loud
+When every available cut still leaves the video over the target, the rest is
+speech — and cutting speech to hit a number is the user's call, not the
+software's. The shortfall is reported in both the CLI and the UI rather than
+silently delivering something longer than asked for.
+
+### The choice is made once, on the server
+`tighten.fit_to_length` picks the cuts; the browser only switches on the
+indices it returns. Reimplementing the choice in JavaScript is exactly how the
+timeline and the export came to disagree about which words survived.
+
+
+## Writes are same-origin only
+
+The local server is loopback-only and unauthenticated, which is fine for
+serving a page you opened yourself and not fine for writes. A multipart form
+POST is CORS-safelisted, so any page you happen to visit can post to
+`127.0.0.1` without being able to read the reply — enough to overwrite the
+stored cloud key with the attacker's own, quietly sending every later
+transcript to their account.
+
+Every state-changing endpoint now refuses a request a browser has labelled
+cross-site, by `Sec-Fetch-Site` or by an `Origin` that is not ours. A missing
+`Origin` is allowed: that is a non-browser client, which already needs local
+access to reach the port at all.

@@ -14,7 +14,8 @@ import uuid
 from pathlib import Path
 from typing import Dict, Literal, Optional
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import (BackgroundTasks, Depends, FastAPI, File, Form, HTTPException,
+                     Request, UploadFile)
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
@@ -63,6 +64,35 @@ jobs: Dict[str, dict] = {}
 setup_progress: Dict[str, object] = {"status": "idle"}
 
 
+def _allowed_origins() -> set:
+    return {f"http://{h}:{PORT}" for h in (HOST, "127.0.0.1", "localhost")}
+
+
+def same_origin(request: Request):
+    """
+    Refuse cross-site writes.
+
+    The server is loopback-only and unauthenticated, which is fine for reading
+    a page you opened yourself and not fine for writes: a multipart form POST
+    is CORS-safelisted, so any web page you happen to visit can post to
+    127.0.0.1 without needing to read the reply. That is enough to overwrite
+    the stored cloud key with the attacker's, sending every later transcript
+    to their account.
+
+    A browser always labels such a request — `Sec-Fetch-Site: cross-site`, or
+    an `Origin` that is not ours. A missing Origin means a non-browser client
+    (the smoke test, curl), which already needs local access to reach here.
+    """
+    if request.headers.get("sec-fetch-site") in ("cross-site", "same-site"):
+        raise HTTPException(status_code=403, detail="Cross-origin request refused")
+    origin = request.headers.get("origin")
+    if origin is not None and origin not in _allowed_origins():
+        raise HTTPException(status_code=403, detail="Cross-origin request refused")
+
+
+WRITE = [Depends(same_origin)]
+
+
 def _retakes_payload(job: dict) -> dict | None:
     r = job.get("retakes")
     if not r:
@@ -85,10 +115,10 @@ async def setup_status():
     # else in Bolcap runs offline; this is the one feature that needs a key,
     # so it is surfaced rather than failing when clicked.
     return {**assets.setup_status(), "progress": setup_progress,
-            "llm": llm.provider()}
+            "llm": llm.provider(), "api_keys": assets.api_key_status()}
 
 
-@app.post("/api/setup/run")
+@app.post("/api/setup/run", dependencies=WRITE)
 async def setup_run(model: str = Form(assets.DEFAULT_MODEL)):
     if setup_progress.get("status") == "running":
         return {"status": "running"}
@@ -124,7 +154,7 @@ def _transcribe_worker(job_id: str, video_path: str, language: Optional[str],
         job["error"] = str(e)[:500]
 
 
-@app.post("/api/transcribe")
+@app.post("/api/transcribe", dependencies=WRITE)
 async def transcribe_endpoint(
     file: UploadFile = File(...),
     language: Optional[str] = Form(None),
@@ -149,7 +179,7 @@ async def transcribe_endpoint(
 
 # ── Tighten ──────────────────────────────────────────────────────────────────
 
-@app.post("/api/tighten")
+@app.post("/api/tighten", dependencies=WRITE)
 async def tighten_endpoint(
     job_id: str = Form(...),
     silence: bool = Form(True),
@@ -182,6 +212,78 @@ async def tighten_endpoint(
     }
 
 
+@app.post("/api/fit", dependencies=WRITE)
+async def fit_endpoint(job_id: str = Form(...), target: float = Form(...),
+                       cuts: str = Form(...)):
+    """
+    Choose which of the proposed cuts to apply to reach a target length.
+
+    Takes the cut list the UI is holding rather than re-detecting, so the
+    selection is made against exactly what the user is looking at — and so
+    there is one implementation of the choice, in tighten.fit_to_length,
+    instead of one here and another in the browser.
+
+    Returns the indices to switch on. Retakes are never among them.
+    """
+    job = _job(job_id)
+    if not job.get("video_info"):
+        raise HTTPException(status_code=409, detail="Transcribe first")
+
+    try:
+        raw = json.loads(cuts)
+        # An analysed clip can legitimately have nothing to cut. Rejecting that
+        # stopped Fit from doing the one useful thing left: saying whether the
+        # target is already met, and by how much it is missed if not.
+        if not isinstance(raw, list):
+            raise ValueError("cuts must be a JSON array")
+        parsed = [tighten.Cut(float(c["start"]), float(c["end"]),
+                              c.get("reason", "silence"),
+                              float(c.get("confidence", 1.0)),
+                              str(c.get("text", ""))[:200],
+                              auto=bool(c.get("auto")))
+                  for c in raw]
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Bad cuts: {e}")
+
+    duration = job["video_info"]["duration"]
+    try:
+        result = tighten.fit_to_length(parsed, duration, target)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    picked = {id(c) for c in result["cuts"]}
+    return {
+        "selected": [i for i, c in enumerate(parsed) if id(c) in picked],
+        "duration": result["duration"],
+        "target": result["target"],
+        "reachable": result["reachable"],
+        "shortfall": result["shortfall"],
+        "protected": result["protected"],
+        "original_duration": round(duration, 3),
+    }
+
+
+@app.post("/api/settings/api-key", dependencies=WRITE)
+async def set_api_key(provider: str = Form(...), key: str = Form("")):
+    """
+    Save (or clear) the cloud model key.
+
+    The key is never read back out — the response says which provider is
+    configured and shows the last four characters, nothing more.
+    """
+    if provider not in assets.KEY_ENV:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
+    try:
+        assets.save_api_key(provider, key)
+    except PermissionError as e:
+        # Set in the launch environment: that is a deliberate choice made
+        # outside the app, and the app must not quietly replace it.
+        raise HTTPException(status_code=409, detail=str(e))
+    except (OSError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Could not save key: {e}")
+    return {"api_keys": assets.api_key_status(), "llm": llm.provider()}
+
+
 # ── Retakes ──────────────────────────────────────────────────────────────────
 
 def _retake_worker(job_id: str, words: list):
@@ -196,7 +298,7 @@ def _retake_worker(job_id: str, words: list):
         job["error"] = str(e)[:500]
 
 
-@app.post("/api/retakes")
+@app.post("/api/retakes", dependencies=WRITE)
 async def retakes_endpoint(job_id: str = Form(...),
                            transcript: Optional[str] = Form(None)):
     """
@@ -336,7 +438,7 @@ def _render_worker(job_id: str, export: str, style: styles.CaptionStyle,
         job["error"] = str(e)[:500]
 
 
-@app.post("/api/render")
+@app.post("/api/render", dependencies=WRITE)
 async def render_endpoint(
     job_id: str = Form(...),
     style_json: str = Form(...),          # CaptionStyle JSON or {"preset": name, ...overrides}

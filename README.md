@@ -72,6 +72,11 @@ left alone by default. The reasoning is in [DECISIONS.md](DECISIONS.md), and
 `scripts/eval_tighten.py` runs in CI on every push, failing the build if any
 real word gets cut.
 
+**Fit to length** takes a target — "1:00" — and applies the least doubtful cuts
+needed to reach it, dropping any it turns out not to need. If the target is out
+of reach it says by how much rather than quietly handing back something longer.
+It never applies a retake to hit a number.
+
 Cuts leave two ways. A flattened MP4 with the captions burned on, or an **EDL /
 FCPXML timeline** that carries the cuts into Premiere, Resolve, or Final Cut and
 relinks your original file, so nothing is re-encoded and every cut stays
@@ -90,15 +95,23 @@ model, about one call per minute of video, and the model only ever *chooses*
 between spans that were already measured — it proposes no timestamps and
 rewrites no text, so a bad answer cannot invent a cut inside a good sentence.
 
-This is the one feature that leaves your machine, and only with a key set:
+This is the one feature that leaves your machine, and only with a key set.
+Paste one into the Retakes panel in the app, or set it in the environment for
+CLI runs:
 
 ```bash
 export ANTHROPIC_API_KEY=...      # or GOOGLE_API_KEY
 ```
 
-Your **transcript text** is sent. Audio and video never are. Without a key the
-feature simply does not appear. Retakes never apply themselves — a wrong retake
-cut removes seconds of real speech, so every one waits for you.
+A key pasted in the app is stored in `~/.bolcap/config.json`, readable by your
+user account alone. It is sent to the provider you pick, as the authentication
+header on each request — nowhere else, and never to any Bolcap infrastructure
+(there isn't any). An environment variable wins over a saved key, and the app
+will not overwrite one.
+
+Your **transcript text** is sent. Audio and video never are. Retakes never apply
+themselves — a wrong retake cut removes seconds of real speech, so every one
+waits for you.
 
 ### Flow
 
@@ -121,6 +134,7 @@ python -m captions.cli video.mp4 --transcript saved.json  # reuse a transcript, 
 python -m captions.cli video.mp4 --tighten-report          # what would be cut, and why
 python -m captions.cli video.mp4 --tighten                 # cut it, captions re-timed to match
 python -m captions.cli video.mp4 --tighten --export fcpxml # cuts to your NLE, no re-encode
+python -m captions.cli video.mp4 --tighten --fit 1:00      # trim to a target length
 python -m captions.cli video.mp4 --retakes                 # report repeated lines
 python -m captions.cli video.mp4 --tighten --cut-retakes   # and remove them
 ```

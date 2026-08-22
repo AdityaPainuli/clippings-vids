@@ -12,8 +12,24 @@ CLI — run the full caption flow locally, no server needed.
 
 import argparse
 import json
+import math
 import os
 import sys
+
+
+def parse_length(text: str) -> float:
+    """Seconds from "60", "1:00", or "1:02.5"."""
+    parts = str(text).strip().split(":")
+    try:
+        seconds = float(parts[-1])
+        for i, part in enumerate(reversed(parts[:-1]), start=1):
+            seconds += float(part) * (60 ** i)
+    except ValueError:
+        raise ValueError(f"could not read a length from {text!r}")
+    # float() happily accepts "inf" and "nan".
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError("length must be a positive number of seconds")
+    return seconds
 
 
 def main():
@@ -39,6 +55,10 @@ def main():
                     help="silence longer than this is cut (seconds)")
     tg.add_argument("--no-fillers", action="store_true",
                     help="leave filler words alone")
+    tg.add_argument("--fit", metavar="LENGTH",
+                    help="trim to a target length, e.g. 60 or 1:00. Applies "
+                         "the least doubtful cuts needed and says so if the "
+                         "target cannot be reached")
     tg.add_argument("--retakes", action="store_true",
                     help="find lines delivered more than once (sends transcript "
                          "text to a cloud model; needs ANTHROPIC_API_KEY or "
@@ -133,6 +153,32 @@ def main():
             for c in found["cuts"]:
                 c.auto = True
             cuts = sorted(cuts + found["cuts"], key=lambda c: c.start)
+
+    if args.fit:
+        try:
+            target = parse_length(args.fit)
+        except ValueError as e:
+            print(f"--fit: {e}")
+            return 2
+        if not tightening:
+            # An empty cut list is not the same as never having analysed:
+            # Tighten can run and find nothing, and Fit still has something
+            # useful to say about whether the target is already met.
+            print("--fit needs an analysis to choose from; add --tighten")
+            return 2
+        fitted = tighten.fit_to_length(cuts, info["duration"], target)
+        for c in cuts:
+            c.auto = any(c is picked for picked in fitted["cuts"])
+        mins, secs = divmod(fitted["duration"], 60)
+        print(f"Fit to {args.fit}: {int(mins)}:{secs:04.1f} "
+              f"({len(fitted['added'])} extra cuts applied)")
+        if not fitted["reachable"]:
+            # Never quietly deliver something longer than asked for.
+            print(f"  could not reach it — {fitted['shortfall']}s over. "
+                  "The rest is speech, and cutting it is your call.")
+        if fitted["protected"]:
+            print(f"  {fitted['protected']} retake suggestion(s) left alone — "
+                  "apply those with --cut-retakes")
 
     if args.tighten_report:
         for c in cuts[:40]:

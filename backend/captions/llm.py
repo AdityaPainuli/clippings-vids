@@ -20,6 +20,16 @@ Only transcript *text* is ever sent. Audio and video never leave the machine.
 import json
 import os
 
+# Canonical provider → environment variable map. The desktop app's config
+# layer reads this rather than keeping its own copy, so the two can never
+# disagree about where a key lives.
+PROVIDER_ENV = {"anthropic": "ANTHROPIC_API_KEY", "gemini": "GOOGLE_API_KEY"}
+
+# Set by the app when a key came from the launch environment. That choice is
+# deliberate and has to win: injecting a saved Anthropic key would otherwise
+# silently outrank a GOOGLE_API_KEY the user exported on purpose.
+PREFERRED_ENV = "BOLCAP_LLM_PROVIDER"
+
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_MODEL = os.getenv("BOLCAP_ANTHROPIC_MODEL", "claude-sonnet-5")
 GEMINI_MODEL = os.getenv("BOLCAP_GEMINI_MODEL", "gemini-2.5-flash")
@@ -32,10 +42,12 @@ class LLMError(RuntimeError):
 
 def provider() -> str | None:
     """Which cloud model is configured, if any."""
-    if os.getenv("ANTHROPIC_API_KEY"):
-        return "anthropic"
-    if os.getenv("GOOGLE_API_KEY"):
-        return "gemini"
+    preferred = os.getenv(PREFERRED_ENV)
+    if preferred in PROVIDER_ENV and os.getenv(PROVIDER_ENV[preferred]):
+        return preferred
+    for name, env in PROVIDER_ENV.items():
+        if os.getenv(env):
+            return name
     return None
 
 

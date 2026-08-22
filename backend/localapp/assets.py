@@ -22,9 +22,12 @@ import tarfile
 import threading
 import time
 import zipfile
+import tempfile
 from pathlib import Path
 
 import requests
+
+from captions import llm
 
 BOLCAP_HOME = Path(os.getenv("BOLCAP_HOME", Path.home() / ".bolcap"))
 BIN_DIR = BOLCAP_HOME / "bin"
@@ -90,10 +93,110 @@ def load_config() -> dict:
 
 
 def save_config(**updates):
+    """
+    Write the config so an API key inside it is never briefly readable.
+
+    Writing the file and then chmod-ing it leaves a window where the default
+    umask has already put the key on disk as 0644 — and a write that fails
+    never reaches the chmod at all. mkstemp creates at 0600, so the secret is
+    owner-only from the moment it exists, and os.replace swaps it in
+    atomically: a crash mid-write leaves the old config, never a truncated one.
+    """
     cfg = {**load_config(), **updates}
     BOLCAP_HOME.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=1)
+    try:
+        os.chmod(BOLCAP_HOME, 0o700)
+    except OSError:
+        pass
+
+    fd, tmp = tempfile.mkstemp(dir=str(BOLCAP_HOME), prefix=".config-",
+                               suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=1)
+        os.replace(tmp, CONFIG_PATH)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+# ── Cloud model key ──────────────────────────────────────────────────────────
+#
+# Retake detection is the one feature that needs a cloud model. It used to read
+# the key from the environment only, which is unreachable for the way Bolcap
+# actually ships: a double-clicked app inherits launchd's environment on macOS,
+# not the shell's, so `export ANTHROPIC_API_KEY=...` in a terminal never got
+# there and the feature silently never appeared.
+#
+# The key is stored here and pushed into the environment at startup, which
+# keeps captions/llm.py reading nothing but os.environ and keeps the engine
+# layer unaware of the app's config.
+
+KEY_ENV = llm.PROVIDER_ENV
+
+# Captured at import, before apply_environment() injects anything. Afterwards
+# every key looks like an environment key, so without this snapshot the app
+# cannot tell which credential the user actually chose — it reported the wrong
+# one in the UI and let the endpoint overwrite a deliberate override.
+ENV_PROVIDED = {p: e for p, e in KEY_ENV.items() if os.environ.get(e)}
+
+
+def env_provided(provider: str) -> bool:
+    """Did this key come from the launch environment rather than the config?"""
+    return provider in ENV_PROVIDED
+
+
+def save_api_key(provider: str, key: str):
+    """Persist a key, or clear it when `key` is empty."""
+    if provider not in KEY_ENV:
+        raise ValueError(f"unknown provider {provider!r}")
+    if env_provided(provider):
+        raise PermissionError(
+            f"{KEY_ENV[provider]} is set in this app's environment; "
+            "change it there instead.")
+    keys = {**load_config().get("api_keys", {})}
+    key = (key or "").strip()
+    if key:
+        keys[provider] = key
+    else:
+        keys.pop(provider, None)
+        os.environ.pop(KEY_ENV[provider], None)
+    save_config(api_keys=keys)
+    apply_environment()
+
+
+def api_key_status() -> dict:
+    """
+    What is configured, never the key itself.
+
+    `source` matters to the user: a key set in the environment cannot be
+    cleared from the UI, so the UI has to stop offering to.
+    """
+    stored = load_config().get("api_keys", {})
+    out = {}
+    for provider, env in KEY_ENV.items():
+        if env_provided(provider):
+            # The environment value is the one in use even when a key is also
+            # saved, so it is the one described. Reporting the saved key's
+            # hint here named a credential that was not being used.
+            out[provider] = {"configured": True, "source": "environment",
+                             "hint": _hint(os.environ[env]), "editable": False}
+        elif stored.get(provider):
+            out[provider] = {"configured": True, "source": "saved",
+                             "hint": _hint(stored[provider]), "editable": True}
+        else:
+            out[provider] = {"configured": False, "source": None,
+                             "hint": None, "editable": True}
+    return out
+
+
+def _hint(key: str) -> str:
+    """Enough to recognise which key it is, not enough to use it."""
+    key = key.strip()
+    return f"…{key[-4:]}" if len(key) > 8 else "…"
 
 
 # ── Status ───────────────────────────────────────────────────────────────────
@@ -314,3 +417,20 @@ def apply_environment():
     fonts = Path(__file__).parent / "fonts"
     if fonts.is_dir():
         os.environ.setdefault("CAPTIONS_FONTS_DIR", str(fonts))
+
+    # A key from the launch environment wins — CI, the CLI, and anyone running
+    # from a shell set it deliberately. Saved keys fill in the gaps only.
+    #
+    # Filling a gap can still change the answer: with GOOGLE_API_KEY exported
+    # and an Anthropic key saved, injecting the saved one made provider() pick
+    # Anthropic, quietly ignoring the provider the user chose. So the
+    # environment's choice is recorded and honoured explicitly.
+    for provider, value in (load_config().get("api_keys") or {}).items():
+        env = KEY_ENV.get(provider)
+        if env and value and not env_provided(provider):
+            os.environ[env] = value
+
+    for provider in KEY_ENV:
+        if env_provided(provider):
+            os.environ[llm.PREFERRED_ENV] = provider
+            break
