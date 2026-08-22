@@ -1,0 +1,33 @@
+name: checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  detection:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-bolcap.txt
+
+      # The checks import `captions`, whose package __init__ pulls in the
+      # style schema and the transcriber, so the runtime deps have to be here
+      # even though the checks themselves need no model, no ffmpeg, and no
+      # network.
+      - name: Install deps
+        run: pip install -r requirements-bolcap.txt
+
+      - name: Filler detection cuts no real words
+        run: python scripts/eval_tighten.py
+
+      - name: Timeline timecode arithmetic
+        run: python scripts/check_timeline.py

@@ -22,7 +22,9 @@ def main():
     ap.add_argument("--preset", default="bold_impact", help="built-in style preset")
     ap.add_argument("--style", help="path to a CaptionStyle JSON (overrides --preset)")
     ap.add_argument("--export", default="burned",
-                    choices=["burned", "overlay", "ass", "srt"])
+                    choices=["burned", "overlay", "ass", "srt", "edl", "fcpxml"],
+                    help="edl/fcpxml emit the cuts as an NLE timeline "
+                         "(no re-encode); they require --tighten")
     ap.add_argument("--transcript", help="reuse a saved transcript JSON")
     ap.add_argument("--script", default="hinglish", choices=["hinglish", "devanagari"])
     ap.add_argument("--language", default=None, help="force language code (e.g. hi)")
@@ -41,9 +43,20 @@ def main():
                     help="also cut context-scored real words like 'toh', 'na'")
     args = ap.parse_args()
 
-    from . import engine, render, romanize, styles, tighten, transcribe
+    from . import engine, render, romanize, styles, tighten, timeline, transcribe
 
     base = os.path.splitext(args.video)[0]
+
+    if args.style:
+        with open(args.style, encoding="utf-8") as f:
+            style = styles.CaptionStyle(**json.load(f))
+    else:
+        style = styles.STYLE_PRESETS[args.preset]
+    text_key = "hinglish" if args.script == "hinglish" else "text"
+
+    if args.export in ("edl", "fcpxml") and not args.tighten:
+        print("--export edl/fcpxml describes what to cut; add --tighten")
+        return 2
 
     if args.transcript:
         with open(args.transcript, encoding="utf-8") as f:
@@ -92,20 +105,46 @@ def main():
         applied = [c for c in cuts if c.auto]
         result = tighten.apply_cuts(transcript["words"], applied, info["duration"])
         transcript["words"] = result["words"]      # captions re-timed to the cut
-        print("Cutting video...")
-        cut_video = f"{base}_tightened.mp4"
-        render.render_cut(args.video, result["kept"], cut_video)
-        info = render.probe_video(cut_video)
-        print(f"  {cut_video}")
 
-    if args.style:
-        with open(args.style, encoding="utf-8") as f:
-            style = styles.CaptionStyle(**json.load(f))
-    else:
-        style = styles.STYLE_PRESETS[args.preset]
+        if args.export in ("edl", "fcpxml"):
+            # The point of a timeline export is that the media is never
+            # touched — the NLE relinks the original and applies these cuts.
+            name = os.path.basename(args.video)
+            if args.export == "edl":
+                out = timeline.export_edl(result["kept"], info["fps"], name,
+                                          args.output or f"{base}.edl")
+            else:
+                out = timeline.export_fcpxml(
+                    result["kept"], info["fps"], info["width"], info["height"],
+                    args.video, info["duration"],
+                    args.output or f"{base}.fcpxml",
+                    name=os.path.splitext(name)[0],
+                    audio=render.probe_audio(args.video),
+                    # Cuts we flagged but did not make become markers, so the
+                    # editor can find them instead of rewatching for them.
+                    markers=[c for c in cuts if not c.auto])
+            # These captions are timed to the cut timeline and mean nothing
+            # against the uncut source, so they ship with it.
+            srt = render.export_srt(transcript["words"], f"{base}_tightened.srt",
+                                    style.words_per_line, text_key=text_key)
+            print(f"done: {out}")
+            print(f"  captions for that timeline: {srt}")
+            return
+
+        # Only a burned MP4 needs the media physically cut. `ass` and `srt`
+        # need nothing but the re-timed words, and `overlay` draws on a blank
+        # canvas — re-encoding for any of them produces a video file that is
+        # then thrown away.
+        if args.export == "burned":
+            print("Cutting video...")
+            cut_video = f"{base}_tightened.mp4"
+            render.render_cut(args.video, result["kept"], cut_video)
+            info = render.probe_video(cut_video)
+            print(f"  {cut_video}")
+        else:
+            info = {**info, "duration": result["duration"]}
 
     source_video = cut_video or args.video
-    text_key = "hinglish" if args.script == "hinglish" else "text"
 
     ass_path = f"{base}.ass"
     with open(ass_path, "w", encoding="utf-8") as f:

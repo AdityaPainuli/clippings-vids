@@ -201,3 +201,57 @@ Browser playback jumps over removed spans so there is nothing to wait for. That
 leaves a small audible seam the exported file will not have. The UI's
 struck-through words use the same largest-overlap rule as the server, so what
 looks removed and what is removed always agree.
+
+## Timeline export (EDL / FCPXML)
+
+### Editors get decisions, not a re-encode
+`render_cut` flattens the edit into a new MP4. That is right for a finished
+clip and wrong for anyone who still has grading, sound, or B-roll to do: it
+throws away every cut point and costs a generation of quality. EDL and FCPXML
+carry the same cuts as edit decisions, the NLE relinks the untouched original,
+and every cut stays draggable.
+
+Two formats because no single one is read everywhere. EDL (CMX3600) is plain
+text and imports into Premiere, Resolve, Avid, and Final Cut, but carries
+nothing except cuts. FCPXML is read by Final Cut and Resolve and keeps the clip
+name, the media path, and markers.
+
+### Record timecodes accumulate rounded source durations
+An EDL's record times must be exactly contiguous. Converting each segment's
+record time from floating-point seconds independently lets rounding error pile
+up, and an EDL with non-contiguous record times imports with gaps or overlaps.
+So each event's record-in is the previous event's record-out, and durations are
+summed in whole frames.
+
+### NTSC rates get drop-frame timecode
+29.97 and 59.94 are labelled drop-frame; 23.976 is not, matching every NLE.
+Labelling 29.97 material non-drop drifts roughly 3.6 seconds per hour against
+the clock — invisible in review, and exactly the kind of thing a delivery gets
+rejected for. `scripts/check_timeline.py` asserts the standard checkpoints,
+including that hour one lands on 107892 frames.
+
+The probed frame rate is snapped back to its exact rational before any
+multiplication: ffprobe reads back rounded (29.97, not 30000/1001), and the
+rounded value drifts about a tenth of a frame per hour for no reason.
+
+### FCPXML times are exact rationals
+Times are written as `1001/30000s`, never as decimals, because Final Cut
+re-quantises anything else. Zero is written `0s`.
+
+### The clip keeps the user's filename
+The app works on its own copy of the upload, in a work directory swept after a
+few days. The timeline points at that copy but is *named* for the user's
+original, so when the path goes stale the NLE's relink matches on name and the
+fix is one click instead of a hunt.
+
+### Suggestions we did not apply become markers
+A cut the user switched off is still something we noticed. In FCPXML it travels
+as a marker on the clip that contains it, so the flag survives into the edit
+instead of being lost at export. Markers landing inside a removed span are
+dropped rather than emitted outside their clip, which Final Cut ignores
+silently.
+
+### Only the burned MP4 re-encodes
+Subtitle and timeline exports need the re-timed words and nothing else. They
+used to trigger a full `render_cut` first, spending minutes producing a video
+file that was then thrown away.
