@@ -10,6 +10,10 @@ save a dozen lines here.
 Nothing here runs unless the user sets a key. No key means the caller gets
 None and the feature that wanted it simply stays off.
 
+A call that *fails* raises LLMError rather than returning None. A bad key, a
+quota wall, and a model that simply says "no" are three different outcomes, and
+collapsing them made an outage read to the user as "nothing found".
+
 Only transcript *text* is ever sent. Audio and video never leave the machine.
 """
 
@@ -20,6 +24,10 @@ ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_MODEL = os.getenv("BOLCAP_ANTHROPIC_MODEL", "claude-sonnet-5")
 GEMINI_MODEL = os.getenv("BOLCAP_GEMINI_MODEL", "gemini-2.5-flash")
 TIMEOUT = 60
+
+
+class LLMError(RuntimeError):
+    """The call did not complete. Distinct from the model answering 'no'."""
 
 
 def provider() -> str | None:
@@ -37,20 +45,26 @@ def available() -> bool:
 
 def complete(prompt: str, system: str = "", max_tokens: int = 1024) -> str | None:
     """
-    Prompt in, text out. Returns None on a missing key or any failure —
-    callers treat this as "no answer", never as an error worth stopping for.
+    Prompt in, text out. None only when no key is configured.
+
+    Raises LLMError when the call itself fails, so the caller can tell an
+    outage from an answer.
     """
     which = provider()
     if which is None:
         return None
     try:
         import requests
+    except ImportError as e:
+        raise LLMError(f"requests is not installed ({e})") from e
+    try:
         if which == "anthropic":
             return _anthropic(requests, prompt, system, max_tokens)
         return _gemini(requests, prompt, system, max_tokens)
+    except LLMError:
+        raise
     except Exception as e:                                  # noqa: BLE001
-        print(f"  [llm] call failed ({type(e).__name__}: {e})")
-        return None
+        raise LLMError(f"{type(e).__name__}: {e}") from e
 
 
 def _anthropic(requests, prompt: str, system: str, max_tokens: int) -> str | None:
@@ -69,8 +83,7 @@ def _anthropic(requests, prompt: str, system: str, max_tokens: int) -> str | Non
         data=json.dumps(body),
     )
     if r.status_code != 200:
-        print(f"  [llm] anthropic {r.status_code}: {r.text[:200]}")
-        return None
+        raise LLMError(_http_reason("Anthropic", r))
     parts = r.json().get("content", [])
     return "".join(p.get("text", "") for p in parts if p.get("type") == "text") or None
 
@@ -91,13 +104,24 @@ def _gemini(requests, prompt: str, system: str, max_tokens: int) -> str | None:
         data=json.dumps(body),
     )
     if r.status_code != 200:
-        print(f"  [llm] gemini {r.status_code}: {r.text[:200]}")
-        return None
+        raise LLMError(_http_reason("Gemini", r))
     try:
         parts = r.json()["candidates"][0]["content"]["parts"]
     except (KeyError, IndexError):
         return None
     return "".join(p.get("text", "") for p in parts) or None
+
+
+def _http_reason(name: str, r) -> str:
+    """A message the user can act on, not a status code to look up."""
+    if r.status_code in (401, 403):
+        return f"{name} rejected the API key (HTTP {r.status_code})"
+    if r.status_code == 429:
+        return f"{name} rate limit or quota reached (HTTP 429)"
+    if r.status_code >= 500:
+        return f"{name} is having trouble (HTTP {r.status_code})"
+    detail = (r.text or "").strip().replace("\n", " ")[:160]
+    return f"{name} returned HTTP {r.status_code}: {detail}"
 
 
 def parse_json(text: str | None):

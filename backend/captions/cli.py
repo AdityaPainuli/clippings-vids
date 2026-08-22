@@ -62,8 +62,9 @@ def main():
         style = styles.STYLE_PRESETS[args.preset]
     text_key = "hinglish" if args.script == "hinglish" else "text"
 
-    if args.export in ("edl", "fcpxml") and not args.tighten:
-        print("--export edl/fcpxml describes what to cut; add --tighten")
+    if args.export in ("edl", "fcpxml") and not (args.tighten or args.cut_retakes):
+        print("--export edl/fcpxml describes what to cut; "
+              "add --tighten or --cut-retakes")
         return 2
 
     if args.transcript:
@@ -84,8 +85,10 @@ def main():
     # ── Tighten ───────────────────────────────────────────────────────────
     info = render.probe_video(args.video)
     cut_video = None
+    cuts = []
+    tightening = args.tighten or args.tighten_report
 
-    if args.tighten or args.tighten_report:
+    if tightening:
         cfg = tighten.TightenConfig(
             min_gap=args.min_gap,
             fillers=not args.no_fillers,
@@ -101,40 +104,46 @@ def main():
         if s["suggested_cuts"]:
             print(f"  ({s['suggested_cuts']} lower-confidence cuts not applied)")
 
-        if args.retakes or args.cut_retakes:
-            print("Looking for retakes...")
-            found = retakes.detect(transcript["words"], media_path=args.video)
-            if found["status"] == "no-model":
-                print("  no cloud model configured — set ANTHROPIC_API_KEY or "
-                      "GOOGLE_API_KEY")
-            elif not found["groups"]:
-                print("  none found")
-            for g in found["groups"]:
-                print(f"  {len(g['attempts'])} attempts, keeping #{g['keep'] + 1} "
-                      f"({g['confidence']:.2f}) — {g['reason']}")
-                for i, a in enumerate(g["attempts"]):
-                    mark = "keep" if i == g["keep"] else "cut "
-                    print(f"    {mark} {a['start']:7.2f}–{a['end']:7.2f}  "
-                          f"{a['text'][:70]}")
-            if args.cut_retakes:
-                # Applied only on the explicit flag: the report above is the
-                # confirmation step, and a wrong retake cut removes a sentence.
-                # Appended rather than re-merged — these cuts already start and
-                # end at detected pauses, and running them back through _merge
-                # would pad every span a second time.
-                for c in found["cuts"]:
-                    c.auto = True
-                cuts = sorted(cuts + found["cuts"], key=lambda c: c.start)
+    if args.retakes or args.cut_retakes:
+        print("Looking for retakes...")
+        found = retakes.detect(transcript["words"], media_path=args.video)
+        if found["status"] == "no-model":
+            print("  no cloud model configured — set ANTHROPIC_API_KEY or "
+                  "GOOGLE_API_KEY")
+        elif found["status"] == "model-error":
+            print(f"  detection did not finish: {found['error']}")
+        elif not found["groups"]:
+            print("  none found")
+        for g in found["groups"]:
+            print(f"  {len(g['attempts'])} attempts, keeping #{g['keep'] + 1} "
+                  f"({g['confidence']:.2f}) — {g['reason']}")
+            for i, a in enumerate(g["attempts"]):
+                mark = "keep" if i == g["keep"] else "cut "
+                print(f"    {mark} {a['start']:7.2f}–{a['end']:7.2f}  "
+                      f"{a['text'][:70]}")
+        if found.get("skipped"):
+            print(f"  {found['skipped']} more repeated-looking groups were not "
+                  f"checked (cap of {retakes.DEFAULT_MAX_GROUPS} per run)")
+        if args.cut_retakes:
+            # Applied only on the explicit flag: the report above is the
+            # confirmation step, and a wrong retake cut removes a sentence.
+            # Appended rather than re-merged — these cuts already start and
+            # end at detected pauses, and running them back through _merge
+            # would pad every span a second time.
+            for c in found["cuts"]:
+                c.auto = True
+            cuts = sorted(cuts + found["cuts"], key=lambda c: c.start)
 
-        if args.tighten_report:
-            for c in cuts[:40]:
-                mark = "cut " if c.auto else "sugg"
-                print(f"  {mark} {c.start:7.2f}–{c.end:7.2f} {c.reason:<8} "
-                      f"{c.confidence:.2f}  {c.text}")
-            if len(cuts) > 40:
-                print(f"  ... {len(cuts) - 40} more")
-            return
+    if args.tighten_report:
+        for c in cuts[:40]:
+            mark = "cut " if c.auto else "sugg"
+            print(f"  {mark} {c.start:7.2f}–{c.end:7.2f} {c.reason:<8} "
+                  f"{c.confidence:.2f}  {c.text}")
+        if len(cuts) > 40:
+            print(f"  ... {len(cuts) - 40} more")
+        return
 
+    if cuts:
         applied = [c for c in cuts if c.auto]
         result = tighten.apply_cuts(transcript["words"], applied, info["duration"])
         transcript["words"] = result["words"]      # captions re-timed to the cut

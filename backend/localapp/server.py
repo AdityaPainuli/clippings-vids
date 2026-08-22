@@ -184,13 +184,12 @@ async def tighten_endpoint(
 
 # ── Retakes ──────────────────────────────────────────────────────────────────
 
-def _retake_worker(job_id: str):
+def _retake_worker(job_id: str, words: list):
     job = jobs[job_id]
     try:
         job["status"] = "finding-retakes"
         job.pop("error", None)
-        job["retakes"] = retakes.detect(job["transcript"]["words"],
-                                        media_path=job["video_path"])
+        job["retakes"] = retakes.detect(words, media_path=job["video_path"])
         job["status"] = "ready"
     except Exception as e:
         job["status"] = "failed"
@@ -198,11 +197,17 @@ def _retake_worker(job_id: str):
 
 
 @app.post("/api/retakes")
-async def retakes_endpoint(job_id: str = Form(...)):
+async def retakes_endpoint(job_id: str = Form(...),
+                           transcript: Optional[str] = Form(None)):
     """
     Start retake detection. Unlike everything else in Bolcap this sends text
     to a cloud model, so it only runs when the user asks for it and only if a
     key is configured.
+
+    The edited transcript is accepted for the same reason /api/render takes it:
+    the user's corrections are what they can see on screen. Detecting against
+    the raw Whisper output would send stale text to the provider and return
+    attempts whose wording disagrees with the transcript in front of them.
     """
     job = _job(job_id)
     if not job.get("transcript"):
@@ -212,7 +217,21 @@ async def retakes_endpoint(job_id: str = Form(...)):
             status_code=409,
             detail="Retake detection needs a cloud model. Set ANTHROPIC_API_KEY "
                    "or GOOGLE_API_KEY and restart Bolcap.")
-    threading.Thread(target=_retake_worker, args=(job_id,), daemon=True).start()
+
+    words = job["transcript"]["words"]
+    if transcript:
+        try:
+            data = json.loads(transcript)
+            if not isinstance(data, dict) or not isinstance(data.get("words"), list):
+                raise ValueError("transcript must be an object with a words array")
+            if not data["words"]:
+                raise ValueError("empty transcript")
+            words = data["words"]
+        except (json.JSONDecodeError, ValueError) as e:
+            raise HTTPException(status_code=400, detail=f"Bad transcript: {e}")
+
+    threading.Thread(target=_retake_worker, args=(job_id, words),
+                     daemon=True).start()
     return {"job_id": job_id, "provider": llm.provider()}
 
 
