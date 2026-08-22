@@ -255,3 +255,83 @@ silently.
 Subtitle and timeline exports need the re-timed words and nothing else. They
 used to trigger a full `render_cut` first, spending minutes producing a video
 file that was then thrown away.
+
+## Retake detection (issue: lines delivered more than once)
+
+### The model is the second stage, never the first
+Handing a 40-minute transcript to a model and asking it to find the retakes is
+expensive, unreproducible, and gets worse as the file grows. Instead, cheap
+local arithmetic splits the transcript into phrases at real pauses and scores
+each against the recent ones with lexical overlap. Only what survives that goes
+to the model, as a handful of small, focused questions. On the project's
+reference transcript this is about **one model call per minute of video**.
+
+The two stages fail in opposite directions and are gated separately. Stage 1 is
+scored on **recall** — anything it drops is gone for good, and a false candidate
+costs one cheap call. Stage 2 is the precision stage.
+
+### The model classifies, it never generates
+It picks between spans stage 1 already computed. It proposes no timestamps and
+rewrites no text, and a reply naming an out-of-range attempt is discarded. A
+hallucination therefore cannot invent a cut inside a good sentence — the worst
+it can do is decline to help.
+
+### The model's reply is checked by exact type, not truthiness
+JSON `"false"` is a truthy string and Python counts `True` as an `int`, so
+`{"retake": "false"}` and `{"keep": true}` both survive a casual check and
+become real cuts. The verdict must be the JSON boolean `true` and the index an
+actual `int`. This is the difference between the guarantee holding and merely
+being claimed, so `eval_retakes.py` asserts every one of those shapes cuts
+nothing.
+
+### A failed call is not a "no"
+A rejected key, a quota wall, and the model saying "these are not retakes" are
+three different outcomes. Collapsing them into `None` made an outage read to
+the user as "your take is clean" — the worst possible failure for a feature
+whose whole job is to find something. `llm.LLMError` carries a reason the user
+can act on, detection stops at the first one (a rejected key does not start
+working on the next call), and both callers say so.
+
+### Caps are reported, never silent
+Detection stops after 12 groups to bound cost on a long recording. A cap the
+user cannot see reads as "we checked everything", so the number skipped is
+returned and surfaced in both the CLI and the UI.
+
+### Retakes never auto-apply
+A filler cut is 300ms; a retake cut is eight seconds of speech, and a wrong one
+destroys the take. Every retake arrives switched off, shown beside the take we
+would keep, with both playable. In the CLI this is two flags: `--retakes`
+reports, `--cut-retakes` applies.
+
+### Phrases split on measured pauses, not word timings
+The same trap as silence detection: Whisper stretches each word's end time to
+the start of the next, so inter-word gaps read 0.00 across two seconds of
+silence. Real pauses come from ffmpeg. Clause punctuation is the fallback when
+there is no media, and it is genuinely worse — in the reference transcript the
+first 151 words carry no punctuation at all, which ran them together into one
+49-second "phrase" that then matched everything by containment.
+
+"Measured, and there were none" is not the same as "not measured". An empty
+silence list is an answer — the speaker never stopped, so there are no restarts
+to find — and falling back to punctuation there invents boundaries against the
+evidence. `None` means unmeasured; `[]` means measured and empty.
+
+### Similarity uses overlap, with floors
+A second attempt is routinely longer or shorter than the first, so Jaccard
+punishes exactly the thing being detected; intersection over the *smaller* set
+does not. That ratio flatters short phrases (two shared words out of five reads
+as 0.40), so a match also needs at least 3 shared words, at least 1 shared
+bigram, and takes within 2.5× of each other in length. Bigrams are what stop a
+shared bag of Hinglish connectives from scoring on its own.
+
+### No SDK for the cloud call
+`requests` is already a dependency; `anthropic` and `google-generativeai` are
+not, and adding one would put tens of megabytes into every platform build to
+save a dozen lines. `captions/llm.py` posts to either API directly and picks
+whichever key is set.
+
+### The key is the feature switch
+No key means the retakes card never appears and the CLI says so plainly.
+Offering a button that can only fail is worse than not offering it. Bolcap's
+promise is that nothing leaves the machine, so this one exception is stated in
+the UI: transcript **text** is sent, never audio or video.
