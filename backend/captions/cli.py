@@ -12,6 +12,7 @@ CLI — run the full caption flow locally, no server needed.
 
 import argparse
 import json
+import math
 import os
 import sys
 
@@ -25,8 +26,9 @@ def parse_length(text: str) -> float:
             seconds += float(part) * (60 ** i)
     except ValueError:
         raise ValueError(f"could not read a length from {text!r}")
-    if seconds <= 0:
-        raise ValueError("length must be positive")
+    # float() happily accepts "inf" and "nan".
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError("length must be a positive number of seconds")
     return seconds
 
 
@@ -158,8 +160,11 @@ def main():
         except ValueError as e:
             print(f"--fit: {e}")
             return 2
-        if not cuts:
-            print("--fit needs cuts to choose from; add --tighten")
+        if not tightening:
+            # An empty cut list is not the same as never having analysed:
+            # Tighten can run and find nothing, and Fit still has something
+            # useful to say about whether the target is already met.
+            print("--fit needs an analysis to choose from; add --tighten")
             return 2
         fitted = tighten.fit_to_length(cuts, info["duration"], target)
         for c in cuts:

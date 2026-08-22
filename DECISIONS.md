@@ -347,6 +347,20 @@ the UI: CI, the CLI, and anyone running from a shell set it deliberately.
 The key is never read back — the UI gets "configured", the provider, and the
 last four characters.
 
+It is written through a 0600 temporary file and swapped in with `os.replace`.
+Writing first and chmod-ing after leaves a window where the default umask has
+already put the key on disk as 0644, and a write that fails never reaches the
+chmod at all.
+
+"Never leaves the machine" was wrong and is not what the UI says any more: the
+key is sent to the provider as the authentication header on every request.
+What stays local is the audio, the video, and the key at rest.
+
+An environment key also decides *which* provider is used. Injecting a saved
+Anthropic key alongside an exported `GOOGLE_API_KEY` made `provider()` pick
+Anthropic and silently ignore the choice the user had made, so the environment's
+provider is recorded at startup and honoured explicitly.
+
 ### The key is the feature switch
 Without one the retakes card still appears, but it explains what the feature
 needs and takes the key inline instead of hiding. The CLI says so plainly.
@@ -391,3 +405,18 @@ silently delivering something longer than asked for.
 `tighten.fit_to_length` picks the cuts; the browser only switches on the
 indices it returns. Reimplementing the choice in JavaScript is exactly how the
 timeline and the export came to disagree about which words survived.
+
+
+## Writes are same-origin only
+
+The local server is loopback-only and unauthenticated, which is fine for
+serving a page you opened yourself and not fine for writes. A multipart form
+POST is CORS-safelisted, so any page you happen to visit can post to
+`127.0.0.1` without being able to read the reply — enough to overwrite the
+stored cloud key with the attacker's own, quietly sending every later
+transcript to their account.
+
+Every state-changing endpoint now refuses a request a browser has labelled
+cross-site, by `Sec-Fetch-Site` or by an `Origin` that is not ours. A missing
+`Origin` is allowed: that is a non-browser client, which already needs local
+access to reach the port at all.

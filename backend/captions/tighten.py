@@ -24,6 +24,7 @@ When in doubt this errs toward keeping audio. A wrongly cut word is a
 broken sentence the user has to hunt for; a missed filler is one click.
 """
 
+import math
 import re
 import subprocess
 from dataclasses import dataclass, asdict
@@ -450,10 +451,13 @@ def fit_to_length(cuts: list, duration: float, target: float,
     Never silently gives up: `reachable` says so and `shortfall` says by how
     much.
     """
-    if duration <= 0:
-        raise ValueError("duration must be positive")
-    if target <= 0:
-        raise ValueError("target must be positive")
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError("duration must be a positive number")
+    # isfinite, not just > 0: float("inf") passes a positive check, reaches the
+    # API response as a value JSON cannot represent, and NaN produces a
+    # reachability answer that is neither true nor false in any useful sense.
+    if not math.isfinite(target) or target <= 0:
+        raise ValueError("target must be a positive number")
 
     chosen = [c for c in cuts if c.auto]
     pool = [c for c in cuts

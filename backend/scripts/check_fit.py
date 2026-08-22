@@ -24,6 +24,14 @@ DURATION = 60.0
 
 
 def sample():
+    """
+    Deliberately includes an auto cut and a suggestion that overlap.
+
+    `_merge` keeps auto cuts and suggestions in separate passes, so overlap
+    between the two is normal, not a corner case. With only disjoint spans an
+    implementation that just sums cut durations passes every check here while
+    over-counting the same second twice in real use.
+    """
     return [
         Cut(2.0, 4.0, "silence", 1.00, "gap", auto=True),
         Cut(10.0, 12.0, "silence", 1.00, "gap", auto=True),
@@ -31,6 +39,8 @@ def sample():
         Cut(30.0, 32.0, "filler", 0.95, "short confident", auto=False),
         Cut(40.0, 44.0, "repeat", 0.50, "medium", auto=False),
         Cut(48.0, 56.0, "retake", 0.80, "a whole take", auto=False),
+        # Overlaps the 10.0-12.0 silence above: together they remove 3s, not 4.
+        Cut(11.0, 13.0, "filler", 0.85, "overlaps a silence", auto=False),
     ]
 
 
@@ -80,6 +90,51 @@ def main():
         print(f"target {target:>3}s -> {r['duration']:>6.2f}s  "
               f"reachable={str(r['reachable']):<5} added="
               f"{[c.text for c in r['added']]}")
+
+    # Overlap must be measured as a union. Summing durations would claim 4s
+    # from the pair below when the timeline only loses 3s, so a target of 57
+    # would look met while the video was still 57.x long.
+    overlapping = [
+        Cut(10.0, 12.0, "silence", 1.00, "gap", auto=True),
+        Cut(11.0, 13.0, "filler", 0.85, "overlaps it", auto=False),
+    ]
+    union = fit_to_length(overlapping, DURATION, 57.0)
+    if abs(union["duration"] - 57.0) > 0.01:
+        failures.append(f"overlapping cuts measured as {union['duration']}s, "
+                        "expected 57.0s from the union of 10.0-13.0")
+    if len(union["added"]) != 1:
+        failures.append("the overlapping suggestion was needed and not applied")
+    summed = DURATION - sum(c.duration for c in union["cuts"])
+    if abs(summed - union["duration"]) < 0.01:
+        failures.append("the fixture no longer distinguishes union from sum")
+
+    # A cut fully inside another buys nothing and must not be applied.
+    nested = [
+        Cut(10.0, 20.0, "silence", 1.00, "big", auto=True),
+        Cut(12.0, 14.0, "filler", 0.90, "inside it", auto=False),
+    ]
+    r = fit_to_length(nested, DURATION, 45.0)
+    if r["added"]:
+        failures.append("applied a cut entirely contained by another")
+
+    # An empty list is an answer, not bad input: it says the target is already
+    # met, or by how much it is missed.
+    empty_ok = fit_to_length([], DURATION, DURATION + 10)
+    if not empty_ok["reachable"] or empty_ok["duration"] != DURATION:
+        failures.append("an already-met target with no cuts was not reported")
+    empty_short = fit_to_length([], DURATION, 30.0)
+    if empty_short["reachable"] or empty_short["shortfall"] != 30.0:
+        failures.append("no cuts and an impossible target reported no shortfall")
+
+    # inf passes a bare `> 0` check, reaches JSON as a value it cannot hold,
+    # and NaN gives a reachability answer that means nothing.
+    for bad, why in ((float("inf"), "infinite"), (float("nan"), "NaN")):
+        try:
+            fit_to_length(cuts, DURATION, bad)
+        except ValueError:
+            pass
+        else:
+            failures.append(f"a {why} target was accepted")
 
     # With nothing but retakes on offer, a target changes nothing.
     only_retakes = [Cut(10.0, 30.0, "retake", 0.9, "take", auto=False)]

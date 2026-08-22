@@ -104,8 +104,10 @@ export ANTHROPIC_API_KEY=...      # or GOOGLE_API_KEY
 ```
 
 A key pasted in the app is stored in `~/.bolcap/config.json`, readable by your
-user account alone, and never leaves the machine. An environment variable wins
-over it.
+user account alone. It is sent to the provider you pick, as the authentication
+header on each request — nowhere else, and never to any Bolcap infrastructure
+(there isn't any). An environment variable wins over a saved key, and the app
+will not overwrite one.
 
 Your **transcript text** is sent. Audio and video never are. Retakes never apply
 themselves — a wrong retake cut removes seconds of real speech, so every one
