@@ -129,6 +129,14 @@
   .legend { display: flex; gap: 0.9rem; flex-wrap: wrap; font-size: 0.72rem; color: var(--muted); margin-top: 0.5rem; }
   .legend i { width: 12px; height: 3px; border-radius: 2px; display: inline-block; margin-right: 0.3rem; }
   .word.struck { opacity: 0.4; text-decoration: line-through; }
+  .row { display: flex; align-items: flex-start; gap: 0.8rem; }
+  .take-group { border: 1px solid var(--line); border-radius: 8px; padding: 0.7rem 0.8rem; margin-top: 0.7rem; }
+  .take-group > header { display: flex; align-items: center; gap: 0.6rem; font-size: 0.76rem; color: var(--muted); margin-bottom: 0.5rem; }
+  .take { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.3rem 0; font-size: 0.82rem; line-height: 1.4; cursor: pointer; }
+  .take .at { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 0.74rem; white-space: nowrap; }
+  .take.keeper { color: var(--fg); }
+  .take.dropped { color: var(--muted); text-decoration: line-through; }
+  .take .tag { font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); }
   .warn { font-size: 0.76rem; color: var(--muted); margin-top: 0.55rem; line-height: 1.45; }
   .hidden { display: none; }
   .hint { font-size: 0.78rem; color: var(--muted); margin-top: 0.6rem; }
@@ -248,6 +256,7 @@
           <span><i style="background:#6b7280"></i>silence</span>
           <span><i style="background:#e0885c"></i>filler</span>
           <span><i style="background:#a38be6"></i>stutter</span>
+          <span><i style="background:#5c9ae0"></i>retake</span>
           <span id="t-hint">click a segment to keep or drop it</span>
         </div>
 
@@ -257,6 +266,20 @@
           &ldquo;filler-like real words&rdquo; only if this speaker leans on them —
           then check the struck-out words in the transcript before exporting.
         </p>
+      </div>
+
+      <div class="card hidden" id="retake-card">
+        <h2>Retakes</h2>
+        <div class="row">
+          <p class="warn" style="margin:0;flex:1">
+            Lines you delivered more than once. Unlike everything else here, this
+            asks a cloud model — your <b>transcript text</b> is sent, never your
+            video or audio. Nothing is cut until you say so.
+          </p>
+          <button id="r-find">Find retakes</button>
+        </div>
+        <div id="retake-groups"></div>
+        <p class="warn hidden" id="r-status"></p>
       </div>
 
       <div class="card">
@@ -283,10 +306,12 @@ const PRESET_LABELS = {
 
 // ── First-run setup ─────────────────────────────────────────────────────────
 let chosenModel = null;
+let llmProvider = null;   // null when no cloud key is set — retakes stay hidden
 
 async function checkSetup() {
   const s = await (await fetch("/api/setup/status")).json();
   chosenModel = chosenModel || s.default_model;
+  llmProvider = s.llm || null;
   const modelReady = Object.values(s.models).some(Boolean) || s.mlx;
   if (!s.ffmpeg_needed && modelReady) {
     hide("setup-card"); show("drop"); show("lang-field"); return true;
@@ -406,6 +431,9 @@ function onTranscribed(job) {
   renderWords();
   show("editor");
   show("tighten-card");
+  // Retakes need a cloud key. Offering a button that can only fail is worse
+  // than not offering it, so the card appears only when one is configured.
+  if (llmProvider) show("retake-card");
   sizePreview();
   analyze();          // detect on arrival, apply nothing the user didn't ask for
 }
@@ -729,7 +757,7 @@ requestAnimationFrame(drawPreview);
 
 // ── Tighten ─────────────────────────────────────────────────────────────────
 let cuts = [];          // [{start,end,reason,confidence,duration,enabled}]
-const REASON_COLOR = { silence: "#6b7280", filler: "#e0885c", repeat: "#a38be6" };
+const REASON_COLOR = { silence: "#6b7280", filler: "#e0885c", repeat: "#a38be6", retake: "#5c9ae0" };
 
 const cfgEls = () => ({
   silence: $("t-silence").checked,
@@ -858,6 +886,103 @@ $("t-gap").addEventListener("input", () => {
 });
 $("t-gap").addEventListener("change", analyze);
 $("t-analyze").onclick = analyze;
+
+// ── Retakes ─────────────────────────────────────────────────────────────────
+// A retake cut is seconds of real speech, so these arrive switched off and are
+// shown next to the take we would keep. The user turns each one on.
+let retakeGroups = [];
+
+function renderRetakes() {
+  const box = $("retake-groups");
+  box.replaceChildren();
+  retakeGroups.forEach((g, gi) => {
+    const wrap = document.createElement("div");
+    wrap.className = "take-group";
+
+    const head = document.createElement("header");
+    const on = g.attempts.some((_, i) => i !== g.keep && g.cuts[i] && g.cuts[i].enabled);
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.textContent = on ? "Keep all takes" : `Cut the other ${g.attempts.length - 1}`;
+    toggle.onclick = () => {
+      g.attempts.forEach((_, i) => {
+        if (i !== g.keep && g.cuts[i]) g.cuts[i].enabled = !on;
+      });
+      renderRetakes(); renderTrack(); renderWords();
+    };
+    const label = document.createElement("span");
+    label.style.flex = "1";
+    label.textContent = `${g.attempts.length} attempts · ${Math.round(g.confidence * 100)}% · ${g.reason}`;
+    head.append(label, toggle);
+    wrap.appendChild(head);
+
+    g.attempts.forEach((a, i) => {
+      const row = document.createElement("div");
+      const dropped = i !== g.keep && g.cuts[i] && g.cuts[i].enabled;
+      row.className = "take" + (i === g.keep ? " keeper" : dropped ? " dropped" : "");
+      const at = document.createElement("span");
+      at.className = "at";
+      at.textContent = fmtTime(a.start);
+      const text = document.createElement("span");
+      text.style.flex = "1";
+      text.textContent = a.text;
+      row.append(at, text);
+      if (i === g.keep) {
+        const tag = document.createElement("span");
+        tag.className = "tag";
+        tag.textContent = "keep";
+        row.appendChild(tag);
+      }
+      row.title = "click to play this take";
+      row.onclick = () => { const v = $("video"); v.currentTime = a.start + 0.01; v.play(); };
+      wrap.appendChild(row);
+    });
+    box.appendChild(wrap);
+  });
+}
+
+$("r-find").onclick = async () => {
+  if (!jobId) return;
+  const btn = $("r-find");
+  btn.disabled = true; btn.textContent = "Looking…";
+  const status = $("r-status");
+  status.classList.add("hidden");
+  try {
+    const fd = new FormData();
+    fd.append("job_id", jobId);
+    const res = await fetch("/api/retakes", { method: "POST", body: fd });
+    if (!res.ok) throw new Error((await res.json()).detail || "Retake search failed");
+    poll(jobId, (job) => {
+      btn.disabled = false; btn.textContent = "Find retakes";
+      setStatus("Done", "done");
+      const r = job.retakes || { groups: [], cuts: [] };
+      // Drop any retake cuts from a previous run before adding this one's.
+      cuts = cuts.filter(c => c.reason !== "retake");
+      // The server returns one flat cut list; walk it in the same order the
+      // groups report their dropped takes so the two cannot drift apart.
+      let k = 0;
+      retakeGroups = r.groups.map(g => {
+        const byIndex = {};
+        g.dropped.forEach(di => {
+          byIndex[di] = { ...r.cuts[k++], enabled: false };
+        });
+        return { ...g, cuts: byIndex };
+      });
+      retakeGroups.forEach(g => Object.values(g.cuts).forEach(c => cuts.push(c)));
+      renderRetakes(); renderTrack(); renderWords();
+      if (!retakeGroups.length) {
+        status.textContent = r.status === "none-found"
+          ? "No lines looked repeated."
+          : "Found some repeated-looking lines, but none were actually retakes.";
+        status.classList.remove("hidden");
+      }
+    }, () => { btn.disabled = false; btn.textContent = "Find retakes"; });
+  } catch (err) {
+    btn.disabled = false; btn.textContent = "Find retakes";
+    status.textContent = err.message;
+    status.classList.remove("hidden");
+  }
+};
 
 // ── Export ──────────────────────────────────────────────────────────────────
 document.querySelectorAll(".exports button").forEach(btn => {

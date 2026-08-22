@@ -31,7 +31,9 @@ backend/            FastAPI service
     engine.py       word timings + style → animated ASS subtitles
     render.py       exports: burned MP4, alpha overlay .mov, .ass, .srt
     tighten.py      finds dead air, filler words, and stutters worth cutting
+    retakes.py      finds lines delivered more than once, picks the keeper
     timeline.py     cuts as an EDL / FCPXML timeline (no re-encode)
+    llm.py          one cloud call over plain HTTP, no SDK (retakes only)
     storage.py      durable jobs + Supabase Storage (signed uploads, retention cleanup)
     notify.py       completion notifications (in-app feed + Resend email)
     api.py          /captions/* routes
@@ -76,11 +78,34 @@ relinks your original file, so nothing is re-encoded and every cut stays
 draggable. In FCPXML, cuts you turned down travel along as markers; EDL has no
 way to carry them.
 
+### Retakes
+
+The other big time sink is a line delivered three times until it comes out
+right. Bolcap groups the attempts, picks the keeper, and shows them side by
+side so you can play each one before cutting anything.
+
+Cheap local arithmetic does the finding: split the transcript at real pauses,
+score each phrase against the recent ones. Only what survives goes to a cloud
+model, about one call per minute of video, and the model only ever *chooses*
+between spans that were already measured — it proposes no timestamps and
+rewrites no text, so a bad answer cannot invent a cut inside a good sentence.
+
+This is the one feature that leaves your machine, and only with a key set:
+
+```bash
+export ANTHROPIC_API_KEY=...      # or GOOGLE_API_KEY
+```
+
+Your **transcript text** is sent. Audio and video never are. Without a key the
+feature simply does not appear. Retakes never apply themselves — a wrong retake
+cut removes seconds of real speech, so every one waits for you.
+
 ### Flow
 
 1. **Transcribe** — Whisper with word timestamps.
 2. **Romanize** — Devanagari → natural Hinglish, alignment preserved.
 3. **Tighten** (optional) — find dead air, fillers, and stutters, and cut them.
+   Retake detection lives here too, behind an API key.
 4. **Style** — a `CaptionStyle` JSON or a preset (`default`, `bold_impact`, `subtle`, `karaoke`).
 5. **Export** — `burned` MP4, `overlay` alpha .mov, `ass`, `srt`, or an `edl` / `fcpxml` timeline.
 
@@ -96,6 +121,8 @@ python -m captions.cli video.mp4 --transcript saved.json  # reuse a transcript, 
 python -m captions.cli video.mp4 --tighten-report          # what would be cut, and why
 python -m captions.cli video.mp4 --tighten                 # cut it, captions re-timed to match
 python -m captions.cli video.mp4 --tighten --export fcpxml # cuts to your NLE, no re-encode
+python -m captions.cli video.mp4 --retakes                 # report repeated lines
+python -m captions.cli video.mp4 --tighten --cut-retakes   # and remove them
 ```
 
 Transcripts are saved next to the video (`*_transcript.json`) so re-styling never re-transcribes.

@@ -39,11 +39,19 @@ def main():
                     help="silence longer than this is cut (seconds)")
     tg.add_argument("--no-fillers", action="store_true",
                     help="leave filler words alone")
+    tg.add_argument("--retakes", action="store_true",
+                    help="find lines delivered more than once (sends transcript "
+                         "text to a cloud model; needs ANTHROPIC_API_KEY or "
+                         "GOOGLE_API_KEY)")
+    tg.add_argument("--cut-retakes", action="store_true",
+                    help="also remove them — implies --retakes. Separate flag "
+                         "because a retake cut is seconds of real speech")
     tg.add_argument("--aggressive-fillers", action="store_true",
                     help="also cut context-scored real words like 'toh', 'na'")
     args = ap.parse_args()
 
-    from . import engine, render, romanize, styles, tighten, timeline, transcribe
+    from . import (engine, render, retakes, romanize, styles, tighten, timeline,
+                   transcribe)
 
     base = os.path.splitext(args.video)[0]
 
@@ -92,6 +100,31 @@ def main():
             print(f"  {reason}: {d['count']} cuts, {d['seconds']}s")
         if s["suggested_cuts"]:
             print(f"  ({s['suggested_cuts']} lower-confidence cuts not applied)")
+
+        if args.retakes or args.cut_retakes:
+            print("Looking for retakes...")
+            found = retakes.detect(transcript["words"], media_path=args.video)
+            if found["status"] == "no-model":
+                print("  no cloud model configured — set ANTHROPIC_API_KEY or "
+                      "GOOGLE_API_KEY")
+            elif not found["groups"]:
+                print("  none found")
+            for g in found["groups"]:
+                print(f"  {len(g['attempts'])} attempts, keeping #{g['keep'] + 1} "
+                      f"({g['confidence']:.2f}) — {g['reason']}")
+                for i, a in enumerate(g["attempts"]):
+                    mark = "keep" if i == g["keep"] else "cut "
+                    print(f"    {mark} {a['start']:7.2f}–{a['end']:7.2f}  "
+                          f"{a['text'][:70]}")
+            if args.cut_retakes:
+                # Applied only on the explicit flag: the report above is the
+                # confirmation step, and a wrong retake cut removes a sentence.
+                # Appended rather than re-merged — these cuts already start and
+                # end at detected pauses, and running them back through _merge
+                # would pad every span a second time.
+                for c in found["cuts"]:
+                    c.auto = True
+                cuts = sorted(cuts + found["cuts"], key=lambda c: c.start)
 
         if args.tighten_report:
             for c in cuts[:40]:
