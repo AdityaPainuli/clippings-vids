@@ -119,6 +119,7 @@ def main():
                     args.video, info["duration"],
                     args.output or f"{base}.fcpxml",
                     name=os.path.splitext(name)[0],
+                    audio=render.probe_audio(args.video),
                     # Cuts we flagged but did not make become markers, so the
                     # editor can find them instead of rewatching for them.
                     markers=[c for c in cuts if not c.auto])
@@ -130,11 +131,18 @@ def main():
             print(f"  captions for that timeline: {srt}")
             return
 
-        print("Cutting video...")
-        cut_video = f"{base}_tightened.mp4"
-        render.render_cut(args.video, result["kept"], cut_video)
-        info = render.probe_video(cut_video)
-        print(f"  {cut_video}")
+        # Only a burned MP4 needs the media physically cut. `ass` and `srt`
+        # need nothing but the re-timed words, and `overlay` draws on a blank
+        # canvas — re-encoding for any of them produces a video file that is
+        # then thrown away.
+        if args.export == "burned":
+            print("Cutting video...")
+            cut_video = f"{base}_tightened.mp4"
+            render.render_cut(args.video, result["kept"], cut_video)
+            info = render.probe_video(cut_video)
+            print(f"  {cut_video}")
+        else:
+            info = {**info, "duration": result["duration"]}
 
     source_video = cut_video or args.video
 

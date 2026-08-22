@@ -237,7 +237,9 @@ def _render_worker(job_id: str, export: str, style: styles.CaptionStyle,
                                              src_info["duration"], f"{base}.fcpxml",
                                              name=stem, markers=marker_objs,
                                              clip_name=os.path.basename(
-                                                 job.get("filename") or "video.mp4"))
+                                                 job.get("filename") or "video.mp4"),
+                                             audio=render.probe_audio(
+                                                 job["video_path"]))
             ext = os.path.splitext(out)[1]
             job["outputs"][export] = {"path": out, "name": f"{stem}_tighten{ext}"}
             job["status"] = "ready"
@@ -311,15 +313,20 @@ async def render_endpoint(
     except (json.JSONDecodeError, KeyError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Bad transcript: {e}")
 
+    # Parsed separately so the message names the field that is actually wrong.
     try:
         cut_list = json.loads(cuts) if cuts else None
         if cut_list is not None and not isinstance(cut_list, list):
             raise ValueError("cuts must be a JSON array")
+    except (json.JSONDecodeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Bad cuts: {e}")
+
+    try:
         marker_list = json.loads(markers) if markers else None
         if marker_list is not None and not isinstance(marker_list, list):
             raise ValueError("markers must be a JSON array")
     except (json.JSONDecodeError, ValueError) as e:
-        raise HTTPException(status_code=400, detail=f"Bad cuts: {e}")
+        raise HTTPException(status_code=400, detail=f"Bad markers: {e}")
 
     threading.Thread(target=_render_worker,
                      args=(job_id, export, style, text_key, words, cut_list,

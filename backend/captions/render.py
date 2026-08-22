@@ -37,6 +37,34 @@ def probe_video(video_path: str) -> dict:
     }
 
 
+def probe_audio(video_path: str) -> dict:
+    """
+    Return {"has_audio", "channels", "sample_rate"} for the first audio stream.
+
+    Separate from probe_video because most of the pipeline does not care, and
+    the one place that does — FCPXML, which declares channel counts the NLE
+    trusts on relink — must not guess. A file with no audio stream reports
+    has_audio False rather than a channel count of zero dressed up as mono.
+    """
+    r = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a:0",
+         "-show_entries", "stream=channels,sample_rate", "-of", "json", video_path],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        return {"has_audio": False, "channels": None, "sample_rate": None}
+    streams = json.loads(r.stdout or "{}").get("streams") or []
+    if not streams:
+        return {"has_audio": False, "channels": None, "sample_rate": None}
+    s0 = streams[0]
+    rate = s0.get("sample_rate")
+    return {
+        "has_audio": True,
+        "channels": int(s0["channels"]) if s0.get("channels") else None,
+        "sample_rate": int(rate) if rate else None,
+    }
+
+
 def _ass_time_srt(s: float) -> str:
     h = int(s // 3600)
     m = int((s % 3600) // 60)

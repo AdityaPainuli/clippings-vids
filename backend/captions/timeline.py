@@ -145,6 +145,12 @@ def export_edl(keep: list, fps: float, source_name: str, out_path: str,
 
 # ── FCPXML ───────────────────────────────────────────────────────────────────
 
+_AUDIO_RATES = {
+    32000: "32k", 44100: "44.1k", 48000: "48k",
+    88200: "88.2k", 96000: "96k", 176400: "176.4k", 192000: "192k",
+}
+
+
 def _rational(frames: int, fps: float) -> str:
     """
     FCPXML times are exact rationals, never decimals.
@@ -171,14 +177,27 @@ def _xml_escape(text: str) -> str:
 
 
 def _file_url(path: str) -> str:
-    return "file://" + quote(os.path.abspath(path))
+    r"""
+    Absolute path → file:// URI.
+
+    Windows needs care: percent-encoding a native path turns `C:\Users\x` into
+    `C%3A%5CUsers%5Cx`, which no NLE can resolve. Separators become forward
+    slashes, the drive-letter colon is left alone, and the result gets the
+    third slash that makes `file:///C:/Users/x` a valid URI.
+    """
+    p = os.path.abspath(path).replace("\\", "/")
+    drive, rest = os.path.splitdrive(p)
+    if drive:                                  # "C:" — keep the colon literal
+        return "file:///" + drive + quote(rest)
+    return "file://" + quote(p)
 
 
 def build_fcpxml(keep: list, fps: float, width: int, height: int,
                  video_path: str, duration: float,
                  name: str = "Bolcap Tighten",
                  markers: list | None = None,
-                 clip_name: str | None = None) -> str:
+                 clip_name: str | None = None,
+                 audio: dict | None = None) -> str:
     """
     A single-track sequence of the kept spans, relinked to the original media.
 
@@ -190,6 +209,11 @@ def build_fcpxml(keep: list, fps: float, width: int, height: int,
     `markers` is an optional list of Cut-like objects (start, reason, text) for
     spans we flagged but did not remove, dropped onto the timeline where the
     editor will actually look for them.
+
+    `audio` is `render.probe_audio` output. Channel counts are declared only
+    when they have actually been measured: an NLE trusts them on relink, so
+    asserting stereo over a mono or multichannel file mismaps the audio. When
+    it is unknown the attributes are left out, which FCPXML allows.
     """
     events = _events(keep, fps)
     if not events:
@@ -201,6 +225,20 @@ def build_fcpxml(keep: list, fps: float, width: int, height: int,
     total_rec = events[-1][3]
     clip = _xml_escape(clip_name or os.path.basename(video_path))
 
+    has_audio = True if audio is None else bool(audio.get("has_audio"))
+    channels = (audio or {}).get("channels")
+    audio_attrs = ""
+    if has_audio and channels:
+        audio_attrs = f' audioSources="1" audioChannels="{int(channels)}"'
+    seq_audio = ""
+    if has_audio and channels in (1, 2):
+        seq_audio = f' audioLayout="{"mono" if channels == 1 else "stereo"}"'
+    # audioRate is an enumerated token in FCPXML, not a number in hertz.
+    # Anything outside the list is left off rather than guessed at.
+    rate = _AUDIO_RATES.get((audio or {}).get("sample_rate"))
+    if has_audio and rate:
+        seq_audio += f' audioRate="{rate}"' 
+
     out = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         "<!DOCTYPE fcpxml>",
@@ -210,7 +248,7 @@ def build_fcpxml(keep: list, fps: float, width: int, height: int,
         f' width="{width}" height="{height}"/>',
         f'    <asset id="r2" name="{clip}" start="0s"'
         f' duration="{_rational(total_src, fps)}" format="r1"'
-        ' hasVideo="1" hasAudio="1" audioSources="1" audioChannels="2">',
+        f' hasVideo="1" hasAudio="{1 if has_audio else 0}"{audio_attrs}>',
         f'      <media-rep kind="original-media" src="{_xml_escape(_file_url(video_path))}"/>',
         "    </asset>",
         "  </resources>",
@@ -218,7 +256,7 @@ def build_fcpxml(keep: list, fps: float, width: int, height: int,
         '    <event name="Bolcap">',
         f'      <project name="{_xml_escape(name)}">',
         f'        <sequence format="r1" duration="{_rational(total_rec, fps)}"'
-        f' tcStart="0s" tcFormat="{tc_format}" audioLayout="stereo" audioRate="48k">',
+        f' tcStart="0s" tcFormat="{tc_format}"{seq_audio}>',
         "          <spine>",
     ]
 
@@ -254,8 +292,8 @@ def build_fcpxml(keep: list, fps: float, width: int, height: int,
 def export_fcpxml(keep: list, fps: float, width: int, height: int,
                   video_path: str, duration: float, out_path: str,
                   name: str = "Bolcap Tighten", markers: list | None = None,
-                  clip_name: str | None = None) -> str:
+                  clip_name: str | None = None, audio: dict | None = None) -> str:
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(build_fcpxml(keep, fps, width, height, video_path,
-                             duration, name, markers, clip_name))
+                             duration, name, markers, clip_name, audio))
     return out_path

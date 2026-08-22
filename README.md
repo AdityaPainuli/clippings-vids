@@ -67,12 +67,14 @@ so a list-matching cutter would have deleted seven real words and scored 0%
 precision. Instead, sounds with no lexical meaning ("umm", "uh", "hmm") are cut
 on sight, and real words that are *sometimes* fillers are scored on context and
 left alone by default. The reasoning is in [DECISIONS.md](DECISIONS.md), and
-`scripts/eval_tighten.py` fails the build if any real word gets cut.
+`scripts/eval_tighten.py` runs in CI on every push, failing the build if any
+real word gets cut.
 
 Cuts leave two ways. A flattened MP4 with the captions burned on, or an **EDL /
 FCPXML timeline** that carries the cuts into Premiere, Resolve, or Final Cut and
 relinks your original file, so nothing is re-encoded and every cut stays
-draggable. Cuts you turned down travel along as markers.
+draggable. In FCPXML, cuts you turned down travel along as markers; EDL has no
+way to carry them.
 
 ### Flow
 

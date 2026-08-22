@@ -345,7 +345,15 @@ fileInput.onchange = () => fileInput.files[0] && upload(fileInput.files[0]);
 async function upload(file) {
   show("status-card"); setStatus("Uploading…");
   hide("editor");
+  hide("tighten-card");
   $("downloads").replaceChildren();
+  // A new clip must not inherit the last one's cuts. Without this the timeline
+  // buttons stay enabled on spans from the previous video, and exporting one
+  // sends the old clip's cut points against the new job.
+  jobId = null;
+  cuts = [];
+  words = [];
+  renderTrack();
   // The browser plays the local file directly — it never re-downloads.
   const video = $("video");
   if (video.src.startsWith("blob:")) URL.revokeObjectURL(video.src);

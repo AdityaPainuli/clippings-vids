@@ -1,0 +1,26 @@
+name: checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  detection:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Both scripts run on labelled fixtures and need no model, no ffmpeg,
+      # and no network — the point is that they gate every push.
+      - name: Filler detection cuts no real words
+        run: python scripts/eval_tighten.py
+
+      - name: Timeline timecode arithmetic
+        run: python scripts/check_timeline.py
