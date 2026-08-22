@@ -85,7 +85,7 @@ async def setup_status():
     # else in Bolcap runs offline; this is the one feature that needs a key,
     # so it is surfaced rather than failing when clicked.
     return {**assets.setup_status(), "progress": setup_progress,
-            "llm": llm.provider()}
+            "llm": llm.provider(), "api_keys": assets.api_key_status()}
 
 
 @app.post("/api/setup/run")
@@ -180,6 +180,29 @@ async def tighten_endpoint(
         "summary": tighten.summarize(cuts, duration),
         "duration": duration,
     }
+
+
+@app.post("/api/settings/api-key")
+async def set_api_key(provider: str = Form(...), key: str = Form("")):
+    """
+    Save (or clear) the cloud model key.
+
+    The key is never read back out — the response says which provider is
+    configured and shows the last four characters, nothing more.
+    """
+    if provider not in assets.KEY_ENV:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
+    if os.getenv(assets.KEY_ENV[provider]) and not assets.load_config() \
+            .get("api_keys", {}).get(provider):
+        raise HTTPException(
+            status_code=409,
+            detail=f"{assets.KEY_ENV[provider]} is set in the environment; "
+                   "change it there instead.")
+    try:
+        assets.save_api_key(provider, key)
+    except (OSError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Could not save key: {e}")
+    return {"api_keys": assets.api_key_status(), "llm": llm.provider()}
 
 
 # ── Retakes ──────────────────────────────────────────────────────────────────

@@ -90,15 +90,21 @@ model, about one call per minute of video, and the model only ever *chooses*
 between spans that were already measured — it proposes no timestamps and
 rewrites no text, so a bad answer cannot invent a cut inside a good sentence.
 
-This is the one feature that leaves your machine, and only with a key set:
+This is the one feature that leaves your machine, and only with a key set.
+Paste one into the Retakes panel in the app, or set it in the environment for
+CLI runs:
 
 ```bash
 export ANTHROPIC_API_KEY=...      # or GOOGLE_API_KEY
 ```
 
-Your **transcript text** is sent. Audio and video never are. Without a key the
-feature simply does not appear. Retakes never apply themselves — a wrong retake
-cut removes seconds of real speech, so every one waits for you.
+A key pasted in the app is stored in `~/.bolcap/config.json`, readable by your
+user account alone, and never leaves the machine. An environment variable wins
+over it.
+
+Your **transcript text** is sent. Audio and video never are. Retakes never apply
+themselves — a wrong retake cut removes seconds of real speech, so every one
+waits for you.
 
 ### Flow
 

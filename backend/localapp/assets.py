@@ -94,6 +94,77 @@ def save_config(**updates):
     BOLCAP_HOME.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=1)
+    _lock_down(CONFIG_PATH)
+
+
+def _lock_down(path: Path):
+    """
+    Owner-only permissions. The config holds an API key once the user saves
+    one, and the default umask would leave it world-readable on a shared
+    machine. No-op where chmod means nothing (Windows).
+    """
+    try:
+        os.chmod(BOLCAP_HOME, 0o700)
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+# ── Cloud model key ──────────────────────────────────────────────────────────
+#
+# Retake detection is the one feature that needs a cloud model. It used to read
+# the key from the environment only, which is unreachable for the way Bolcap
+# actually ships: a double-clicked app inherits launchd's environment on macOS,
+# not the shell's, so `export ANTHROPIC_API_KEY=...` in a terminal never got
+# there and the feature silently never appeared.
+#
+# The key is stored here and pushed into the environment at startup, which
+# keeps captions/llm.py reading nothing but os.environ and keeps the engine
+# layer unaware of the app's config.
+
+KEY_ENV = {"anthropic": "ANTHROPIC_API_KEY", "gemini": "GOOGLE_API_KEY"}
+
+
+def save_api_key(provider: str, key: str):
+    """Persist a key, or clear it when `key` is empty."""
+    if provider not in KEY_ENV:
+        raise ValueError(f"unknown provider {provider!r}")
+    keys = {**load_config().get("api_keys", {})}
+    key = (key or "").strip()
+    if key:
+        keys[provider] = key
+    else:
+        keys.pop(provider, None)
+        os.environ.pop(KEY_ENV[provider], None)
+    save_config(api_keys=keys)
+    apply_environment()
+
+
+def api_key_status() -> dict:
+    """
+    What is configured, never the key itself.
+
+    `source` matters to the user: a key set in the environment cannot be
+    cleared from the UI, so the UI has to stop offering to.
+    """
+    stored = load_config().get("api_keys", {})
+    out = {}
+    for provider, env in KEY_ENV.items():
+        if os.getenv(env) and provider not in stored:
+            out[provider] = {"configured": True, "source": "environment",
+                             "hint": _hint(os.environ[env])}
+        elif stored.get(provider):
+            out[provider] = {"configured": True, "source": "saved",
+                             "hint": _hint(stored[provider])}
+        else:
+            out[provider] = {"configured": False, "source": None, "hint": None}
+    return out
+
+
+def _hint(key: str) -> str:
+    """Enough to recognise which key it is, not enough to use it."""
+    key = key.strip()
+    return f"…{key[-4:]}" if len(key) > 8 else "…"
 
 
 # ── Status ───────────────────────────────────────────────────────────────────
@@ -314,3 +385,11 @@ def apply_environment():
     fonts = Path(__file__).parent / "fonts"
     if fonts.is_dir():
         os.environ.setdefault("CAPTIONS_FONTS_DIR", str(fonts))
+
+    # A key already in the environment wins — CI, the CLI, and anyone running
+    # from a shell set it deliberately, and silently overriding that would be
+    # worse than not persisting one at all.
+    for provider, value in (load_config().get("api_keys") or {}).items():
+        env = KEY_ENV.get(provider)
+        if env and value:
+            os.environ.setdefault(env, value)

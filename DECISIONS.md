@@ -330,8 +330,26 @@ not, and adding one would put tens of megabytes into every platform build to
 save a dozen lines. `captions/llm.py` posts to either API directly and picks
 whichever key is set.
 
+### The key is configured in the app, not the environment
+Reading the key from `os.environ` alone made the feature unreachable for the way
+Bolcap actually ships. A double-clicked app inherits launchd's environment on
+macOS, not the shell's, and Windows behaves the same for a double-clicked exe —
+so `export ANTHROPIC_API_KEY=...` in a terminal never arrived, and the retakes
+card silently never appeared. Worst kind of failure: no error, nothing to
+search for.
+
+The key now lives in `~/.bolcap/config.json` (0600, in a 0700 directory) and is
+pushed into the environment at startup, which keeps `captions/llm.py` reading
+nothing but `os.environ` and keeps the engine layer unaware of the app's
+config. A key already in the environment wins and cannot be overwritten from
+the UI: CI, the CLI, and anyone running from a shell set it deliberately.
+
+The key is never read back — the UI gets "configured", the provider, and the
+last four characters.
+
 ### The key is the feature switch
-No key means the retakes card never appears and the CLI says so plainly.
-Offering a button that can only fail is worse than not offering it. Bolcap's
-promise is that nothing leaves the machine, so this one exception is stated in
-the UI: transcript **text** is sent, never audio or video.
+Without one the retakes card still appears, but it explains what the feature
+needs and takes the key inline instead of hiding. The CLI says so plainly.
+Bolcap's promise is that nothing leaves the machine, so this one exception is
+stated where the user will read it: transcript **text** is sent, never audio or
+video.

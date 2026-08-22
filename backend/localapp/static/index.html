@@ -130,6 +130,9 @@
   .legend i { width: 12px; height: 3px; border-radius: 2px; display: inline-block; margin-right: 0.3rem; }
   .word.struck { opacity: 0.4; text-decoration: line-through; }
   .row { display: flex; align-items: flex-start; gap: 0.8rem; }
+  .key-row { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.7rem; }
+  .key-row select, .key-row input { background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 0.42rem 0.55rem; font: inherit; font-size: 0.82rem; }
+  .key-row input { flex: 1; min-width: 0; font-family: ui-monospace, monospace; }
   .take-group { border: 1px solid var(--line); border-radius: 8px; padding: 0.7rem 0.8rem; margin-top: 0.7rem; }
   .take-group > header { display: flex; align-items: center; gap: 0.6rem; font-size: 0.76rem; color: var(--muted); margin-bottom: 0.5rem; }
   .take { display: flex; gap: 0.6rem; align-items: baseline; width: 100%; text-align: left; padding: 0.3rem 0.2rem; font-size: 0.82rem; line-height: 1.4; cursor: pointer; background: none; border: 0; border-radius: 4px; color: inherit; font: inherit; }
@@ -280,6 +283,23 @@
           </p>
           <button id="r-find">Find retakes</button>
         </div>
+
+        <div id="key-setup" class="hidden">
+          <label class="key-row">
+            <select id="key-provider">
+              <option value="anthropic">Anthropic</option>
+              <option value="gemini">Google Gemini</option>
+            </select>
+            <input id="key-value" type="password" autocomplete="off"
+                   spellcheck="false" placeholder="Paste an API key" />
+            <button id="key-save">Save</button>
+          </label>
+          <p class="warn" id="key-note">
+            Stored on this machine only, in <code>~/.bolcap/config.json</code>,
+            readable by your user account alone. Bolcap never uploads it.
+          </p>
+        </div>
+
         <div id="retake-groups"></div>
         <p class="warn hidden" id="r-status"></p>
       </div>
@@ -308,12 +328,14 @@ const PRESET_LABELS = {
 
 // ── First-run setup ─────────────────────────────────────────────────────────
 let chosenModel = null;
-let llmProvider = null;   // null when no cloud key is set — retakes stay hidden
+let llmProvider = null;   // null when no cloud key is set
+let apiKeys = {};
 
 async function checkSetup() {
   const s = await (await fetch("/api/setup/status")).json();
   chosenModel = chosenModel || s.default_model;
   llmProvider = s.llm || null;
+  apiKeys = s.api_keys || {};
   const modelReady = Object.values(s.models).some(Boolean) || s.mlx;
   if (!s.ffmpeg_needed && modelReady) {
     hide("setup-card"); show("drop"); show("lang-field"); return true;
@@ -440,9 +462,8 @@ function onTranscribed(job) {
   renderWords();
   show("editor");
   show("tighten-card");
-  // Retakes need a cloud key. Offering a button that can only fail is worse
-  // than not offering it, so the card appears only when one is configured.
-  if (llmProvider) show("retake-card");
+  show("retake-card");
+  renderKeyState();
   sizePreview();
   analyze();          // detect on arrival, apply nothing the user didn't ask for
 }
@@ -957,6 +978,49 @@ function renderRetakes() {
     box.appendChild(wrap);
   });
 }
+
+// The key used to come from the environment only, which a double-clicked app
+// never sees — so the card showed nothing and the feature looked broken. Now
+// the card explains itself and takes the key inline.
+function renderKeyState() {
+  const configured = !!llmProvider;
+  $("r-find").disabled = !configured;
+  $("key-setup").classList.toggle("hidden", configured);
+  if (!configured) {
+    $("key-note").textContent =
+      "Retakes need a cloud model. Paste a key and it stays on this machine, "
+      + "in ~/.bolcap/config.json, readable by your user account alone.";
+    return;
+  }
+  const info = apiKeys[llmProvider] || {};
+  const where = info.source === "environment"
+    ? "from the environment" : "saved on this machine";
+  $("r-status").textContent = "";
+  $("key-note").textContent = `Using ${llmProvider} ${info.hint || ""} (${where}).`;
+}
+
+$("key-save").onclick = async () => {
+  const btn = $("key-save");
+  const value = $("key-value").value.trim();
+  if (!value) return;
+  btn.disabled = true; btn.textContent = "Saving…";
+  try {
+    const fd = new FormData();
+    fd.append("provider", $("key-provider").value);
+    fd.append("key", value);
+    const res = await fetch("/api/settings/api-key", { method: "POST", body: fd });
+    if (!res.ok) throw new Error((await res.json()).detail || "Could not save key");
+    const data = await res.json();
+    apiKeys = data.api_keys || {};
+    llmProvider = data.llm || null;
+    $("key-value").value = "";       // never keep it in the DOM
+    renderKeyState();
+  } catch (err) {
+    $("key-note").textContent = err.message;
+  } finally {
+    btn.disabled = false; btn.textContent = "Save";
+  }
+};
 
 $("r-find").onclick = async () => {
   if (!jobId) return;
