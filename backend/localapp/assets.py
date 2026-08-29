@@ -82,6 +82,68 @@ def _platform_key() -> str:
     return f"{platform.system()}-{platform.machine()}"
 
 
+# ── Platform requirements ────────────────────────────────────────────────────
+#
+# These are not aspirations, they are measured from the shipped binaries. The
+# release builds on GitHub's current runners, and the wheels they pull in set
+# a floor:
+#
+#   macOS   numpy and onnxruntime are built with minos 14.0, on both arm64 and
+#           x86_64. Everything else in the bundle goes back to 11.0.
+#   Linux   the bundled CPython needs GLIBC_2.38, and libmvec 2.39 — so
+#           Ubuntu 24.04, Debian 13, Fedora 39, or newer.
+#
+# The reason this needs checking rather than documenting: faster-whisper (and
+# therefore numpy) is imported lazily, at transcribe time. On an older OS the
+# app started, opened, accepted a video and downloaded a 1.5GB model before
+# dying — it looked like it worked right up to the part that mattered.
+
+MIN_MACOS = (14, 0)
+MIN_GLIBC = (2, 38)
+
+
+def unmet_requirement() -> str | None:
+    """A plain sentence about why this machine cannot run Bolcap, or None."""
+    system = platform.system()
+    if system == "Darwin":
+        release = platform.mac_ver()[0]
+        parts = [int(n) for n in release.split(".")[:2] if n.isdigit()]
+        if parts and tuple(parts + [0])[:2] < MIN_MACOS:
+            return (f"Bolcap needs macOS {MIN_MACOS[0]} (Sonoma) or later. "
+                    f"This Mac is on {release}.")
+    elif system == "Linux":
+        try:
+            version = os.confstr("CS_GNU_LIBC_VERSION") or ""
+        except (ValueError, OSError):
+            return None
+        parts = [int(n) for n in version.split()[-1].split(".")[:2] if n.isdigit()]
+        if len(parts) == 2 and tuple(parts) < MIN_GLIBC:
+            return (f"Bolcap needs glibc {MIN_GLIBC[0]}.{MIN_GLIBC[1]} or later "
+                    f"(Ubuntu 24.04, Debian 13, Fedora 39). "
+                    f"This system has {'.'.join(str(n) for n in parts)}.")
+    return None
+
+
+def preflight() -> dict:
+    """
+    Load the native libraries now rather than at transcribe time.
+
+    The OS check above catches the known cases with a message worth reading;
+    importing anyway catches the ones nobody has met yet.
+    """
+    problem = unmet_requirement()
+    if problem:
+        return {"ok": False, "detail": problem}
+    try:
+        import numpy            # noqa: F401
+        import ctranslate2      # noqa: F401
+    except Exception as e:      # noqa: BLE001
+        return {"ok": False,
+                "detail": f"This build cannot load its transcription libraries "
+                          f"on this system ({type(e).__name__}: {e})."}
+    return {"ok": True, "detail": None}
+
+
 # ── Config persistence ───────────────────────────────────────────────────────
 
 def load_config() -> dict:

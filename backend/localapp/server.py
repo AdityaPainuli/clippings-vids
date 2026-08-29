@@ -63,6 +63,21 @@ assets.apply_environment()
 jobs: Dict[str, dict] = {}
 setup_progress: Dict[str, object] = {"status": "idle"}
 
+# Checked in the background at startup: loading numpy and ctranslate2 is the
+# step that fails on an unsupported OS, and it used to happen at transcribe
+# time — after the user had picked a video and waited for a 1.5GB model.
+platform_check: Dict[str, object] = {"ok": None, "detail": None}
+
+
+def _run_preflight():
+    platform_check.update(assets.preflight())
+    if not platform_check["ok"]:
+        print(f"[bolcap] {platform_check['detail']}")
+        print("[bolcap] The app will start, but transcription cannot run here.")
+
+
+threading.Thread(target=_run_preflight, daemon=True).start()
+
 
 def _allowed_origins() -> set:
     return {f"http://{h}:{PORT}" for h in (HOST, "127.0.0.1", "localhost")}
@@ -115,7 +130,8 @@ async def setup_status():
     # else in Bolcap runs offline; this is the one feature that needs a key,
     # so it is surfaced rather than failing when clicked.
     return {**assets.setup_status(), "progress": setup_progress,
-            "llm": llm.provider(), "api_keys": assets.api_key_status()}
+            "llm": llm.provider(), "api_keys": assets.api_key_status(),
+            "platform": platform_check}
 
 
 @app.post("/api/setup/run", dependencies=WRITE)
@@ -160,6 +176,10 @@ async def transcribe_endpoint(
     language: Optional[str] = Form(None),
     hinglish: bool = Form(True),
 ):
+    if platform_check.get("ok") is False:
+        # Refuse here rather than let the upload and the model download happen
+        # first and fail at the last step.
+        raise HTTPException(status_code=409, detail=str(platform_check["detail"]))
     if not assets.ffmpeg_ready():
         raise HTTPException(status_code=409,
                             detail="ffmpeg/ffprobe not set up yet — run first-run setup")

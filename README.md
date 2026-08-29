@@ -57,6 +57,10 @@ Click any word to jump the video there, double-click to retype it, then style
 the captions and export — burned into an MP4, or as a transparent overlay `.mov`
 for your editing timeline. [Download and install it →](BOLCAP.md)
 
+Needs macOS 14, Windows 10, or glibc 2.38 (Ubuntu 24.04) and newer — the
+[install notes](BOLCAP.md#install) say why, and the app checks before you get
+as far as picking a video.
+
 ### Tighten
 
 Bolcap can find the parts of a take worth cutting: dead air, filler words, and
