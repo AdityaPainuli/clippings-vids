@@ -112,11 +112,18 @@ def unmet_requirement() -> str | None:
             return (f"Bolcap needs macOS {MIN_MACOS[0]} (Sonoma) or later. "
                     f"This Mac is on {release}.")
     elif system == "Linux":
+        # confstr returns None where the value is undefined, and "".split() is
+        # empty — indexing it threw, killed the preflight thread, and left the
+        # result pending forever, so every check downstream failed open. An
+        # unreadable version is simply "unknown": the import probe still runs.
         try:
             version = os.confstr("CS_GNU_LIBC_VERSION") or ""
         except (ValueError, OSError):
+            version = ""
+        fields = version.split()
+        if not fields:
             return None
-        parts = [int(n) for n in version.split()[-1].split(".")[:2] if n.isdigit()]
+        parts = [int(n) for n in fields[-1].split(".")[:2] if n.isdigit()]
         if len(parts) == 2 and tuple(parts) < MIN_GLIBC:
             return (f"Bolcap needs glibc {MIN_GLIBC[0]}.{MIN_GLIBC[1]} or later "
                     f"(Ubuntu 24.04, Debian 13, Fedora 39). "
@@ -131,7 +138,13 @@ def preflight() -> dict:
     The OS check above catches the known cases with a message worth reading;
     importing anyway catches the ones nobody has met yet.
     """
-    problem = unmet_requirement()
+    try:
+        problem = unmet_requirement()
+    except Exception as e:                      # noqa: BLE001
+        # Never let a bug in the version parsing decide the answer — fall
+        # through to the import probe, which is the authority anyway.
+        print(f"[bolcap] could not read the OS version ({e})")
+        problem = None
     if problem:
         return {"ok": False, "detail": problem}
     try:

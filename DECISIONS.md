@@ -439,8 +439,23 @@ mattered.
 So the check runs at startup, in a background thread: the OS version first
 (which gives a sentence worth reading), then an actual import of numpy and
 ctranslate2 (which catches whatever nobody has met yet). An unsupported machine
-is told on the first screen, `/api/transcribe` refuses before an upload, and
-the console says so too.
+is told on the first screen, and the console says so too.
+
+**Pending is not "supported".** The probe takes a moment, and both the UI and
+the API originally treated "not yet answered" as a pass — which put the drop
+zone in front of exactly the slow machines most likely to fail. Callers now
+wait for the answer: the UI keeps every control hidden and polls, and requests
+block on the result rather than slipping past it.
+
+**The refusal has to happen in middleware.** FastAPI parses the multipart body
+— the whole upload — before the endpoint function runs, so an in-endpoint check
+cannot "reject before the upload". `/api/transcribe` and `/api/setup/run` are
+gated in ASGI middleware instead, which is the only place early enough to
+matter.
+
+**The probe fails closed.** If it raises, the answer is "cannot verify", not
+silence: an exception used to kill the thread and leave the result pending
+forever, which every caller then read as fine.
 
 The numbers in BOLCAP.md come from reading `minos` out of the shipped Mach-O
 binaries and the `GLIBC_` symbols out of the shipped ELF ones. Documenting a
