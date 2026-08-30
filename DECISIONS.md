@@ -420,3 +420,43 @@ Every state-changing endpoint now refuses a request a browser has labelled
 cross-site, by `Sec-Fetch-Site` or by an `Origin` that is not ours. A missing
 `Origin` is allowed: that is a non-browser client, which already needs local
 access to reach the port at all.
+
+
+## Platform requirements are checked, not assumed
+
+The release builds on GitHub's current runners, and the wheels they pull in set
+a floor nobody had written down: numpy and onnxruntime are compiled against
+**macOS 14** on both Mac architectures, and the bundled CPython needs
+**GLIBC_2.38**. That rules out Ubuntu 22.04 LTS and every Intel Mac from 2017
+or earlier.
+
+The failure mode was the problem. `faster-whisper` — and therefore numpy — is
+imported lazily at transcribe time, so on an older OS the app started, opened
+in the browser, accepted a video, downloaded a 1.5GB model, and only then died
+in a dynamic loader. It looked like it worked right up to the part that
+mattered.
+
+So the check runs at startup, in a background thread: the OS version first
+(which gives a sentence worth reading), then an actual import of numpy and
+ctranslate2 (which catches whatever nobody has met yet). An unsupported machine
+is told on the first screen, and the console says so too.
+
+**Pending is not "supported".** The probe takes a moment, and both the UI and
+the API originally treated "not yet answered" as a pass — which put the drop
+zone in front of exactly the slow machines most likely to fail. Callers now
+wait for the answer: the UI keeps every control hidden and polls, and requests
+block on the result rather than slipping past it.
+
+**The refusal has to happen in middleware.** FastAPI parses the multipart body
+— the whole upload — before the endpoint function runs, so an in-endpoint check
+cannot "reject before the upload". `/api/transcribe` and `/api/setup/run` are
+gated in ASGI middleware instead, which is the only place early enough to
+matter.
+
+**The probe fails closed.** If it raises, the answer is "cannot verify", not
+silence: an exception used to kill the thread and leave the result pending
+forever, which every caller then read as fine.
+
+The numbers in BOLCAP.md come from reading `minos` out of the shipped Mach-O
+binaries and the `GLIBC_` symbols out of the shipped ELF ones. Documenting a
+guess would have been worse than documenting nothing.

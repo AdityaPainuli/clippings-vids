@@ -7,6 +7,7 @@ re-uploads. Work dir defaults to ~/.bolcap/work and is wiped per job on
 completion of the final export download.
 """
 
+import asyncio
 import json
 import os
 import threading
@@ -16,7 +17,7 @@ from typing import Dict, Literal, Optional
 
 from fastapi import (BackgroundTasks, Depends, FastAPI, File, Form, HTTPException,
                      Request, UploadFile)
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
@@ -62,6 +63,66 @@ assets.apply_environment()
 
 jobs: Dict[str, dict] = {}
 setup_progress: Dict[str, object] = {"status": "idle"}
+
+# Checked in the background at startup: loading numpy and ctranslate2 is the
+# step that fails on an unsupported OS, and it used to happen at transcribe
+# time — after the user had picked a video and waited for a 1.5GB model.
+platform_check: Dict[str, object] = {"ok": None, "detail": None}
+platform_ready = threading.Event()
+
+# How long a request will wait for the check. The probe is an import or two;
+# anything beyond this is a machine under real load, not a hung thread.
+PREFLIGHT_WAIT = 30.0
+
+
+def _run_preflight():
+    try:
+        platform_check.update(assets.preflight())
+    except Exception as e:                      # noqa: BLE001
+        # Fail closed. Leaving the result pending is what made every caller
+        # fall through as if the platform were fine.
+        platform_check.update({
+            "ok": False,
+            "detail": f"Could not verify that this machine can run Bolcap "
+                      f"({type(e).__name__}: {e}).",
+        })
+    finally:
+        platform_ready.set()
+        if platform_check.get("ok") is False:
+            print(f"[bolcap] {platform_check['detail']}")
+            print("[bolcap] The app will start, but transcription cannot run here.")
+
+
+threading.Thread(target=_run_preflight, daemon=True).start()
+
+# Routes that would otherwise spend the user's time before failing: an upload,
+# or a multi-gigabyte model download.
+GATED_PATHS = {"/api/transcribe", "/api/setup/run"}
+
+
+@app.middleware("http")
+async def block_unsupported_platform(request: Request, call_next):
+    """
+    Turn work away before the body is read.
+
+    An in-endpoint check is too late: FastAPI parses the multipart body — the
+    whole upload — before the handler runs, so "reject before the upload" only
+    holds if the refusal happens out here. Requests that arrive before the
+    probe finishes wait for it rather than being waved through, which is what
+    a bare `is False` check did.
+    """
+    if request.method == "POST" and request.url.path in GATED_PATHS:
+        if not platform_ready.is_set():
+            await asyncio.to_thread(platform_ready.wait, PREFLIGHT_WAIT)
+        if not platform_ready.is_set():
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Still checking whether this machine can run "
+                                   "Bolcap — try again in a moment."})
+        if platform_check.get("ok") is False:
+            return JSONResponse(status_code=409,
+                                content={"detail": platform_check["detail"]})
+    return await call_next(request)
 
 
 def _allowed_origins() -> set:
@@ -115,7 +176,8 @@ async def setup_status():
     # else in Bolcap runs offline; this is the one feature that needs a key,
     # so it is surfaced rather than failing when clicked.
     return {**assets.setup_status(), "progress": setup_progress,
-            "llm": llm.provider(), "api_keys": assets.api_key_status()}
+            "llm": llm.provider(), "api_keys": assets.api_key_status(),
+            "platform": platform_check}
 
 
 @app.post("/api/setup/run", dependencies=WRITE)

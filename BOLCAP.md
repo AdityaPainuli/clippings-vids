@@ -31,12 +31,23 @@ Grab the zip for your machine from the
 unzip it, and run `bolcap`. It starts a local server and opens the app in your
 browser.
 
-| Download | For |
-|---|---|
-| `bolcap-macos-arm64.zip` | Macs with Apple Silicon (M1 and later) |
-| `bolcap-macos-x64.zip` | Intel Macs |
-| `bolcap-windows-x64.zip` | Windows 10/11 |
-| `bolcap-linux-x64.zip` | Linux (x86_64) |
+| Download | For | Needs |
+|---|---|---|
+| `bolcap-macos-arm64.zip` | Macs with Apple Silicon (M1 and later) | **macOS 14 Sonoma or later** |
+| `bolcap-macos-x64.zip` | Intel Macs | **macOS 14 Sonoma or later** |
+| `bolcap-windows-x64.zip` | Windows | Windows 10 or 11 (64-bit) |
+| `bolcap-linux-x64.zip` | Linux (x86_64) | **glibc 2.38+** — Ubuntu 24.04, Debian 13, Fedora 39 or newer |
+
+Those minimums are measured from the shipped binaries, not guessed: numpy and
+onnxruntime are compiled against macOS 14 on both Mac architectures, and the
+bundled CPython needs `GLIBC_2.38`. Check yours with **Apple menu → About This
+Mac**, or `ldd --version` on Linux.
+
+An Intel Mac from 2017 or earlier cannot run macOS 14 at all, so it cannot run
+Bolcap. Ubuntu 22.04 LTS ships glibc 2.35 and is too old.
+
+If your machine is below the line, Bolcap says so on the first screen rather
+than letting you pick a video and download a model first.
 
 ### Getting past the OS warning
 
@@ -46,9 +57,17 @@ The binaries are built in public by
 [this workflow](.github/workflows/bolcap-release.yml) straight from this repo,
 and you can read every line of what runs.
 
-- **macOS**: right-click (or Control-click) `bolcap` → **Open** → **Open**.
-  Double-clicking gives you no "open anyway" option; the right-click path does.
-  You only do this once.
+- **macOS**: `bolcap` is a plain executable rather than a `.app`, and macOS 15
+  Sequoia removed the old Control-click → Open shortcut for unsigned software,
+  so the reliable route is to strip the download flag in Terminal:
+
+  ```bash
+  xattr -dr com.apple.quarantine /path/to/bolcap
+  ```
+
+  Or try to open it once, then go to **System Settings → Privacy & Security**
+  and press **Open Anyway** next to the message about `bolcap`. Either way you
+  only do it once.
 - **Windows**: SmartScreen shows "Windows protected your PC" → **More info** →
   **Run anyway**.
 

@@ -156,7 +156,7 @@
   </header>
 
   <div class="card hidden" id="setup-card">
-    <h2>First-run setup</h2>
+    <h2 id="setup-title">First-run setup</h2>
     <p class="hint" style="margin:0 0 0.8rem" id="setup-why"></p>
     <div id="model-choices" class="presets" style="margin-bottom:0.9rem"></div>
     <button class="primary" id="setup-btn">Download &amp; set up</button>
@@ -342,12 +342,55 @@ const PRESET_LABELS = {
 };
 
 // ── First-run setup ─────────────────────────────────────────────────────────
+const escapeHtml = (t) => String(t).replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function hideSetupControls() {
+  show("setup-card"); hide("drop"); hide("lang-field");
+  hide("model-choices"); hide("setup-btn");
+}
+
+// The server waits 30s for the same probe; a little longer here so the UI
+// reports the server's answer rather than racing it.
+const PLATFORM_TIMEOUT_MS = 35000;
+let platformSince = 0;
 let chosenModel = null;
 let llmProvider = null;   // null when no cloud key is set
 let apiKeys = {};
 
 async function checkSetup() {
   const s = await (await fetch("/api/setup/status")).json();
+  // An unsupported OS is not something setup can fix, so it is said once,
+  // up front, instead of surfacing as a failed job after a long download.
+  if (!s.platform || s.platform.ok !== true) {
+    // `ok` is null while the probe runs. Treating that as "supported" put the
+    // drop zone in front of the user on exactly the slow machines most likely
+    // to fail, and checkSetup only runs once at startup — so it stayed there.
+    const blocked = s.platform && s.platform.ok === false;
+    hideSetupControls();
+    if (blocked) {
+      $("setup-title").textContent = "This machine can't run Bolcap";
+      $("setup-why").innerHTML = `${escapeHtml(s.platform.detail)}
+        <br><br>The <a href="https://github.com/AdityaPainuli/clippings-vids/blob/main/BOLCAP.md#install"
+        target="_blank" rel="noopener">install notes</a> list what each download needs.`;
+      return false;
+    }
+    // Count elapsed time, not polls: each round trip costs more than the
+    // 400ms gap, so a poll count drifts away from any wall-clock promise.
+    platformSince = platformSince || Date.now();
+    if (Date.now() - platformSince > PLATFORM_TIMEOUT_MS) {
+      $("setup-title").textContent = "Still checking this machine";
+      $("setup-why").innerHTML = `This is taking longer than it should.
+        <button class="small" onclick="platformSince = 0; checkSetup()">Check again</button>`;
+      return false;
+    }
+    $("setup-title").textContent = "Checking this machine…";
+    $("setup-why").textContent = "Making sure Bolcap can run here.";
+    setTimeout(checkSetup, 400);
+    return false;
+  }
+  platformSince = 0;
+  $("setup-title").textContent = "First-run setup";
   chosenModel = chosenModel || s.default_model;
   llmProvider = s.llm || null;
   apiKeys = s.api_keys || {};
@@ -356,7 +399,8 @@ async function checkSetup() {
     hide("setup-card"); show("drop"); show("lang-field"); return true;
   }
 
-  show("setup-card"); hide("drop"); hide("lang-field");
+  hideSetupControls();
+  show("model-choices"); show("setup-btn");
   $("setup-why").textContent = s.ffmpeg_needed
     ? "Bolcap needs ffmpeg and a Whisper model on this machine. One-time download, everything stays local."
     : "Pick a Whisper model to download. One-time, stays local.";
