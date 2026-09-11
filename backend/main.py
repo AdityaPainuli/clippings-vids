@@ -9,13 +9,15 @@ import uuid
 import asyncio
 import time
 import hashlib
+import logging
 import clipper
 from supabase_client import supabase, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips
 from captions.api import router as captions_router
-from captions.storage import RETENTION_SECONDS as CAPTION_RETENTION_SECONDS, delete_expired
+from captions.storage import delete_expired
 from job_store import InMemoryJobStore
 
 
+logger = logging.getLogger(__name__)
 app = FastAPI()
 app.include_router(captions_router)
 
@@ -39,7 +41,6 @@ for d in [UPLOAD_DIR, OUTPUT_DIR]:
 # In-memory stores
 # ─────────────────────────────────────────────
 clipper_jobs = InMemoryJobStore(JOB_TTL)
-caption_jobs = InMemoryJobStore(CAPTION_RETENTION_SECONDS)
 _clip_cache: Dict[str, list] = {}
 _last_cleanup: float = time.time()
 
@@ -72,6 +73,22 @@ def _notify_job(job_id: str, event_data: dict):
             queue.put_nowait(event_data)
         except asyncio.QueueFull:
             pass
+
+
+def _cleanup_files(paths: list[str]) -> None:
+    for path in paths:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def _clipper_job_or_cleanup(job_id: str, cleanup_paths: list[str], context: str) -> dict | None:
+    job = clipper_jobs.get(job_id)
+    if job is None:
+        _cleanup_files(cleanup_paths)
+        logger.warning("Clipper job %s disappeared during %s; cleaned up local files", job_id, context)
+    return job
 
 # ─────────────────────────────────────────────
 # Auth — validate Supabase JWT on protected routes
@@ -121,7 +138,6 @@ async def _maybe_cleanup():
         # Also purge stale in-memory job records
         now = time.time()
         stale = clipper_jobs.cleanup(now)
-        caption_jobs.cleanup(now)
         if deleted or stale:
             print(f"[cleanup] {deleted} storage file(s) deleted, {len(stale)} job record(s) purged")
 
@@ -145,9 +161,12 @@ async def process_video_task(
     max_clip_length: Optional[int] = None,
 ):
     loop = asyncio.get_event_loop()
+    local_clip_paths: list[str] = []
     job = clipper_jobs.get(job_id)
     if job is None:
-        raise RuntimeError(f"Job {job_id} not found")
+        _cleanup_files([video_path])
+        logger.warning("Clipper job %s missing before processing; cleaned up local files", job_id)
+        return
     try:
         # ── 1. Analyse ────────────────────────────────────────────────────────
         job["status"] = "analyzing"
@@ -156,6 +175,10 @@ async def process_video_task(
             None, clipper.analyze_video, video_path, instructions, info,
             clip_style, clip_count, min_clip_length, max_clip_length
         )
+
+        job = _clipper_job_or_cleanup(job_id, [video_path], "analysis")
+        if job is None:
+            return
 
         if not clips_metadata:
             job["status"] = "failed"
@@ -172,8 +195,12 @@ async def process_video_task(
             None, clipper.create_clips, video_path, clips_metadata, OUTPUT_DIR,
             captions, caption_style
         )
+        local_clip_paths = [os.path.join(OUTPUT_DIR, clip["filename"]) for clip in clips]
 
         # ── 3. Upload each clip to Supabase Storage ───────────────────────────
+        job = _clipper_job_or_cleanup(job_id, [video_path, *local_clip_paths], "clip rendering")
+        if job is None:
+            return
         job["status"] = "uploading"
         _notify_job(job_id, {"status": "uploading", "detail": f"Uploading {len(clips)} clips...", "rendered": len(clips)})
         results = []
@@ -224,6 +251,10 @@ async def process_video_task(
         total_requested = len(clips_metadata)
         all_errors = render_failures + upload_errors
 
+        job = _clipper_job_or_cleanup(job_id, [video_path, *local_clip_paths], "clip upload")
+        if job is None:
+            return
+
         if results:
             job["status"]  = "completed"
             job["results"] = results
@@ -245,16 +276,14 @@ async def process_video_task(
             _notify_job(job_id, {"status": "failed", "error": err_msg})
 
         # Delete source video
-        try:
-            os.remove(video_path)
-        except OSError:
-            pass
+        _cleanup_files([video_path])
 
     except Exception as e:
+        job = _clipper_job_or_cleanup(job_id, [video_path, *local_clip_paths], "failure handling")
         if job is not None:
             job["status"] = "failed"
             job["error"]  = str(e)
-        _notify_job(job_id, {"status": "failed", "error": str(e)})
+            _notify_job(job_id, {"status": "failed", "error": str(e)})
         print(f"[job {job_id}] failed: {e}")
 
 
@@ -272,15 +301,22 @@ async def download_and_process(
     max_clip_length: Optional[int] = None,
 ):
     loop = asyncio.get_event_loop()
+    video_path = None
     job = clipper_jobs.get(job_id)
     if job is None:
-        raise RuntimeError(f"Job {job_id} not found")
+        logger.warning("Clipper job %s missing before download", job_id)
+        return
     try:
         job["status"] = "downloading"
         _notify_job(job_id, {"status": "downloading", "detail": "Downloading video..."})
         video_path, info = await loop.run_in_executor(
             None, clipper.download_video, url, UPLOAD_DIR
         )
+
+        job = _clipper_job_or_cleanup(job_id, [video_path], "download")
+        if job is None:
+            return
+
         job["video_path"] = video_path
         _notify_job(job_id, {"status": "downloading", "detail": "Download complete"})
         await process_video_task(
@@ -288,9 +324,12 @@ async def download_and_process(
             clip_style, caption_style, clip_count, min_clip_length, max_clip_length
         )
     except Exception as e:
-        job["status"] = "failed"
-        job["error"]  = str(e)
-        _notify_job(job_id, {"status": "failed", "error": str(e)})
+        paths = [video_path] if video_path else []
+        job = _clipper_job_or_cleanup(job_id, paths, "download failure handling")
+        if job is not None:
+            job["status"] = "failed"
+            job["error"]  = str(e)
+            _notify_job(job_id, {"status": "failed", "error": str(e)})
 
 
 # ─────────────────────────────────────────────
