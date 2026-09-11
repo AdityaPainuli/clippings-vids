@@ -12,6 +12,8 @@ import hashlib
 import clipper
 from supabase_client import supabase, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips
 from captions.api import router as captions_router
+from captions.storage import RETENTION_SECONDS as CAPTION_RETENTION_SECONDS, delete_expired
+from job_store import InMemoryJobStore
 
 
 app = FastAPI()
@@ -36,7 +38,8 @@ for d in [UPLOAD_DIR, OUTPUT_DIR]:
 # ─────────────────────────────────────────────
 # In-memory stores
 # ─────────────────────────────────────────────
-jobs: Dict[str, dict] = {}
+clipper_jobs = InMemoryJobStore(JOB_TTL)
+caption_jobs = InMemoryJobStore(CAPTION_RETENTION_SECONDS)
 _clip_cache: Dict[str, list] = {}
 _last_cleanup: float = time.time()
 
@@ -114,13 +117,11 @@ async def _maybe_cleanup():
         loop = asyncio.get_event_loop()
         deleted = await loop.run_in_executor(None, delete_old_clips)
         # Caption jobs + storage past their retention window
-        from captions.storage import delete_expired
         await loop.run_in_executor(None, delete_expired)
         # Also purge stale in-memory job records
         now = time.time()
-        stale = [jid for jid, j in jobs.items() if j.get("created_at", now) < now - JOB_TTL]
-        for jid in stale:
-            jobs.pop(jid, None)
+        stale = clipper_jobs.cleanup(now)
+        caption_jobs.cleanup(now)
         if deleted or stale:
             print(f"[cleanup] {deleted} storage file(s) deleted, {len(stale)} job record(s) purged")
 
@@ -144,9 +145,12 @@ async def process_video_task(
     max_clip_length: Optional[int] = None,
 ):
     loop = asyncio.get_event_loop()
+    job = clipper_jobs.get(job_id)
+    if job is None:
+        raise RuntimeError(f"Job {job_id} not found")
     try:
         # ── 1. Analyse ────────────────────────────────────────────────────────
-        jobs[job_id]["status"] = "analyzing"
+        job["status"] = "analyzing"
         _notify_job(job_id, {"status": "analyzing", "detail": "Analyzing video for viral moments..."})
         clips_metadata = await loop.run_in_executor(
             None, clipper.analyze_video, video_path, instructions, info,
@@ -154,15 +158,15 @@ async def process_video_task(
         )
 
         if not clips_metadata:
-            jobs[job_id]["status"] = "failed"
-            jobs[job_id]["error"]  = "No viral moments found in this video"
+            job["status"] = "failed"
+            job["error"]  = "No viral moments found in this video"
             _notify_job(job_id, {"status": "failed", "error": "No viral moments found in this video"})
             return
 
         _notify_job(job_id, {"status": "analyzing", "detail": f"Found {len(clips_metadata)} potential clips"})
 
         # ── 2. Render clips locally ───────────────────────────────────────────
-        jobs[job_id]["status"] = "clipping"
+        job["status"] = "clipping"
         _notify_job(job_id, {"status": "clipping", "detail": f"Rendering {len(clips_metadata)} clips...", "total_clips": len(clips_metadata)})
         clips, render_failures = await loop.run_in_executor(
             None, clipper.create_clips, video_path, clips_metadata, OUTPUT_DIR,
@@ -170,11 +174,11 @@ async def process_video_task(
         )
 
         # ── 3. Upload each clip to Supabase Storage ───────────────────────────
-        jobs[job_id]["status"] = "uploading"
+        job["status"] = "uploading"
         _notify_job(job_id, {"status": "uploading", "detail": f"Uploading {len(clips)} clips...", "rendered": len(clips)})
         results = []
         upload_errors = []
-        source_url = jobs[job_id].get("url", "")
+        source_url = job.get("url", "")
 
         for clip in clips:
             try:
@@ -221,23 +225,23 @@ async def process_video_task(
         all_errors = render_failures + upload_errors
 
         if results:
-            jobs[job_id]["status"]  = "completed"
-            jobs[job_id]["results"] = results
+            job["status"]  = "completed"
+            job["results"] = results
             if all_errors:
-                jobs[job_id]["warnings"] = f"{len(all_errors)} of {total_requested} clips failed"
-                jobs[job_id]["failed_clips"] = all_errors
+                job["warnings"] = f"{len(all_errors)} of {total_requested} clips failed"
+                job["failed_clips"] = all_errors
             if cache_key:
                 _clip_cache[cache_key] = results
             _notify_job(job_id, {
                 "status": "completed",
                 "results": results,
-                "warnings": jobs[job_id].get("warnings"),
+                "warnings": job.get("warnings"),
             })
         else:
             err_msg = f"All {total_requested} clips failed to render/upload"
-            jobs[job_id]["status"] = "failed"
-            jobs[job_id]["error"]  = err_msg
-            jobs[job_id]["failed_clips"] = all_errors
+            job["status"] = "failed"
+            job["error"]  = err_msg
+            job["failed_clips"] = all_errors
             _notify_job(job_id, {"status": "failed", "error": err_msg})
 
         # Delete source video
@@ -247,8 +251,9 @@ async def process_video_task(
             pass
 
     except Exception as e:
-        jobs[job_id]["status"] = "failed"
-        jobs[job_id]["error"]  = str(e)
+        if job is not None:
+            job["status"] = "failed"
+            job["error"]  = str(e)
         _notify_job(job_id, {"status": "failed", "error": str(e)})
         print(f"[job {job_id}] failed: {e}")
 
@@ -267,21 +272,24 @@ async def download_and_process(
     max_clip_length: Optional[int] = None,
 ):
     loop = asyncio.get_event_loop()
+    job = clipper_jobs.get(job_id)
+    if job is None:
+        raise RuntimeError(f"Job {job_id} not found")
     try:
-        jobs[job_id]["status"] = "downloading"
+        job["status"] = "downloading"
         _notify_job(job_id, {"status": "downloading", "detail": "Downloading video..."})
         video_path, info = await loop.run_in_executor(
             None, clipper.download_video, url, UPLOAD_DIR
         )
-        jobs[job_id]["video_path"] = video_path
+        job["video_path"] = video_path
         _notify_job(job_id, {"status": "downloading", "detail": "Download complete"})
         await process_video_task(
             job_id, video_path, instructions, user_id, info, captions, cache_key,
             clip_style, caption_style, clip_count, min_clip_length, max_clip_length
         )
     except Exception as e:
-        jobs[job_id]["status"] = "failed"
-        jobs[job_id]["error"]  = str(e)
+        job["status"] = "failed"
+        job["error"]  = str(e)
         _notify_job(job_id, {"status": "failed", "error": str(e)})
 
 
@@ -372,7 +380,7 @@ async def process_url(
     # Cache hit — same user, same URL, same styles, clips still alive in storage
     if cache_key in _clip_cache:
         job_id = str(uuid.uuid4())
-        jobs[job_id] = {
+        clipper_jobs.set(job_id, {
             "status":     "completed",
             "url":        url,
             "results":    _clip_cache[cache_key],
@@ -380,11 +388,11 @@ async def process_url(
             "created_at": time.time(),
             "user_id":    user_id,
             "cached":     True,
-        }
+        })
         return {"job_id": job_id, "status": "completed", "cached": True}
 
     job_id = str(uuid.uuid4())
-    jobs[job_id] = {
+    clipper_jobs.set(job_id, {
         "status":     "queued",
         "url":        url,
         "results":    None,
@@ -392,7 +400,7 @@ async def process_url(
         "created_at": time.time(),
         "user_id":    user_id,
         "cached":     False,
-    }
+    })
     background_tasks.add_task(
         download_and_process, job_id, url, instructions, user_id, cache_key,
         captions, clip_style, caption_style, clip_count, min_clip_length, max_clip_length
@@ -435,13 +443,13 @@ async def upload_video(
         with open(file_path, "wb") as buffer:
             buffer.write(await file.read())
 
-        jobs[job_id] = {
+        clipper_jobs.set(job_id, {
             "status":     "queued",
             "results":    None,
             "error":      None,
             "created_at": time.time(),
             "user_id":    user_id,
-        }
+        })
         background_tasks.add_task(
             process_video_task, job_id, file_path, instructions, user_id, None,
             captions, None, clip_style, caption_style, clip_count, min_clip_length, max_clip_length
@@ -453,9 +461,9 @@ async def upload_video(
 
 @app.get("/status/{job_id}")
 async def get_status(job_id: str, user: dict = Depends(get_current_user)):
-    if job_id not in jobs:
+    job = clipper_jobs.get(job_id)
+    if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    job = jobs[job_id]
     # Users can only see their own jobs
     if job.get("user_id") != user["user_id"]:
         raise HTTPException(status_code=403, detail="Not your job")
@@ -491,9 +499,10 @@ async def stream_status(job_id: str, request: Request, token: str = ""):
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid or expired stream token")
 
-    if job_id not in jobs:
+    job = clipper_jobs.get(job_id)
+    if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    if jobs[job_id].get("user_id") != user_id:
+    if job.get("user_id") != user_id:
         raise HTTPException(status_code=403, detail="Not your job")
 
     queue: asyncio.Queue = asyncio.Queue(maxsize=50)
@@ -502,12 +511,12 @@ async def stream_status(job_id: str, request: Request, token: str = ""):
     async def event_generator():
         try:
             # Send current state immediately
-            job = jobs.get(job_id, {})
-            yield f"data: {json.dumps({'status': job.get('status', 'queued'), 'detail': 'Connected'})}\n\n"
+            current_job = clipper_jobs.get(job_id) or {}
+            yield f"data: {json.dumps({'status': current_job.get('status', 'queued'), 'detail': 'Connected'})}\n\n"
 
             # If already done, send result and close
-            if job.get("status") in ("completed", "failed"):
-                yield f"data: {json.dumps(job)}\n\n"
+            if current_job.get("status") in ("completed", "failed"):
+                yield f"data: {json.dumps(current_job)}\n\n"
                 return
 
             while True:
@@ -568,9 +577,9 @@ async def my_clips(user: dict = Depends(get_current_user)):
 @app.delete("/clips/{job_id}")
 async def delete_clips(job_id: str, user: dict = Depends(get_current_user)):
     """Manually delete a job's clips from Supabase Storage."""
-    if job_id not in jobs:
+    job = clipper_jobs.get(job_id)
+    if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    job = jobs[job_id]
     if job.get("user_id") != user["user_id"]:
         raise HTTPException(status_code=403, detail="Not your job")
 
@@ -582,7 +591,7 @@ async def delete_clips(job_id: str, user: dict = Depends(get_current_user)):
         await loop.run_in_executor(None, _delete_paths, paths)
         deleted = len(paths)
 
-    jobs.pop(job_id, None)
+    clipper_jobs.delete(job_id)
     return {"deleted_clips": deleted}
 
 
@@ -590,7 +599,7 @@ async def delete_clips(job_id: str, user: dict = Depends(get_current_user)):
 async def storage_stats(user: dict = Depends(get_current_user)):
     """How many jobs and clips the current user has in memory."""
     user_id   = user["user_id"]
-    user_jobs = [j for j in jobs.values() if j.get("user_id") == user_id]
+    user_jobs = [j for j in clipper_jobs.all().values() if j.get("user_id") == user_id]
     total_clips = sum(len(j.get("results") or []) for j in user_jobs)
     return {
         "total_jobs":   len(user_jobs),
