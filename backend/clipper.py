@@ -171,15 +171,25 @@ def _parse_vtt_to_text(vtt_path):
     with open(vtt_path, encoding="utf-8") as f:
         raw = f.readlines()
     current_time = None
+    cue_texts = []
     for line in raw:
         line = line.strip()
         if "-->" in line:
+            if current_time and cue_texts:
+                lines.append(f"[{current_time}] {' '.join(cue_texts)}")
             current_time = line.split("-->")[0].strip()[:8]
-        elif line and current_time and not line.startswith("WEBVTT") and not line[0].isdigit():
+            cue_texts = []
+        elif not line:
+            if current_time and cue_texts:
+                lines.append(f"[{current_time}] {' '.join(cue_texts)}")
+            current_time = None
+            cue_texts = []
+        elif current_time and not line.startswith("WEBVTT") and not line[0].isdigit():
             clean = re.sub(r"<[^>]+>", "", line).strip()
             if clean:
-                lines.append(f"[{current_time}] {clean}")
-                current_time = None
+                cue_texts.append(clean)
+    if current_time and cue_texts:
+        lines.append(f"[{current_time}] {' '.join(cue_texts)}")
     return "\n".join(lines) if lines else None
 
 
