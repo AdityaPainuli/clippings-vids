@@ -165,31 +165,56 @@ def _extract_keyframes(video_path, n_frames=8):
 
 
 def _parse_vtt_to_text(vtt_path):
+    """
+    A cue is one timestamp line followed by every non-blank line up to the
+    next blank line, the next timestamp, or end-of-file — those lines are
+    joined with spaces into the cue's full text.
+
+    A cue identifier (e.g. a bare "1", "cue-42", or a WebVTT NOTE) is any
+    non-blank line seen *before* a timestamp — i.e. at the start of the file
+    or right after a blank line, while current_time is still None. That
+    position is what makes it an identifier, not its content, so real
+    caption text is never dropped just because it happens to start with a
+    digit ("2024 was a big year...", "90 percent of..."). A leading-digit
+    check used to stand in for this and silently ate exactly that text.
+    """
     if not vtt_path or not os.path.exists(vtt_path):
         return None
-    lines = []
     with open(vtt_path, encoding="utf-8") as f:
         raw = f.readlines()
-    current_time = None
-    cue_lines = []
-    for line in raw:
-        line = line.strip()
+
+    lines, cue_lines, current_time = [], [], None
+
+    def _flush():
+        if current_time and cue_lines:
+            clean = " ".join(cue_lines).strip()
+            if clean:
+                lines.append(f"[{current_time}] {clean}")
+
+    for raw_line in raw:
+        line = raw_line.strip()
         if "-->" in line:
-            if current_time is not None and cue_lines:
-                lines.append(f"[{current_time}] {' '.join(cue_lines)}")
+            _flush()
             current_time = line.split("-->")[0].strip()[:8]
             cue_lines = []
         elif not line:
-            if current_time is not None and cue_lines:
-                lines.append(f"[{current_time}] {' '.join(cue_lines)}")
+            # Blank line ends the current cue block.
+            _flush()
             current_time = None
             cue_lines = []
-        elif current_time and not line.startswith("WEBVTT"):
+        elif line.startswith("WEBVTT"):
+            continue
+        elif current_time:
+            # Any non-blank line following a timestamp, before the next
+            # blank line or timestamp, is cue text — whatever it starts with.
             clean = re.sub(r"<[^>]+>", "", line).strip()
             if clean:
                 cue_lines.append(clean)
-    if current_time is not None and cue_lines:
-        lines.append(f"[{current_time}] {' '.join(cue_lines)}")
+        # else: a non-blank line before any timestamp (start of file, or
+        # right after a blank line) is a cue identifier/metadata line, not
+        # caption text — skipped by position, not by content.
+
+    _flush()
     return "\n".join(lines) if lines else None
 
 
