@@ -10,6 +10,7 @@ import asyncio
 import time
 import hashlib
 import clipper
+from media_validation import MediaValidationError, validate_media_file
 from supabase_client import supabase, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips
 from captions.api import router as captions_router
 
@@ -446,6 +447,15 @@ async def upload_video(
         with open(file_path, "wb") as buffer:
             buffer.write(await file.read())
 
+        try:
+            await asyncio.to_thread(validate_media_file, file_path)
+        except MediaValidationError as error:
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
         jobs[job_id] = {
             "status":     "queued",
             "results":    None,
@@ -458,6 +468,8 @@ async def upload_video(
             captions, None, clip_style, caption_style, clip_count, min_clip_length, max_clip_length
         )
         return {"job_id": job_id, "status": "uploaded"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
