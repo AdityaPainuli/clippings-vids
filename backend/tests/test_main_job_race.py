@@ -2,10 +2,9 @@ import asyncio
 import importlib
 import os
 import sys
-import tempfile
+import time
 import types
 import unittest
-from unittest import mock
 
 
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -89,45 +88,34 @@ def _install_main_import_stubs():
     sys.modules["captions.storage"] = captions_storage
 
 
-class MainJobRaceTest(unittest.TestCase):
-    def test_deleted_job_after_clip_render_cleans_files_and_does_not_write_final_state(self):
+class MainJobCleanupTTLTest(unittest.TestCase):
+    def test_cleanup_only_purges_terminal_jobs_past_ttl(self):
         _install_main_import_stubs()
         main = importlib.import_module("main")
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            upload_dir = os.path.join(tmpdir, "uploads")
-            output_dir = os.path.join(tmpdir, "output")
-            os.makedirs(upload_dir)
-            os.makedirs(output_dir)
-            video_path = os.path.join(upload_dir, "source.mp4")
-            with open(video_path, "wb") as handle:
-                handle.write(b"video")
+        main._last_cleanup = 0.0  # Force _maybe_cleanup to execute
+        main.JOB_TTL = 7200
+        now = time.time()
+        old_time = now - 10000
 
-            job_id = "same-id"
-            orphaned_record = {"status": "queued", "created_at": 100.0, "user_id": "user-1"}
-            main.UPLOAD_DIR = upload_dir
-            main.OUTPUT_DIR = output_dir
-            main.clipper_jobs.set(job_id, orphaned_record)
+        # Set up test jobs
+        main.jobs.clear()
+        main.jobs["active-1"] = {"status": "rendering", "created_at": old_time, "user_id": "user-1"}
+        main.jobs["active-2"] = {"status": "analyzing", "created_at": old_time, "user_id": "user-1"}
+        main.jobs["completed-old"] = {"status": "completed", "created_at": old_time, "user_id": "user-1"}
+        main.jobs["failed-old"] = {"status": "failed", "created_at": old_time, "user_id": "user-1"}
+        main.jobs["completed-fresh"] = {"status": "completed", "created_at": now - 100, "user_id": "user-1"}
 
-            def create_clips(*args, **kwargs):
-                clip_path = os.path.join(output_dir, "clip.mp4")
-                with open(clip_path, "wb") as handle:
-                    handle.write(b"clip")
-                main.clipper_jobs.delete(job_id)
-                return ([{"filename": "clip.mp4"}], [])
+        asyncio.run(main._maybe_cleanup())
 
-            with mock.patch.object(main.clipper, "analyze_video", return_value=[{"start": 0, "end": 1}]):
-                with mock.patch.object(main.clipper, "create_clips", side_effect=create_clips):
-                    with self.assertLogs(main.logger, level="WARNING"):
-                        asyncio.run(main.process_video_task(
-                            job_id, video_path, None, "user-1", cache_key=None
-                        ))
+        # Assert active old jobs and fresh completed job were preserved
+        self.assertIn("active-1", main.jobs)
+        self.assertIn("active-2", main.jobs)
+        self.assertIn("completed-fresh", main.jobs)
 
-            self.assertIsNone(main.clipper_jobs.get(job_id))
-            self.assertFalse(os.path.exists(video_path))
-            self.assertFalse(os.path.exists(os.path.join(output_dir, "clip.mp4")))
-            self.assertNotEqual(orphaned_record.get("status"), "completed")
-            self.assertNotIn("results", orphaned_record)
+        # Assert stale terminal jobs were purged
+        self.assertNotIn("completed-old", main.jobs)
+        self.assertNotIn("failed-old", main.jobs)
 
 
 if __name__ == "__main__":
