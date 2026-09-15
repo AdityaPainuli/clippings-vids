@@ -112,11 +112,21 @@ async def _maybe_cleanup():
     if time.time() - _last_cleanup > CLEANUP_INT:
         _last_cleanup = time.time()
         loop = asyncio.get_event_loop()
-        deleted = await loop.run_in_executor(None, delete_old_clips)
+
+        deleted = 0
+        try:
+            deleted = await loop.run_in_executor(None, delete_old_clips)
+        except Exception as e:
+            print(f"[cleanup] Clip cleanup failed: {e}")
+
         # Caption jobs + storage past their retention window
-        from captions.storage import delete_expired
-        await loop.run_in_executor(None, delete_expired)
-        # Also purge stale in-memory job records
+        try:
+            from captions.storage import delete_expired
+            await loop.run_in_executor(None, delete_expired)
+        except Exception as e:
+            print(f"[cleanup] Caption cleanup failed: {e}")
+
+        # Also purge stale in-memory job records (only in terminal states)
         now = time.time()
         stale = [
             jid for jid, j in list(jobs.items())
@@ -125,8 +135,10 @@ async def _maybe_cleanup():
         ]
         for jid in stale:
             jobs.pop(jid, None)
+
         if deleted or stale:
             print(f"[cleanup] {deleted} storage file(s) deleted, {len(stale)} job record(s) purged")
+
 
 
 # ─────────────────────────────────────────────
