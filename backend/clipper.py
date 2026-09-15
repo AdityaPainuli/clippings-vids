@@ -184,7 +184,7 @@ def _parse_vtt_to_text(vtt_path):
                 lines.append(f"[{current_time}] {' '.join(cue_lines)}")
             current_time = None
             cue_lines = []
-        elif current_time and not line.startswith("WEBVTT") and not line[0].isdigit():
+        elif current_time and not line.startswith("WEBVTT"):
             clean = re.sub(r"<[^>]+>", "", line).strip()
             if clean:
                 cue_lines.append(clean)

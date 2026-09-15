@@ -195,6 +195,24 @@ class ParseVttStressTest(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_caption_starting_with_digit_is_preserved(self):
+        path = self._write_vtt(
+            "WEBVTT\n\n"
+            "00:00:01.000 --> 00:00:04.000\n"
+            "2024 was a big year for us.\n\n"
+            "00:00:05.000 --> 00:00:08.000\n"
+            "90 percent of creators agree.\n\n"
+        )
+        try:
+            result = _parse_vtt_to_text(path)
+            self.assertEqual(
+                result,
+                "[00:00:01] 2024 was a big year for us.\n"
+                "[00:00:05] 90 percent of creators agree.",
+            )
+        finally:
+            os.unlink(path)
+
 
 class ParseVttEdgeCasesTest(unittest.TestCase):
     def test_nonexistent_file_returns_none(self):
