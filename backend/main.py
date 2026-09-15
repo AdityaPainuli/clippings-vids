@@ -12,6 +12,7 @@ import hashlib
 import clipper
 from supabase_client import supabase, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips
 from captions.api import router as captions_router
+from validate_media import validate_media_file, MediaValidationError
 
 
 app = FastAPI()
@@ -434,6 +435,12 @@ async def upload_video(
         file_path = os.path.join(UPLOAD_DIR, f"{job_id}_{file.filename}")
         with open(file_path, "wb") as buffer:
             buffer.write(await file.read())
+
+        try:
+            validate_media_file(file_path)
+        except MediaValidationError as ve:
+            os.remove(file_path)
+            raise HTTPException(status_code=422, detail=str(ve))
 
         jobs[job_id] = {
             "status":     "queued",
