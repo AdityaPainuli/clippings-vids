@@ -216,8 +216,10 @@ KEY_ENV = llm.PROVIDER_ENV
 # every key looks like an environment key, so without this snapshot the app
 # cannot tell which credential the user actually chose — it reported the wrong
 # one in the UI and let the endpoint overwrite a deliberate override.
-ENV_PROVIDED = {p: e for p, e in KEY_ENV.items() if os.environ.get(e)}
-
+ENV_PROVIDED = {
+    p: e for p, e in KEY_ENV.items()
+    if e and os.environ.get(e)
+}
 
 def env_provided(provider: str) -> bool:
     """Did this key come from the launch environment rather than the config?"""
@@ -228,43 +230,69 @@ def save_api_key(provider: str, key: str):
     """Persist a key, or clear it when `key` is empty."""
     if provider not in KEY_ENV:
         raise ValueError(f"unknown provider {provider!r}")
+
+    if KEY_ENV[provider] is None:
+        raise ValueError(
+            f"{provider} does not use an API key; configure the local endpoint instead."
+        )
+
     if env_provided(provider):
         raise PermissionError(
             f"{KEY_ENV[provider]} is set in this app's environment; "
-            "change it there instead.")
+            "change it there instead."
+        )
+
     keys = {**load_config().get("api_keys", {})}
     key = (key or "").strip()
+
     if key:
         keys[provider] = key
     else:
         keys.pop(provider, None)
         os.environ.pop(KEY_ENV[provider], None)
+
     save_config(api_keys=keys)
     apply_environment()
 
 
 def api_key_status() -> dict:
-    """
-    What is configured, never the key itself.
-
-    `source` matters to the user: a key set in the environment cannot be
-    cleared from the UI, so the UI has to stop offering to.
-    """
+    """Return provider configuration status, never the key itself."""
     stored = load_config().get("api_keys", {})
     out = {}
+
     for provider, env in KEY_ENV.items():
-        if env_provided(provider):
-            # The environment value is the one in use even when a key is also
-            # saved, so it is the one described. Reporting the saved key's
-            # hint here named a credential that was not being used.
-            out[provider] = {"configured": True, "source": "environment",
-                             "hint": _hint(os.environ[env]), "editable": False}
+        if env is None:
+            out[provider] = {
+                "configured": llm.provider() == provider,
+                "source": "local",
+                "hint": (
+                    f"{llm.OPENAI_COMPATIBLE_BASE_URL} "
+                    f"({llm.OPENAI_COMPATIBLE_MODEL})"
+                ),
+                "editable": False,
+            }
+        elif env_provided(provider):
+            out[provider] = {
+                "configured": True,
+                "source": "environment",
+                "hint": _hint(os.environ[env]),
+                "editable": False,
+            }
         elif stored.get(provider):
-            out[provider] = {"configured": True, "source": "saved",
-                             "hint": _hint(stored[provider]), "editable": True}
+            out[provider] = {
+                "configured": True,
+                "source": "saved",
+                "hint": _hint(stored[provider]),
+                "editable": True,
+            }
         else:
-            out[provider] = {"configured": False, "source": None,
-                             "hint": None, "editable": True}
+            out[provider] = {
+                "configured": False,
+                "source": None,
+                "hint": None,
+                "editable": True,
+            }
+
     return out
 
 
