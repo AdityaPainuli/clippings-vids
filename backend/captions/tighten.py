@@ -58,6 +58,47 @@ LEXICAL_FILLERS = {
     "मतलब", "यानी", "तो", "ना", "बस", "ऐसा", "वैसे", "अरे", "अच्छा", "हाँ", "हां",
 }
 
+# ── Per-language filler tables (Latin-script regional languages) ──────────────
+
+# Tamil (Tanglish) fillers that are safe to cut when surrounded by dead air.
+NONLEXICAL_FILLERS_TA = {
+    "um", "umm", "uh", "uhh", "hmm", "hmmm", "mm", "ah", "err", "erm",
+}
+
+LEXICAL_FILLERS_TA = {
+    # Discourse markers / throat-clearers used as fillers in Tanglish
+    "sari", "poda", "paaru", "solla", "aprom", "appuram",
+    "konjam", "romba", "correct",
+    # Cross-language English crutches used heavily in Tamil speech
+    "like", "actually", "basically", "okay", "ok", "right", "so", "well",
+}
+
+# Telugu (Tenglish) fillers.
+NONLEXICAL_FILLERS_TE = {
+    "um", "umm", "uh", "uhh", "hmm", "hmmm", "mm", "ah", "err", "erm",
+}
+
+LEXICAL_FILLERS_TE = {
+    # Discourse markers used as fillers in Tenglish
+    "ante", "ayithe", "emo", "mari", "chala", "manchidi",
+    "telusaa", "therlusaa", "sare",
+    # English crutches
+    "like", "actually", "basically", "okay", "ok", "right", "so", "well",
+}
+
+
+def _filler_sets_for_lang(lang: str | None) -> tuple[set, set]:
+    """Return (NONLEXICAL_SET, LEXICAL_SET) for the given lang code."""
+    if lang == "ta":
+        return NONLEXICAL_FILLERS_TA, LEXICAL_FILLERS_TA
+    if lang == "te":
+        return NONLEXICAL_FILLERS_TE, LEXICAL_FILLERS_TE
+    # "hi", "en", None, or unknown: use the combined Hindi+English table
+    return NONLEXICAL_FILLERS, LEXICAL_FILLERS
+
+
+
+CLAUSE_PUNCT = ".,!?;:।"
 
 # Hindi reduplicates for emphasis or plurality — "alag-alag" (various),
 # "dheere-dheere" (gradually). Saying it twice IS the word.
@@ -66,7 +107,6 @@ REDUPLICATED = {
     "paas", "kuch", "bahut", "acha", "achha", "chhota", "bada", "garam",
 }
 
-CLAUSE_PUNCT = ".,!?;:।"
 
 
 def _text(word: dict) -> str:
@@ -270,7 +310,12 @@ def _filler_score(words: list, i: int, cfg: TightenConfig,
 
 
 def detect_fillers(words: list, cfg: TightenConfig) -> list:
-    """Non-lexical fillers always; real words only when context agrees."""
+    """Non-lexical fillers always; real words only when context agrees.
+
+    Per-word ``lang`` tags (from lang_detect.tag_words) route each token to
+    the correct filler table.  Words without a tag fall back to the combined
+    Hindi/English table, preserving the pre-patch behaviour exactly.
+    """
     cuts = []
 
     by_token: dict = {}
@@ -283,12 +328,14 @@ def detect_fillers(words: list, cfg: TightenConfig) -> list:
         if not token:
             continue
 
-        if token in NONLEXICAL_FILLERS:
+        nonlex, lex = _filler_sets_for_lang(w.get("lang"))
+
+        if token in nonlex:
             cuts.append(Cut(w["start"], w["end"], "filler", 1.0,
                             text=_text(w), auto=True))
             continue
 
-        if not cfg.lexical_fillers or token not in LEXICAL_FILLERS:
+        if not cfg.lexical_fillers or token not in lex:
             continue
 
         score = _filler_score(words, i, cfg, token_durations)

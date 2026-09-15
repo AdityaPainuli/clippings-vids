@@ -1,0 +1,47 @@
+{
+  "name": "tanglish-mid-utterance-switches",
+  "source": "Hand-built fixture: Tamil-English code-mixed speech with mid-utterance language switches.",
+  "note": "Words tagged lang='ta' are Tamil/Tanglish; lang='en' are English. The Tamil lexical words 'sari', 'romba' are fillers only when surrounded by dead air. 'konjam' is real here (grammatical usage). None of the 'en' words should be cut. This tests that the detector uses the lang-specific filler table for Tamil words.",
+  "duration": 30.0,
+  "words": [
+    {"start": 0.10, "end": 0.55, "text": "antha", "lang": "ta"},
+    {"start": 0.57, "end": 1.10, "text": "project", "lang": "en"},
+    {"start": 1.12, "end": 1.60, "text": "konjam", "lang": "ta"},
+    {"start": 1.62, "end": 2.10, "text": "difficult", "lang": "en"},
+    {"start": 2.12, "end": 2.55, "text": "aa", "lang": "ta"},
+    {"start": 2.57, "end": 3.05, "text": "irukkum", "lang": "ta"},
+
+    {"start": 4.30, "end": 5.20, "text": "sari", "lang": "ta"},
+    {"start": 5.85, "end": 6.35, "text": "naan", "lang": "ta"},
+    {"start": 6.37, "end": 6.85, "text": "solren", "lang": "ta"},
+
+    {"start": 7.50, "end": 7.95, "text": "uh", "lang": "ta"},
+    {"start": 8.40, "end": 8.90, "text": "machine", "lang": "en"},
+    {"start": 8.92, "end": 9.40, "text": "learning", "lang": "en"},
+    {"start": 9.42, "end": 9.90, "text": "la", "lang": "ta"},
+
+    {"start": 10.50, "end": 11.30, "text": "romba", "lang": "ta"},
+    {"start": 11.95, "end": 12.45, "text": "use", "lang": "en"},
+    {"start": 12.47, "end": 12.95, "text": "pannuvanga", "lang": "ta"},
+
+    {"start": 13.60, "end": 14.10, "text": "so", "lang": "en"},
+    {"start": 14.12, "end": 14.60, "text": "basically", "lang": "en"},
+    {"start": 15.20, "end": 15.70, "text": "neural", "lang": "en"},
+    {"start": 15.72, "end": 16.20, "text": "networks", "lang": "en"},
+    {"start": 16.22, "end": 16.70, "text": "use", "lang": "en"},
+    {"start": 16.72, "end": 17.20, "text": "panni", "lang": "ta"},
+    {"start": 17.22, "end": 17.70, "text": "patterns", "lang": "en"},
+    {"start": 17.72, "end": 18.20, "text": "kandupidikkirom", "lang": "ta"},
+
+    {"start": 19.00, "end": 19.45, "text": "theriyuma", "lang": "ta"},
+    {"start": 20.10, "end": 20.60, "text": "neenga", "lang": "ta"},
+    {"start": 20.62, "end": 21.10, "text": "already", "lang": "en"},
+    {"start": 21.12, "end": 21.60, "text": "try", "lang": "en"},
+    {"start": 21.62, "end": 22.10, "text": "pannirukkeengala", "lang": "ta"},
+
+    {"start": 23.00, "end": 23.50, "text": "okay", "lang": "en"},
+    {"start": 23.52, "end": 24.00, "text": "pakkalaam", "lang": "ta"}
+  ],
+  "filler_indices": [6, 9, 13],
+  "known_real_words": [2, 22, 27]
+}
