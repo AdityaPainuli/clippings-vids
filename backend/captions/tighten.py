@@ -27,7 +27,7 @@ broken sentence the user has to hunt for; a missed filler is one click.
 import math
 import re
 import subprocess
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from statistics import median
 
 # Never real words — safe to cut wherever they appear.
@@ -40,7 +40,7 @@ NONLEXICAL_FILLERS = {
 # in the original script.
 # Only sounds with no lexical meaning. Deliberately excludes "आ" (the
 # imperative "come") and other single vowels, which are real words.
-NONLEXICAL_FILLERS |= {"उम", "उम्म", "हम्म", "हूँ", "अःः"}
+NONLEXICAL_FILLERS |= {"उम", "उम्म", "हम्म", "अःः"}
 
 # Real vocabulary that is *sometimes* filler. Never cut on spelling alone.
 LEXICAL_FILLERS = {
@@ -151,7 +151,7 @@ def detect_silences_from_audio(media_path: str, cfg: TightenConfig) -> list:
     cmd = ["ffmpeg", "-i", media_path, "-af",
            f"silencedetect=noise={cfg.silence_db}dB:d={cfg.min_gap:.3f}",
            "-f", "null", "-"]
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, check=False, capture_output=True, text=True)
     if r.returncode != 0:
         # Otherwise an unreadable file parses as "no silence found" and
         # dead-air detection is skipped without anyone noticing.
