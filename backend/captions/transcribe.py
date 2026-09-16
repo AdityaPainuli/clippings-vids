@@ -73,14 +73,17 @@ def _transcribe_mlx(audio: str, language: str | None) -> dict | None:
 
 
 def _faster_whisper_model():
-    """Cached per model name; picks CUDA float16 when available, else int8 CPU."""
+    """Use CUDA when a device is available; don't hide CUDA init failures."""
     global _fw_model_cache
     name = _cpu_model_name()
     if _fw_model_cache is None or _fw_model_cache[0] != name:
         from faster_whisper import WhisperModel
-        try:
+        import ctranslate2
+
+        cuda_devices = ctranslate2.get_cuda_device_count()
+        if cuda_devices > 0:
             model = WhisperModel(name, device="cuda", compute_type="float16")
-        except Exception:
+        else:
             model = WhisperModel(name, device="cpu", compute_type="int8")
         _fw_model_cache = (name, model)
     return _fw_model_cache[1]
