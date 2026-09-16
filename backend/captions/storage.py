@@ -10,7 +10,7 @@ Bucket layout:
 
 Retention: everything expires CAPTION_RETENTION_SECONDS (default 48h)
 after job creation. delete_expired() removes storage objects, local
-files, and job rows — wired into the main cleanup cadence.
+files, job rows, and unclaimed signed uploads — wired into the main cleanup cadence.
 """
 
 import os
@@ -83,21 +83,35 @@ def mark_seen(user_id: str, job_ids: list):
 
 def create_signed_upload(user_id: str, job_id: str, filename: str) -> dict:
     """
-    Signed upload URL so the browser sends the video straight to Supabase
-    Storage — the file never passes through this server.
+    Register the upload before issuing its signed URL so abandoned objects
+    can be reclaimed even when no caption job is ever created for them.
     """
     path = f"{user_id}/sources/{job_id}/{filename}"
-    resp = requests.post(
-        f"{_STORAGE_URL}/object/upload/sign/{BUCKET}/{path}",
-        headers={**_HEADERS, "Content-Type": "application/json"},
-        json={"expiresIn": 6 * 3600},
-        timeout=_CTRL_TIMEOUT,
-    )
-    if resp.status_code != 200:
-        raise RuntimeError(f"Signed upload failed {resp.status_code}: {resp.text}")
-    rel = resp.json().get("url", "")
-    return {"storage_path": path,
-            "upload_url": f"{_STORAGE_URL}{rel}" if rel.startswith("/") else rel}
+    expires = datetime.now(timezone.utc) + timedelta(seconds=RETENTION_SECONDS)
+    row = {
+        "user_id": user_id,
+        "storage_path": path,
+        "expires_at": expires.isoformat(),
+    }
+    res = supabase.table("caption_uploads").insert(row).execute()
+    if not res.data:
+        raise RuntimeError("caption_uploads insert returned no row")
+
+    try:
+        resp = requests.post(
+            f"{_STORAGE_URL}/object/upload/sign/{BUCKET}/{path}",
+            headers={**_HEADERS, "Content-Type": "application/json"},
+            json={"expiresIn": 6 * 3600},
+            timeout=_CTRL_TIMEOUT,
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(f"Signed upload failed {resp.status_code}: {resp.text}")
+        rel = resp.json().get("url", "")
+        return {"storage_path": path,
+                "upload_url": f"{_STORAGE_URL}{rel}" if rel.startswith("/") else rel}
+    except Exception:
+        supabase.table("caption_uploads").delete().eq("storage_path", path).execute()
+        raise
 
 
 def download_to_file(storage_path: str, local_path: str):
@@ -145,11 +159,12 @@ def signed_download_url(storage_path: str, expires_in: int | None = None) -> str
 def _delete_storage_paths(paths: list):
     if not paths:
         return
-    for i in range(0, len(paths), 100):
+    unique_paths = list(dict.fromkeys(paths))
+    for i in range(0, len(unique_paths), 100):
         requests.delete(
             f"{_STORAGE_URL}/object/{BUCKET}",
             headers={**_HEADERS, "Content-Type": "application/json"},
-            json={"prefixes": paths[i : i + 100]},
+            json={"prefixes": unique_paths[i : i + 100]},
             timeout=_CTRL_TIMEOUT,
         )
 
@@ -158,19 +173,30 @@ def _delete_storage_paths(paths: list):
 
 def delete_expired(local_dir: str = "captions_output") -> int:
     """
-    Remove storage objects + job rows past expires_at, and any leftover
-    local files older than the retention window. Returns rows deleted.
+    Remove storage objects + job rows past expires_at, unclaimed signed-upload
+    records, and local files older than the retention window.
+    Returns the number of caption jobs deleted.
     """
     now = datetime.now(timezone.utc).isoformat()
-    res = (supabase.table("caption_jobs")
-           .select("id, source_path, output_path")
-           .lt("expires_at", now).execute())
-    rows = res.data or []
 
-    paths = [p for r in rows for p in (r.get("source_path"), r.get("output_path")) if p]
+    jobs_res = (supabase.table("caption_jobs")
+                .select("id, source_path, output_path")
+                .lt("expires_at", now).execute())
+    jobs = jobs_res.data or []
+
+    uploads_res = (supabase.table("caption_uploads")
+                   .select("id, storage_path")
+                   .lt("expires_at", now).execute())
+    uploads = uploads_res.data or []
+
+    paths = [p for r in jobs for p in (r.get("source_path"), r.get("output_path")) if p]
+    paths.extend(r["storage_path"] for r in uploads if r.get("storage_path"))
     _delete_storage_paths(paths)
-    if rows:
-        supabase.table("caption_jobs").delete().in_("id", [r["id"] for r in rows]).execute()
+
+    if jobs:
+        supabase.table("caption_jobs").delete().in_("id", [r["id"] for r in jobs]).execute()
+    if uploads:
+        supabase.table("caption_uploads").delete().in_("id", [r["id"] for r in uploads]).execute()
 
     # Local temp/render files past retention
     if os.path.isdir(local_dir):
@@ -183,6 +209,6 @@ def delete_expired(local_dir: str = "captions_output") -> int:
             except OSError:
                 pass
 
-    if rows:
-        print(f"[captions cleanup] {len(rows)} expired job(s), {len(paths)} storage object(s) removed")
-    return len(rows)
+    if jobs or uploads:
+        print(f"[captions cleanup] {len(jobs)} expired job(s), {len(uploads)} unclaimed upload(s), {len(set(paths))} storage object(s) removed")
+    return len(jobs)
