@@ -10,6 +10,7 @@ import asyncio
 import time
 import hashlib
 import clipper
+from clip_cache import get as get_clip_cache, put as put_clip_cache, delete_expired as delete_expired_clip_cache
 from supabase_client import supabase, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips
 from captions.api import router as captions_router
 
@@ -37,7 +38,6 @@ for d in [UPLOAD_DIR, OUTPUT_DIR]:
 # In-memory stores
 # ─────────────────────────────────────────────
 jobs: Dict[str, dict] = {}
-_clip_cache: Dict[str, list] = {}
 _last_cleanup: float = time.time()
 
 # SSE subscribers: job_id → list of asyncio.Queue
@@ -119,6 +119,12 @@ async def _maybe_cleanup():
         except Exception as e:
             print(f"[cleanup] Clip cleanup failed: {e}")
 
+        deleted_cache = 0
+        try:
+            deleted_cache = await loop.run_in_executor(None, delete_expired_clip_cache)
+        except Exception as e:
+            print(f"[cleanup] Clip cache cleanup failed: {e}")
+
         # Caption jobs + storage past their retention window
         try:
             from captions.storage import delete_expired
@@ -132,8 +138,8 @@ async def _maybe_cleanup():
         for jid in stale:
             jobs.pop(jid, None)
 
-        if deleted or stale:
-            print(f"[cleanup] {deleted} storage file(s) deleted, {len(stale)} job record(s) purged")
+        if deleted or deleted_cache or stale:
+            print(f"[cleanup] {deleted} storage file(s) deleted, {deleted_cache} cache row(s) purged, {len(stale)} job record(s) purged")
 
 
 # ─────────────────────────────────────────────
@@ -238,7 +244,10 @@ async def process_video_task(
                 jobs[job_id]["warnings"] = f"{len(all_errors)} of {total_requested} clips failed"
                 jobs[job_id]["failed_clips"] = all_errors
             if cache_key:
-                _clip_cache[cache_key] = results
+                try:
+                    await loop.run_in_executor(None, put_clip_cache, cache_key, user_id, results)
+                except Exception as e:
+                    print(f"[cache] Failed to persist cache for job {job_id}: {e}")
             _notify_job(job_id, {
                 "status": "completed",
                 "results": results,
@@ -381,12 +390,14 @@ async def process_url(
                                  clip_count, min_clip_length, max_clip_length)
 
     # Cache hit — same user, same URL, same styles, clips still alive in storage
-    if cache_key in _clip_cache:
+    loop = asyncio.get_event_loop()
+    cached_results = await loop.run_in_executor(None, get_clip_cache, cache_key, user_id)
+    if cached_results is not None:
         job_id = str(uuid.uuid4())
         jobs[job_id] = {
             "status":     "completed",
             "url":        url,
-            "results":    _clip_cache[cache_key],
+            "results":    cached_results,
             "error":      None,
             "created_at": time.time(),
             "user_id":    user_id,
@@ -533,7 +544,7 @@ async def stream_status(job_id: str, request: Request, token: str = ""):
                         break
                 except asyncio.TimeoutError:
                     # Send heartbeat to keep connection alive
-                    yield f": heartbeat\n\n"
+                    yield ": heartbeat\n\n"
         finally:
             # Cleanup subscriber
             subs = _sse_subscribers.get(job_id, [])
