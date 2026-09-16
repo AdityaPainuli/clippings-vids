@@ -3,8 +3,7 @@
 # Bolcap
 
 Animated Hinglish captions that spell words the way your audience types them.
-Everything runs on your machine: your video, the transcription, and the render
-never touch a server.
+By default, your video, transcription, and render stay on your machine.
 
 <img src="docs/demo-captions.gif" width="220" align="right" alt="Animated captions on a vertical video">
 
@@ -105,9 +104,43 @@ up automatically.
 5. Export. Use **Overlay .mov** if you're finishing in an editor; use
    **Captioned MP4** if you're posting straight to social.
 
+## Privacy and network behavior
+
+Bolcap is local-first, but it has one explicit optional cloud feature: retake
+detection.
+
+By default, the desktop app processes the video, audio, transcription, and
+render locally. The app does not upload your video or extracted audio to Bolcap
+infrastructure.
+
+### Optional cloud retake detection
+
+Retake detection can use a cloud model when you configure an Anthropic or Google
+Gemini API key. In that mode, **transcript text for the retake analysis is sent
+to the provider you selected**. Audio and video are not sent for this feature.
+
+The request goes directly from the app to the selected provider. Bolcap does
+not proxy the request or operate an intermediate cloud service for it.
+
+This means the privacy boundary depends on the mode you choose:
+
+| Mode | What leaves the machine |
+|---|---|
+| Local transcription / editing / rendering | Nothing from the video or transcript |
+| Retake detection with no cloud key | Nothing |
+| Retake detection with Anthropic or Gemini configured | Transcript text and the provider authentication key are sent directly to that provider |
+
+Cloud requests are enabled only when a provider key is configured. Review the
+selected provider's applicable API terms and privacy policy before sending
+sensitive transcript content.
+
+API keys entered through the desktop app are stored locally in
+`~/.bolcap/config.json` and are sent to the selected provider for authentication.
+They are not sent to Bolcap infrastructure.
+
 ## Notes
 
-- Nothing is uploaded. The app binds to `127.0.0.1` and has no accounts.
+- The local app binds to `127.0.0.1` and has no Bolcap-hosted processing path.
 - Working files live in `~/.bolcap/work` and are cleaned up after three days.
 - Bolcap is Apache-2.0 licensed — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 - Bundled fonts (Archivo Black, Inter, Noto Sans Devanagari) are OFL-licensed;
