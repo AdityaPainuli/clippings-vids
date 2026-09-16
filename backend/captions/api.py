@@ -18,8 +18,8 @@ GET  /captions/jobs/{id}         job status (transcript included when done)
 GET  /captions/download/{id}     redirect to signed download URL
 GET  /captions/notifications     unseen finished jobs (in-app bell)
 POST /captions/notifications/seen  mark feed items read
-GET  /captions/presets           built-in style presets
-GET  /captions/style-schema      JSON schema for the style editor UI
+GET  /captions/presets            built-in style presets
+GET  /captions/style-schema       JSON schema for the style editor UI
 """
 
 import json
@@ -179,6 +179,7 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
                  words: list, style: styles.CaptionStyle, export: str,
                  text_key: str, video_info: Optional[dict]):
     local_source = None
+    out = None
     try:
         storage.update_job(job_id, status="rendering")
 
@@ -210,27 +211,20 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
             out = render.burn_video(
                 local_source, ass_path, os.path.join(WORK_DIR, f"{job_id}_subtitled.mp4"))
 
-        # Push the finished file to storage; fall back to serving the local
-        # copy if the upload fails (e.g. file exceeds the plan's size limit).
         filename = os.path.basename(out)
-        download_url = None
-        try:
-            output_path = storage.upload_output(out, user_id, job_id)
-            download_url = storage.signed_download_url(output_path)
-            storage.update_job(job_id, status="completed",
-                               output_path=output_path, filename=filename)
-            os.remove(out)
-        except Exception as up_err:
-            print(f"  [render] Output upload failed, serving locally: {up_err}")
-            storage.update_job(job_id, status="completed", filename=filename)
-
+        output_path = storage.upload_output(out, user_id, job_id)
+        download_url = storage.signed_download_url(output_path)
+        storage.update_job(job_id, status="completed",
+                           output_path=output_path, filename=filename)
+        os.remove(out)
+        out = None
         notify.notify_completed(email, job_id, filename, download_url)
 
     except Exception as e:
         storage.update_job(job_id, status="failed", error=str(e)[:500])
         notify.notify_failed(email, job_id, str(e))
     finally:
-        for p in (local_source,):
+        for p in (local_source, out):
             if p:
                 try:
                     os.remove(p)
