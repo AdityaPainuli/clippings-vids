@@ -71,7 +71,7 @@ SIMILARITY_STOPWORDS = {
     "were", "what", "when", "where", "which", "who", "will", "with",
     "would", "you", "your", "okay", "ok", "well", "like", "right",
     "actually", "basically", "literally", "matlab", "yaani", "yani", "toh",
-    "na", "haan", "haan", "achha", "acha",
+    "na", "haan", "achha", "acha",
 }
 MIN_SHARED_CONTENT_WORDS = 2
 
@@ -162,7 +162,7 @@ def similarity(a: Phrase, b: Phrase) -> float:
     """
     How much of the shorter attempt shows up in the longer one.
 
-    Overlap (intersection over the *smaller* set) rather than Jaccard, because
+    Overlap (intersection over the *smaller set*) rather than Jaccard, because
     a second attempt is routinely longer or shorter than the first and Jaccard
     punishes that. Bigrams carry word order, so a shared bag of common Hinglish
     connectives cannot score on its own.
