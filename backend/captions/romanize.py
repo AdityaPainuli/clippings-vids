@@ -11,9 +11,11 @@ import json
 import os
 import re
 import unicodedata
+from difflib import SequenceMatcher
 
 DEVANAGARI_RE = re.compile(r"[ऀ-ॿ]")
 CHUNK = 80  # words per LLM call — small enough to keep alignment reliable
+MIN_LLM_SIMILARITY = 0.45
 
 # IAST → colloquial fixes applied after transliteration (fallback path)
 _COMMON = {
@@ -38,6 +40,47 @@ def _rule_romanize(text: str) -> str:
     if len(stripped) > 3 and stripped.endswith("a") and stripped[-2] not in "aeiou":
         latin = stripped[:-1] + latin[len(stripped):]
     return _COMMON.get(latin, latin)
+
+
+def _normalized_latin(text: str) -> str:
+    """Reduce romanized text to letters/digits for spelling comparison."""
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def _valid_llm_output(words: list[str], output: object) -> bool:
+    """Validate an LLM response before allowing it into caption timings."""
+    if not isinstance(output, list) or len(output) != len(words):
+        return False
+
+    for source, candidate in zip(words, output):
+        if not isinstance(candidate, str) or not candidate.strip():
+            return False
+
+        # Latin-script input must survive the LLM untouched. The model is a
+        # romanizer, not a translator or text rewriter.
+        if not DEVANAGARI_RE.search(source):
+            if candidate != source:
+                return False
+            continue
+
+        # Devanagari input must become a single Latin-script token. This also
+        # rejects translated/rephrased output that happens to keep alignment.
+        if DEVANAGARI_RE.search(candidate) or re.search(r"[^A-Za-z0-9'.,!?;:()\"%&/\-+ ]", candidate):
+            return False
+        if any(ch.isspace() for ch in candidate.strip()):
+            return False
+
+        # Compare against the deterministic transliteration as a semantic
+        # guardrail. Natural Hinglish spellings vary, so this is intentionally
+        # a permissive similarity floor rather than an exact match.
+        baseline = _normalized_latin(_rule_romanize(source))
+        actual = _normalized_latin(candidate)
+        if not baseline or not actual:
+            return False
+        if SequenceMatcher(None, baseline, actual).ratio() < MIN_LLM_SIMILARITY:
+            return False
+
+    return True
 
 
 def _llm_romanize_chunk(words: list[str]) -> list[str] | None:
@@ -67,8 +110,8 @@ def _llm_romanize_chunk(words: list[str]) -> list[str] | None:
             if text.lower().startswith("json"):
                 text = text[4:]
         out = json.loads(text.strip())
-        if isinstance(out, list) and len(out) == len(words):
-            return [str(w) for w in out]
+        if _valid_llm_output(words, out):
+            return out
     except Exception as e:
         print(f"  [romanize] LLM chunk failed ({e}), falling back to rules")
     return None
