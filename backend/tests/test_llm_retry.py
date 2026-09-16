@@ -1,4 +1,8 @@
+import os
+import sys
+import types
 import unittest
+from unittest.mock import patch
 
 from captions import llm
 
@@ -17,6 +21,24 @@ class LLMRetryClassificationTests(unittest.TestCase):
     def test_llm_error_preserves_retryability(self):
         self.assertFalse(llm.LLMError("bad key").retryable)
         self.assertTrue(llm.LLMError("temporarily unavailable", retryable=True).retryable)
+
+    def test_request_exception_is_retryable(self):
+        class RequestException(Exception):
+            pass
+
+        fake_requests = types.SimpleNamespace(
+            RequestException=RequestException,
+            post=lambda *args, **kwargs: (_ for _ in ()).throw(RequestException("timeout")),
+        )
+
+        with patch.dict(sys.modules, {"requests": fake_requests}), patch.dict(
+            os.environ, {"ANTHROPIC_API_KEY": "test-key"}, clear=False
+        ), patch.object(llm, "provider", return_value="anthropic"):
+            with self.assertRaises(llm.LLMError) as context:
+                llm.complete("prompt")
+
+        self.assertTrue(context.exception.retryable)
+        self.assertIn("timeout", str(context.exception))
 
 
 if __name__ == "__main__":
