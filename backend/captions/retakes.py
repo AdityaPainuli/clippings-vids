@@ -50,10 +50,9 @@ LOOKBACK = 8
 DEFAULT_MAX_GROUPS = 12
 
 MIN_WORDS = 6           # shorter phrases match each other by accident
-# A re-recorded line is a line. Anything this long is a transcription artifact
-# — the punctuation fallback can run 150 words together when Whisper emits no
-# punctuation — and comparing it to a short phrase scores high for free.
-MAX_WORDS = 40
+# Keep enough headroom for long legitimate spoken lines while still rejecting
+# pathological punctuation-run-on phrases produced by the transcript fallback.
+MAX_WORDS = 80
 MIN_SIMILARITY = 0.35   # loose on purpose — stage 2 is the precision stage
 
 # Overlap over the smaller set rewards short phrases: two shared words out of
