@@ -146,7 +146,8 @@ def _transcribe_faster_whisper(audio: str, language: str | None) -> dict | None:
                                   "text": seg.text.strip()})
         for w in (seg.words or []):
             words.append({"start": w.start, "end": w.end, "text": w.word.strip()})
-    words = _validate_timestamps(words) if words else []
+    if words:
+        words = [w for w in _validate_timestamps(words) if w["text"]]
     if not words:
         words = _validate_timestamps([s for s in sentence_fallback if s["text"]])
     return {"language": info.language,
