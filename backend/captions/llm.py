@@ -20,14 +20,7 @@ Only transcript *text* is ever sent. Audio and video never leave the machine.
 import json
 import os
 
-# Canonical provider → environment variable map. The desktop app's config
-# layer reads this rather than keeping its own copy, so the two can never
-# disagree about where a key lives.
 PROVIDER_ENV = {"anthropic": "ANTHROPIC_API_KEY", "gemini": "GOOGLE_API_KEY"}
-
-# Set by the app when a key came from the launch environment. That choice is
-# deliberate and has to win: injecting a saved Anthropic key would otherwise
-# silently outrank a GOOGLE_API_KEY the user exported on purpose.
 PREFERRED_ENV = "BOLCAP_LLM_PROVIDER"
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
@@ -38,6 +31,10 @@ TIMEOUT = 60
 
 class LLMError(RuntimeError):
     """The call did not complete. Distinct from the model answering 'no'."""
+
+    def __init__(self, message: str, *, retryable: bool = False):
+        super().__init__(message)
+        self.retryable = retryable
 
 
 def provider() -> str | None:
@@ -59,8 +56,8 @@ def complete(prompt: str, system: str = "", max_tokens: int = 1024) -> str | Non
     """
     Prompt in, text out. None only when no key is configured.
 
-    Raises LLMError when the call itself fails, so the caller can tell an
-    outage from an answer.
+    Raises LLMError when the call itself fails, so the caller can distinguish
+    an outage from an answer.
     """
     which = provider()
     if which is None:
@@ -73,6 +70,8 @@ def complete(prompt: str, system: str = "", max_tokens: int = 1024) -> str | Non
         if which == "anthropic":
             return _anthropic(requests, prompt, system, max_tokens)
         return _gemini(requests, prompt, system, max_tokens)
+    except requests.RequestException as e:
+        raise LLMError(f"{type(e).__name__}: {e}", retryable=True) from e
     except LLMError:
         raise
     except Exception as e:                                  # noqa: BLE001
@@ -95,7 +94,7 @@ def _anthropic(requests, prompt: str, system: str, max_tokens: int) -> str | Non
         data=json.dumps(body),
     )
     if r.status_code != 200:
-        raise LLMError(_http_reason("Anthropic", r))
+        raise LLMError(_http_reason("Anthropic", r), retryable=_retryable_status(r.status_code))
     parts = r.json().get("content", [])
     return "".join(p.get("text", "") for p in parts if p.get("type") == "text") or None
 
@@ -116,12 +115,16 @@ def _gemini(requests, prompt: str, system: str, max_tokens: int) -> str | None:
         data=json.dumps(body),
     )
     if r.status_code != 200:
-        raise LLMError(_http_reason("Gemini", r))
+        raise LLMError(_http_reason("Gemini", r), retryable=_retryable_status(r.status_code))
     try:
         parts = r.json()["candidates"][0]["content"]["parts"]
     except (KeyError, IndexError):
         return None
     return "".join(p.get("text", "") for p in parts) or None
+
+
+def _retryable_status(status_code: int) -> bool:
+    return status_code in (408, 429) or 500 <= status_code < 600
 
 
 def _http_reason(name: str, r) -> str:
