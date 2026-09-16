@@ -283,8 +283,9 @@ def detect(words: list, media_path: str | None = None, silences: list | None = N
             silences = [(c.start, c.end) for c in
                         tighten.detect_silences_from_audio(media_path,
                                                            tighten.TightenConfig())]
-        except Exception:                                   # noqa: BLE001
-            silences = None
+        except Exception as e:                              # noqa: BLE001
+            return {"cuts": [], "groups": [], "status": "silence-error",
+                    "error": str(e), "asked": 0, "skipped": 0}
 
     phrases = split_phrases(words, silences)
     groups = find_candidates(phrases)
