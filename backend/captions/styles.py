@@ -10,6 +10,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 HEX_RE = re.compile(r"^#?([0-9a-fA-F]{6})([0-9a-fA-F]{2})?$")
+FONT_MAX_LENGTH = 100
 
 
 def hex_to_ass(hex_color: str) -> str:
@@ -35,7 +36,18 @@ class Animation(BaseModel):
 
 class CaptionStyle(BaseModel):
     """Everything an editor can customize about how captions look."""
-    font: str = "Arial Black"
+    # Font names are sanitized rather than checked against installed fonts.
+    # ASS Style lines are comma-delimited, so structural separators are rejected.
+    font: str = Field(
+        "Arial Black",
+        min_length=1,
+        max_length=FONT_MAX_LENGTH,
+        description=(
+            "Font family name. Validated as plain text for ASS serialization; "
+            "must not contain commas, line breaks, or leading/trailing whitespace. "
+            "Font availability is not validated here."
+        ),
+    )
     font_size: int = Field(72, ge=24, le=200)
     highlight_scale: float = Field(1.12, ge=1.0, le=1.5)   # active-word size boost
     uppercase: bool = True
@@ -54,6 +66,19 @@ class CaptionStyle(BaseModel):
     margin_v: int = Field(320, ge=0, le=1920)
 
     animation: Animation = Animation()
+
+    @field_validator("font")
+    @classmethod
+    def _valid_font(cls, v: str) -> str:
+        if v != v.strip():
+            raise ValueError("font must not have leading or trailing whitespace")
+        if any(char in v for char in (",", "\n", "\r")):
+            raise ValueError("font must not contain commas or line breaks")
+        if not v:
+            raise ValueError("font must not be empty")
+        if len(v) > FONT_MAX_LENGTH:
+            raise ValueError(f"font must be at most {FONT_MAX_LENGTH} characters")
+        return v
 
     @field_validator("text_color", "highlight_color", "outline_color", "shadow_color")
     @classmethod
