@@ -23,6 +23,8 @@ from supabase_client import supabase, SUPABASE_URL, SUPABASE_SERVICE_KEY
 
 BUCKET            = "captions"
 RETENTION_SECONDS = int(os.getenv("CAPTION_RETENTION_SECONDS", 48 * 3600))
+UPLOAD_URL_TTL_SECONDS = 6 * 3600
+UPLOAD_RETENTION_SECONDS = RETENTION_SECONDS + UPLOAD_URL_TTL_SECONDS
 
 _HEADERS     = {"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}", "apikey": SUPABASE_SERVICE_KEY}
 _STORAGE_URL = f"{SUPABASE_URL}/storage/v1"
@@ -87,7 +89,7 @@ def create_signed_upload(user_id: str, job_id: str, filename: str) -> dict:
     can be reclaimed even when no caption job is ever created for them.
     """
     path = f"{user_id}/sources/{job_id}/{filename}"
-    expires = datetime.now(timezone.utc) + timedelta(seconds=RETENTION_SECONDS)
+    expires = datetime.now(timezone.utc) + timedelta(seconds=UPLOAD_RETENTION_SECONDS)
     row = {
         "user_id": user_id,
         "storage_path": path,
@@ -101,7 +103,7 @@ def create_signed_upload(user_id: str, job_id: str, filename: str) -> dict:
         resp = requests.post(
             f"{_STORAGE_URL}/object/upload/sign/{BUCKET}/{path}",
             headers={**_HEADERS, "Content-Type": "application/json"},
-            json={"expiresIn": 6 * 3600},
+            json={"expiresIn": UPLOAD_URL_TTL_SECONDS},
             timeout=_CTRL_TIMEOUT,
         )
         if resp.status_code != 200:
