@@ -71,13 +71,18 @@ CLAUSE_PUNCT = ".,!?;:।"
 
 def _text(word: dict) -> str:
     """
-    The written form to match against.
+    Return the transcript spelling used for lexical decisions.
 
-    Prefers the romanized field: the filler lists are Latin, and a Devanagari
-    transcript would never match "matlab". Falls back through the other
-    fields so any transcript shape works.
+    The original ``text`` field is the ASR transcript and remains the
+    authoritative lexical source. ``hinglish`` is presentation output from
+    an optional LLM romanization pass, which may normalize, paraphrase, or
+    otherwise rewrite a token. Using it for automated editing can turn a
+    model-generated spelling into an unsupported filler classification.
+
+    Prefer the original transcript and only fall back to the other fields
+    for callers that provide transcript dictionaries without ``text``.
     """
-    return (word.get("hinglish") or word.get("text")
+    return (word.get("text") or word.get("hinglish")
             or word.get("devanagari") or "")
 
 
