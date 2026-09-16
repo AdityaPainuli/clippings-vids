@@ -16,7 +16,7 @@ create table if not exists caption_jobs (
   video_info    jsonb,               -- {width, height, duration, fps}
   source_path   text,                -- uploaded source video in storage (if any)
   output_path   text,                -- finished file in storage
-  filename      text,               -- user-facing name of the finished file
+  filename      text,                -- user-facing name of the finished file
   notified      boolean not null default false,  -- completion email sent
   seen          boolean not null default false,  -- user saw it in the app feed
   created_at    timestamptz not null default now(),
@@ -27,12 +27,28 @@ create table if not exists caption_jobs (
 create index if not exists caption_jobs_user_idx    on caption_jobs (user_id, created_at desc);
 create index if not exists caption_jobs_expiry_idx  on caption_jobs (expires_at);
 
+-- Signed source uploads are created before a transcribe/render job exists.
+-- Keep their storage paths durable so abandoned uploads can be reclaimed
+-- without attaching unclaimed objects to a fake caption job.
+create table if not exists caption_uploads (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null,
+  storage_path  text not null unique,
+  created_at    timestamptz not null default now(),
+  expires_at    timestamptz not null default now() + interval '48 hours'
+);
+
+create index if not exists caption_uploads_expiry_idx on caption_uploads (expires_at);
+
 -- Service role bypasses RLS; enable it anyway so anon/user keys can't read others' jobs.
 alter table caption_jobs enable row level security;
 
 create policy "users read own caption jobs"
   on caption_jobs for select
   using (auth.uid() = user_id);
+
+-- Upload tracking is service-role only. There is no client-facing policy.
+alter table caption_uploads enable row level security;
 
 -- Storage bucket for caption sources + outputs (private).
 insert into storage.buckets (id, name, public)
