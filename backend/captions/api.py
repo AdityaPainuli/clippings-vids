@@ -27,14 +27,9 @@ from supabase_client import supabase
 from . import engine, notify, render, romanize, storage, styles, transcribe
 
 router = APIRouter(prefix="/captions", tags=["captions"])
-
 WORK_DIR = "captions_output"
 os.makedirs(WORK_DIR, exist_ok=True)
-
-# Jobs stuck in an active state longer than this are reported failed
-# (server restarted mid-render; BackgroundTasks don't survive restarts).
 STALE_SECONDS = int(os.getenv("CAPTION_STALE_SECONDS", 1800))
-
 bearer = HTTPBearer()
 
 
@@ -61,7 +56,6 @@ def _owned_job(job_id: str, user_id: str) -> dict:
 
 
 def _with_staleness(job: dict) -> dict:
-    """Flag jobs orphaned by a server restart as failed."""
     if job["status"] in ("queued", "transcribing", "romanizing", "rendering"):
         try:
             from datetime import datetime
@@ -76,11 +70,7 @@ def _with_staleness(job: dict) -> dict:
 
 
 @router.post("/upload-url")
-async def upload_url(
-    filename: str = Form(...),
-    user: dict = Depends(get_current_user),
-):
-    """Browser uploads the video straight to storage with this URL (PUT)."""
+async def upload_url(filename: str = Form(...), user: dict = Depends(get_current_user)):
     safe_name = os.path.basename(filename).replace(" ", "_")[:120]
     return storage.create_signed_upload(user["user_id"], uuid.uuid4().hex[:12], safe_name)
 
@@ -131,7 +121,6 @@ async def transcribe_endpoint(
         raise HTTPException(status_code=403, detail="Not your upload")
 
     job_id = storage.create_job(user["user_id"], "transcribe", source_path=storage_path)
-
     local_path = os.path.join(WORK_DIR, f"{job_id}_source")
     if file is not None:
         with open(local_path, "wb") as f:
@@ -143,12 +132,9 @@ async def transcribe_endpoint(
         except Exception as e:
             storage.update_job(job_id, status="failed", error=str(e)[:500])
             raise HTTPException(status_code=502, detail=f"Could not fetch upload: {e}")
-
     background_tasks.add_task(_transcribe_task, job_id, local_path, language, hinglish, True)
     return {"job_id": job_id, "status": "queued"}
 
-
-# ── Styles ───────────────────────────────────────────────────────────────────
 
 @router.get("/presets")
 async def list_presets():
@@ -169,7 +155,7 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
                  words: list, style: styles.CaptionStyle, export: str,
                  text_key: str, video_info: Optional[dict]):
     local_source = None
-    output_path = None
+    output_local = None
     try:
         if storage.is_cancelled(job_id):
             return
@@ -192,43 +178,41 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
             f.write(engine.build_ass(words, style, info["width"], info["height"], text_key=text_key))
 
         if export == "ass":
-            output_path = ass_path
+            output_local = ass_path
         elif export == "srt":
-            output_path = render.export_srt(words, os.path.join(WORK_DIR, f"{job_id}.srt"),
-                                             style.words_per_line, text_key=text_key)
+            output_local = render.export_srt(words, os.path.join(WORK_DIR, f"{job_id}.srt"),
+                                              style.words_per_line, text_key=text_key)
         elif export == "overlay":
-            output_path = render.render_overlay(
+            output_local = render.render_overlay(
                 ass_path, os.path.join(WORK_DIR, f"{job_id}_overlay.mov"),
                 info["width"], info["height"], info["duration"], info["fps"])
         else:
             if not local_source:
                 raise RuntimeError("burned export requires an uploaded video")
-            output_path = render.burn_video(
+            output_local = render.burn_video(
                 local_source, ass_path, os.path.join(WORK_DIR, f"{job_id}_subtitled.mp4"))
 
         if storage.is_cancelled(job_id):
             return
 
-        filename = os.path.basename(output_path)
+        filename = os.path.basename(output_local)
         download_url = None
         try:
-            output_path_storage = storage.upload_output(output_path, user_id, job_id)
+            output_storage = storage.upload_output(output_local, user_id, job_id)
             if storage.is_cancelled(job_id):
                 try:
-                    storage._delete_storage_paths([output_path_storage])
+                    storage._delete_storage_paths([output_storage])
                 except Exception:
                     pass
                 return
-            download_url = storage.signed_download_url(output_path_storage)
-            storage.update_job(job_id, status="completed",
-                               output_path=output_path_storage, filename=filename)
+            download_url = storage.signed_download_url(output_storage)
+            storage.update_job(job_id, status="completed", output_path=output_storage, filename=filename)
             try:
-                os.remove(output_path)
+                os.remove(output_local)
             except OSError:
                 pass
+            output_local = None
         except Exception as up_err:
-            # Preserve the existing fallback for successful jobs, but do not
-            # resurrect a cancellation once the user has cancelled the job.
             if storage.is_cancelled(job_id):
                 return
             print(f"  [render] Output upload failed, serving locally: {up_err}")
@@ -242,12 +226,18 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
             storage.update_job(job_id, status="failed", error=str(e)[:500])
             notify.notify_failed(email, job_id, str(e))
     finally:
-        for p in (local_source, output_path):
-            if p:
-                try:
-                    os.remove(p)
-                except OSError:
-                    pass
+        if local_source:
+            try:
+                os.remove(local_source)
+            except OSError:
+                pass
+        # Keep locally-served outputs when the storage upload failed. They are
+        # removed by the existing retention cleanup path.
+        if output_local and storage.is_cancelled(job_id):
+            try:
+                os.remove(output_local)
+            except OSError:
+                pass
 
 
 @router.post("/render")
@@ -282,8 +272,7 @@ async def render_endpoint(
         raise HTTPException(status_code=400, detail=f"Bad style: {e}")
 
     if export == "burned" and not storage_path:
-        raise HTTPException(status_code=400,
-                            detail="burned export requires storage_path (see /captions/upload-url)")
+        raise HTTPException(status_code=400, detail="burned export requires storage_path (see /captions/upload-url)")
     if storage_path and not storage_path.startswith(f"{user['user_id']}/"):
         raise HTTPException(status_code=403, detail="Not your upload")
 
@@ -317,7 +306,6 @@ async def job_status(job_id: str, user: dict = Depends(get_current_user)):
 
 @router.post("/jobs/{job_id}/cancel")
 async def cancel_job(job_id: str, user: dict = Depends(get_current_user)):
-    """Cancel a caller-owned queued or active caption job."""
     result = storage.request_cancel(job_id, user["user_id"])
     if result == "not_found":
         raise HTTPException(status_code=404, detail="Job not found")
@@ -335,7 +323,6 @@ async def download(job_id: str, user: dict = Depends(get_current_user)):
     job = _owned_job(job_id, user["user_id"])
     if job.get("status") != "completed":
         raise HTTPException(status_code=409, detail=f"Job status: {job.get('status')}")
-
     if job.get("output_path"):
         return RedirectResponse(storage.signed_download_url(job["output_path"], 3600))
 
@@ -353,10 +340,7 @@ async def notifications(user: dict = Depends(get_current_user)):
 
 
 @router.post("/notifications/seen")
-async def notifications_seen(
-    job_ids: str = Form(...),
-    user: dict = Depends(get_current_user),
-):
+async def notifications_seen(job_ids: str = Form(...), user: dict = Depends(get_current_user)):
     try:
         ids = json.loads(job_ids)
         if not isinstance(ids, list):
