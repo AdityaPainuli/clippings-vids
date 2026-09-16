@@ -18,8 +18,8 @@ GET  /captions/jobs/{id}         job status (transcript included when done)
 GET  /captions/download/{id}     redirect to signed download URL
 GET  /captions/notifications     unseen finished jobs (in-app bell)
 POST /captions/notifications/seen  mark feed items read
-GET  /captions/presets            built-in style presets
-GET  /captions/style-schema       JSON schema for the style editor UI
+GET  /captions/presets           built-in style presets
+GET  /captions/style-schema      JSON schema for the style editor UI
 """
 
 import json
@@ -35,7 +35,6 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import ValidationError
 
 from supabase_client import supabase
-from stream_token_store import PersistentStreamTokenStore
 from . import engine, notify, render, romanize, storage, styles, transcribe
 
 router = APIRouter(prefix="/captions", tags=["captions"])
@@ -341,12 +340,3 @@ async def notifications_seen(
         raise HTTPException(status_code=400, detail="job_ids must be a JSON array")
     storage.mark_seen(user["user_id"], ids)
     return {"marked": len(ids)}
-
-
-@router.on_event("startup")
-async def install_persistent_stream_tokens():
-    """Replace the legacy process-local stream token map at startup."""
-    import importlib
-
-    main_module = importlib.import_module("main")
-    main_module._stream_tokens = PersistentStreamTokenStore()
