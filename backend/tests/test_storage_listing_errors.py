@@ -1,5 +1,4 @@
 import importlib
-import json
 import os
 import sys
 import types
@@ -41,6 +40,9 @@ class _Response:
 class StorageListingErrorTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        existing = sys.modules.get("supabase_client")
+        if existing is not None and not hasattr(existing, "requests"):
+            sys.modules.pop("supabase_client", None)
         cls.storage = importlib.import_module("supabase_client")
 
     def test_list_prefix_raises_on_storage_http_error(self):
