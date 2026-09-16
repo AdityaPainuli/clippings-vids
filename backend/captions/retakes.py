@@ -42,10 +42,6 @@ MIN_PAUSE = 0.45
 # later is making that point again, not fixing a flub.
 WINDOW = 45.0
 
-# Compare against a bounded number of recent phrases so cost stays flat on a
-# long recording.
-LOOKBACK = 8
-
 # Cost ceiling per run. Whatever this drops is reported, never swallowed.
 DEFAULT_MAX_GROUPS = 12
 
@@ -190,7 +186,7 @@ def find_candidates(phrases: list, window: float = WINDOW,
 
     for j, later in enumerate(usable):
         best, best_score = None, min_similarity
-        for earlier in reversed(usable[max(0, j - LOOKBACK):j]):
+        for earlier in reversed(usable[:j]):
             if later.start - earlier.end > window:
                 break
             score = similarity(earlier, later)
