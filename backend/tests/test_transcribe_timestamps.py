@@ -7,7 +7,7 @@ class ASRTimestampValidationTests(unittest.TestCase):
     def _result(self, words, segments=None):
         return {
             "segments": segments if segments is not None else [
-                {"start": 0.0, "end": 2.0, "text": "fallback" , "words": words}
+                {"start": 0.0, "end": 2.0, "text": "fallback", "words": words}
             ]
         }
 
