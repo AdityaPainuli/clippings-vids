@@ -21,6 +21,9 @@ class ClipRetentionPaginationTests(unittest.TestCase):
         os.environ.setdefault("SUPABASE_URL", "https://example.supabase.co")
         os.environ.setdefault("SUPABASE_SERVICE_KEY", "test-key")
 
+        existing = sys.modules.get("supabase_client")
+        if existing is not None and not hasattr(existing, "requests"):
+            sys.modules.pop("supabase_client", None)
         cls.supabase_client = importlib.import_module("supabase_client")
 
     def test_list_prefix_fetches_pages_after_first_1000_items(self):
