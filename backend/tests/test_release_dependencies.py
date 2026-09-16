@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 import unittest
 
 
@@ -28,9 +27,15 @@ class ReleaseDependencyTests(unittest.TestCase):
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
         self.assertRegex(workflow, r"pip install --upgrade pip==[0-9][^\s]*")
-        self.assertRegex(workflow, r"pip install -r requirements-bolcap\.txt pyinstaller==[0-9][^\s]*")
+        self.assertRegex(
+            workflow,
+            r"pip install -r requirements-bolcap\.txt pyinstaller==[0-9][^\s]*",
+        )
         self.assertNotRegex(workflow, r"pip install --upgrade pip(?:\s|$)")
-        self.assertNotRegex(workflow, r"pip install -r requirements-bolcap\.txt pyinstaller(?:\s|$)")
+        self.assertNotRegex(
+            workflow,
+            r"pip install -r requirements-bolcap\.txt pyinstaller(?:\s|$)",
+        )
 
 
 if __name__ == "__main__":
