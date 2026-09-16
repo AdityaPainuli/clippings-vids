@@ -55,9 +55,9 @@ class TranscriptionFallbackTests(unittest.TestCase):
                 transcribe._transcribe_with_fallbacks("audio.wav", None)
 
         message = str(ctx.exception)
-        self.assertIn("_transcribe_mlx: mlx crashed", message)
-        self.assertIn("_transcribe_faster_whisper: ctranslate2 crashed", message)
-        self.assertIn("_transcribe_openai_whisper: whisper missing", message)
+        self.assertIn("mlx-whisper: mlx crashed", message)
+        self.assertIn("faster-whisper: ctranslate2 crashed", message)
+        self.assertIn("openai-whisper: whisper missing", message)
         mlx.assert_called_once_with("audio.wav", None)
         faster.assert_called_once_with("audio.wav", None)
         whisper.assert_called_once_with("audio.wav", None)
