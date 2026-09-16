@@ -1,8 +1,6 @@
 import json
 import unittest
-from unittest.mock import patch
 
-from captions import llm
 from captions import retakes
 
 
