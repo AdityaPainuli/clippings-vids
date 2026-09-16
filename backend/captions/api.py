@@ -155,8 +155,8 @@ def _transcribe_task(job_id: str, local_path: str, language: Optional[str],
 @router.post("/transcribe")
 async def transcribe_endpoint(
     background_tasks: BackgroundTasks,
-    file: Optional[UploadFile] = File(None),      # small files (extracted audio)
-    storage_path: Optional[str] = Form(None),      # big files via /upload-url
+    file: Optional[UploadFile] = File(None),
+    storage_path: Optional[str] = Form(None),
     language: Optional[str] = Form(None),
     hinglish: bool = Form(True),
     user: dict = Depends(get_current_user),
@@ -166,12 +166,10 @@ async def transcribe_endpoint(
     if storage_path and not storage_path.startswith(f"{user['user_id']}/"):
         raise HTTPException(status_code=403, detail="Not your upload")
 
-    job_id = storage.create_job(user["user_id"], "transcribe",
-                                source_path=storage_path)
+    job_id = storage.create_job(user["user_id"], "transcribe", source_path=storage_path)
 
     local_path = os.path.join(WORK_DIR, f"{job_id}_source")
     if file is not None:
-        # Stream to disk in chunks — never buffer the whole upload in memory
         with open(local_path, "wb") as f:
             while chunk := await file.read(1 << 20):
                 f.write(chunk)
@@ -210,6 +208,7 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
     local_source = None
     heartbeat_stop = None
     heartbeat_thread = None
+    out = None
     try:
         storage.update_job(job_id, status="rendering")
         heartbeat_stop, heartbeat_thread = _start_job_heartbeat(job_id, "rendering")
@@ -253,6 +252,7 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
         storage.update_job(job_id, status="completed",
                            output_path=output_path, filename=filename)
         os.remove(out)
+        out = None
         notify.notify_completed(email, job_id, filename, download_url)
 
     except Exception as e:
@@ -260,6 +260,11 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
         heartbeat_stop = None
         heartbeat_thread = None
 
+        if out:
+            try:
+                os.remove(out)
+            except OSError:
+                pass
         storage.update_job(job_id, status="failed", error=str(e)[:500])
         notify.notify_failed(email, job_id, str(e))
     finally:
@@ -275,12 +280,12 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
 @router.post("/render")
 async def render_endpoint(
     background_tasks: BackgroundTasks,
-    transcript: str = Form(...),           # {"words": [{start,end,text,hinglish?}]}
-    style_json: str = Form(...),           # CaptionStyle JSON or {"preset": "name", ...overrides}
+    transcript: str = Form(...),
+    style_json: str = Form(...),
     export: ExportFormat = Form("burned"),
     text_key: str = Form("hinglish"),
-    storage_path: Optional[str] = Form(None),   # source video from /upload-url
-    video_info: Optional[str] = Form(None),     # {"width","height","duration","fps"}
+    storage_path: Optional[str] = Form(None),
+    video_info: Optional[str] = Form(None),
     user: dict = Depends(get_current_user),
 ):
     try:
@@ -347,7 +352,6 @@ async def download(job_id: str, user: dict = Depends(get_current_user)):
     if job.get("output_path"):
         return RedirectResponse(storage.signed_download_url(job["output_path"], 3600))
 
-    # A completed job must have a durable shared-storage output reference.
     raise HTTPException(status_code=410, detail="Rendered output is unavailable")
 
 
@@ -358,7 +362,7 @@ async def notifications(user: dict = Depends(get_current_user)):
 
 @router.post("/notifications/seen")
 async def notifications_seen(
-    job_ids: str = Form(...),   # JSON array of job ids
+    job_ids: str = Form(...),
     user: dict = Depends(get_current_user),
 ):
     try:
