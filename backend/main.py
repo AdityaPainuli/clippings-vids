@@ -39,11 +39,9 @@ for directory in (UPLOAD_DIR, OUTPUT_DIR):
 
 _clip_cache: dict[str, list] = {}
 _last_cleanup = time.time()
-
 _sse_subscribers: dict[str, list[asyncio.Queue]] = {}
 _stream_tokens: dict[str, dict] = {}
 STREAM_TOKEN_TTL = 300
-
 _worker_task: Optional[asyncio.Task] = None
 WORKER_ID = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
 
@@ -166,12 +164,7 @@ async def _process_video_task(job: dict, video_path: str, info: Optional[dict] =
 
     try:
         await _run_blocking(clip_job_store.clear_previous_results, job_id)
-
-        await _run_blocking(
-            clip_job_store.update_job,
-            job_id,
-            status="analyzing",
-        )
+        await _run_blocking(clip_job_store.update_job, job_id, status="analyzing")
         _notify_job(job_id, {
             "status": "analyzing",
             "detail": "Analyzing video for viral moments...",
@@ -205,11 +198,7 @@ async def _process_video_task(job: dict, video_path: str, info: Optional[dict] =
             "detail": f"Found {len(clips_metadata)} potential clips",
         })
 
-        await _run_blocking(
-            clip_job_store.update_job,
-            job_id,
-            status="clipping",
-        )
+        await _run_blocking(clip_job_store.update_job, job_id, status="clipping")
         _notify_job(job_id, {
             "status": "clipping",
             "detail": f"Rendering {len(clips_metadata)} clips...",
@@ -224,11 +213,7 @@ async def _process_video_task(job: dict, video_path: str, info: Optional[dict] =
             caption_style,
         )
 
-        await _run_blocking(
-            clip_job_store.update_job,
-            job_id,
-            status="uploading",
-        )
+        await _run_blocking(clip_job_store.update_job, job_id, status="uploading")
         _notify_job(job_id, {
             "status": "uploading",
             "detail": f"Uploading {len(clips)} clips...",
@@ -274,13 +259,9 @@ async def _process_video_task(job: dict, video_path: str, info: Optional[dict] =
 
         total_requested = len(clips_metadata)
         all_errors = render_failures + upload_errors
-
         if results:
-            warnings = None
-            failed_clips = None
-            if all_errors:
-                warnings = f"{len(all_errors)} of {total_requested} clips failed"
-                failed_clips = all_errors
+            warnings = f"{len(all_errors)} of {total_requested} clips failed" if all_errors else None
+            failed_clips = all_errors or None
             await _run_blocking(
                 clip_job_store.update_job,
                 job_id,
@@ -341,9 +322,9 @@ async def _run_claimed_job(job: dict):
     job_id = job["id"]
     worker_id = job.get("worker_id") or WORKER_ID
     heartbeat = asyncio.create_task(_lease_heartbeat(job_id, worker_id))
-    video_path = os.path.join(UPLOAD_DIR, job_id, "source")
+    job_dir = os.path.join(UPLOAD_DIR, job_id)
+    video_path = os.path.join(job_dir, "source")
     try:
-        job_dir = os.path.dirname(video_path)
         os.makedirs(job_dir, exist_ok=True)
         if job.get("source_path"):
             await _run_blocking(
@@ -353,24 +334,12 @@ async def _run_claimed_job(job: dict):
             )
             info = None
         else:
-            _, info = await _run_blocking(
+            downloaded_path, info = await _run_blocking(
                 clipper.download_video,
                 job["source_url"],
                 job_dir,
             )
-            downloaded_files = [
-                os.path.join(job_dir, name)
-                for name in os.listdir(job_dir)
-                if os.path.isfile(os.path.join(job_dir, name))
-            ]
-            if not downloaded_files:
-                raise RuntimeError("Video download produced no file")
-            video_path = downloaded_files[0]
-            await _run_blocking(
-                clip_job_store.update_job,
-                job_id,
-                status="downloading",
-            )
+            video_path = downloaded_path
         await _process_video_task(job, video_path, info)
     except Exception as exc:
         try:
@@ -386,16 +355,6 @@ async def _run_claimed_job(job: dict):
             print(f"[worker {worker_id}] could not persist failure for {job_id}: {update_exc}")
         _notify_job(job_id, {"status": "failed", "error": str(exc)})
         print(f"[worker {worker_id}] job {job_id} failed before processing: {exc}")
-        try:
-            if job.get("source_path"):
-                await _run_blocking(clip_job_store.delete_source, job["source_path"])
-        except Exception:
-            pass
-        try:
-            if os.path.exists(video_path):
-                os.remove(video_path)
-        except OSError:
-            pass
     finally:
         heartbeat.cancel()
         try:
@@ -403,8 +362,12 @@ async def _run_claimed_job(job: dict):
         except asyncio.CancelledError:
             pass
         try:
-            if os.path.isdir(os.path.dirname(video_path)):
-                os.rmdir(os.path.dirname(video_path))
+            if os.path.isdir(job_dir):
+                for name in os.listdir(job_dir):
+                    path = os.path.join(job_dir, name)
+                    if os.path.isfile(path):
+                        os.remove(path)
+                os.rmdir(job_dir)
         except OSError:
             pass
 
@@ -600,6 +563,7 @@ async def upload_video(
     job_id = str(uuid.uuid4())
     temp_dir = os.path.join(UPLOAD_DIR, job_id)
     local_path = os.path.join(temp_dir, "upload")
+    source_path = None
     os.makedirs(temp_dir, exist_ok=True)
 
     try:
@@ -630,17 +594,19 @@ async def upload_video(
         )
         return {"job_id": job_id, "status": "uploaded"}
     except Exception as exc:
-        try:
-            if os.path.exists(local_path):
-                os.remove(local_path)
-            if os.path.isdir(temp_dir):
-                os.rmdir(temp_dir)
-        except OSError:
-            pass
+        if source_path:
+            try:
+                await _run_blocking(clip_job_store.delete_source, source_path)
+            except Exception:
+                pass
         raise HTTPException(status_code=500, detail=str(exc))
     finally:
         try:
             os.remove(local_path)
+        except OSError:
+            pass
+        try:
+            os.rmdir(temp_dir)
         except OSError:
             pass
 
@@ -689,7 +655,6 @@ async def stream_status(job_id: str, request: Request, token: str = ""):
             if current_job.get("status") in ("completed", "failed"):
                 yield f"data: {json.dumps(current_job)}\n\n"
                 return
-
             while True:
                 if await request.is_disconnected():
                     break
@@ -720,7 +685,6 @@ async def stream_status(job_id: str, request: Request, token: str = ""):
 
 @app.get("/my-clips")
 async def my_clips(user: dict = Depends(get_current_user)):
-    loop = asyncio.get_event_loop()
     clips = await _run_blocking(get_user_clips, user["user_id"])
     return {"total": len(clips), "ttl_hours": 6, "clips": clips}
 
