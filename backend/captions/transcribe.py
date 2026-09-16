@@ -11,6 +11,7 @@ All backends return the same shape:
 {"language": str, "backend": str, "words": [{"start", "end", "text"}, ...]}
 """
 
+import math
 import os
 import subprocess
 import tempfile
@@ -37,20 +38,60 @@ def _extract_audio(video_path: str, out_path: str):
         raise RuntimeError(f"Audio extraction failed: {r.stderr[-300:]}")
 
 
+def _validate_timestamps(items: list[dict]) -> list[dict]:
+    previous_start = None
+    previous_end = None
+
+    for index, item in enumerate(items):
+        try:
+            start = float(item["start"])
+            end = float(item["end"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid ASR timestamp at item {index}") from exc
+
+        if not math.isfinite(start) or not math.isfinite(end):
+            raise ValueError(f"Invalid ASR timestamp at item {index}: timestamps must be finite")
+        if start < 0 or end < 0:
+            raise ValueError(f"Invalid ASR timestamp at item {index}: timestamps must be non-negative")
+        if start > end:
+            raise ValueError(f"Invalid ASR timestamp at item {index}: start must not exceed end")
+        if previous_start is not None and (start < previous_start or end < previous_end):
+            raise ValueError(f"Invalid ASR timestamp at item {index}: timestamps must be ordered")
+
+        item["start"] = start
+        item["end"] = end
+        previous_start = start
+        previous_end = end
+
+    return items
+
+
 def _words_from_result(result: dict) -> list:
-    words = []
+    raw_words = []
     for seg in result.get("segments", []):
         for w in seg.get("words", []):
-            text = w["word"].strip()
-            if text:
-                words.append({"start": float(w["start"]), "end": float(w["end"]), "text": text})
-    # Fallback to sentence segments if the model gave no word timings
-    if not words:
-        for seg in result.get("segments", []):
-            text = seg["text"].strip()
-            if text:
-                words.append({"start": float(seg["start"]), "end": float(seg["end"]), "text": text})
-    return words
+            raw_words.append({
+                "start": w["start"],
+                "end": w["end"],
+                "text": w["word"].strip(),
+            })
+
+    if raw_words:
+        words = [w for w in _validate_timestamps(raw_words) if w["text"]]
+        if words:
+            return words
+
+    # Fallback to sentence segments if the model gave no usable word timings
+    sentence_segments = []
+    for seg in result.get("segments", []):
+        text = seg["text"].strip()
+        if text:
+            sentence_segments.append({
+                "start": seg["start"],
+                "end": seg["end"],
+                "text": text,
+            })
+    return _validate_timestamps(sentence_segments)
 
 
 # ── Backends ─────────────────────────────────────────────────────────────────
@@ -101,15 +142,16 @@ def _transcribe_faster_whisper(audio: str, language: str | None) -> dict | None:
     words = []
     sentence_fallback = []
     for seg in segments:  # generator — transcription happens during iteration
-        sentence_fallback.append({"start": float(seg.start), "end": float(seg.end),
+        sentence_fallback.append({"start": seg.start, "end": seg.end,
                                   "text": seg.text.strip()})
         for w in (seg.words or []):
-            text = w.word.strip()
-            if text:
-                words.append({"start": float(w.start), "end": float(w.end), "text": text})
+            words.append({"start": w.start, "end": w.end, "text": w.word.strip()})
+    words = _validate_timestamps(words) if words else []
+    if not words:
+        words = _validate_timestamps([s for s in sentence_fallback if s["text"]])
     return {"language": info.language,
             "backend": f"faster-whisper:{_cpu_model_name()}",
-            "words": words or [s for s in sentence_fallback if s["text"]]}
+            "words": words}
 
 
 def _transcribe_openai_whisper(audio: str, language: str | None) -> dict:
