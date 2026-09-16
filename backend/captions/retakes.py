@@ -31,39 +31,15 @@ from dataclasses import dataclass
 
 from .tighten import CLAUSE_PUNCT, Cut, _text
 
-# A phrase boundary needs a real pause. Whisper does not emit one: it stretches
-# each word's end time to the start of the next, so inter-word gaps read 0.00
-# even across two seconds of silence (the same trap that moved silence
-# detection onto ffmpeg). Real pauses come from the audio; punctuation is the
-# fallback when no media is available.
 MIN_PAUSE = 0.45
-
-# How far back a restart can reach. A speaker returning to a point five minutes
-# later is making that point again, not fixing a flub.
 WINDOW = 45.0
-
-# Compare against a bounded number of recent phrases so cost stays flat on a
-# long recording.
 LOOKBACK = 8
-
-# Cost ceiling per run. Whatever this drops is reported, never swallowed.
 DEFAULT_MAX_GROUPS = 12
-
-MIN_WORDS = 6           # shorter phrases match each other by accident
-# A re-recorded line is a line. Anything this long is a transcription artifact
-# — the punctuation fallback can run 150 words together when Whisper emits no
-# punctuation — and comparing it to a short phrase scores high for free.
+MIN_WORDS = 6
 MAX_WORDS = 40
-MIN_SIMILARITY = 0.35   # loose on purpose — stage 2 is the precision stage
-
-# Overlap over the smaller set rewards short phrases: two shared words out of
-# five reads as 0.40. These floors demand the match be real before the ratio is
-# allowed to speak.
+MIN_SIMILARITY = 0.35
 MIN_SHARED_WORDS = 3
 MIN_SHARED_BIGRAMS = 1
-
-# Two takes of one line run to roughly the same length. A two-second phrase and
-# a twenty-second one are not two attempts at the same thing.
 MIN_DURATION_RATIO = 0.4
 
 _PUNCT_RE = re.compile(r"[^\w\s]", re.UNICODE)
@@ -73,7 +49,7 @@ _PUNCT_RE = re.compile(r"[^\w\s]", re.UNICODE)
 class Phrase:
     start: float
     end: float
-    i0: int             # word range [i0, i1)
+    i0: int
     i1: int
     text: str
     tokens: tuple
@@ -88,16 +64,6 @@ def _norm(word: dict) -> str:
 
 
 def split_phrases(words: list, silences: list | None = None) -> list:
-    """
-    Break the transcript where the speaker actually stopped.
-
-    `silences` is [(start, end), ...] from ffmpeg. Passing None means nothing
-    was measured, and clause punctuation stands in — worse, but the only signal
-    a bare transcript carries. Passing an empty list means the audio *was*
-    measured and holds no qualifying pause, which is an answer: the speaker did
-    not stop, so there are no restarts to find. Treating those two the same
-    invented phrase boundaries from punctuation against measured evidence.
-    """
     if not words:
         return []
 
@@ -114,14 +80,13 @@ def split_phrases(words: list, silences: list | None = None) -> list:
             return
         out.append(Phrase(
             start=chunk[0]["start"], end=chunk[-1]["end"], i0=i0, i1=i1,
-            text=" ".join(_text(w) for w in chunk).strip(), tokens=tokens,
+            text=" ".join(_text(w) for w in chunk).strip(),
+            tokens=tokens,
         ))
 
     for i, w in enumerate(words):
         boundary = False
         if measured:
-            # A pause counts as a boundary when it sits at or after this word's
-            # end and before the next word starts.
             nxt = words[i + 1]["start"] if i + 1 < len(words) else w["end"]
             boundary = any(p_start < nxt and p_end > w["end"] - 0.05
                            for p_start, p_end in pauses)
@@ -144,9 +109,9 @@ def similarity(a: Phrase, b: Phrase) -> float:
     How much of the shorter attempt shows up in the longer one.
 
     Overlap (intersection over the *smaller* set) rather than Jaccard, because
-    a second attempt is routinely longer or shorter than the first and Jaccard
-    punishes that. Bigrams carry word order, so a shared bag of common Hinglish
-    connectives cannot score on its own.
+    a second attempt is routinely longer or shorter and Jaccard punishes that.
+    Bigrams carry word order, so a shared bag of common Hinglish connectives
+    cannot score on its own.
 
     Returns 0 when the two are too lopsided in length to be takes of one line,
     or when the overlap is too small to mean anything regardless of ratio.
@@ -173,40 +138,57 @@ def similarity(a: Phrase, b: Phrase) -> float:
     return 0.6 * uni + 0.4 * bi
 
 
+def _group_score(candidate: Phrase, group: list[Phrase], min_similarity: float) -> float:
+    """Return the mean similarity only when every existing member is compatible."""
+    scores = [similarity(member, candidate) for member in group]
+    if any(score < min_similarity for score in scores):
+        return 0.0
+    return sum(scores) / len(scores)
+
+
 def find_candidates(phrases: list, window: float = WINDOW,
                     min_similarity: float = MIN_SIMILARITY,
                     min_words: int = MIN_WORDS) -> list:
     """
     Group phrases that look like attempts at the same line.
 
-    Returns [[Phrase, ...], ...] in time order, each group holding two or more
-    attempts. Grouping (rather than pairing) means a line delivered four times
-    goes up as one question instead of six.
+    A phrase may join an existing group only when it is similar enough to every
+    phrase already in that group. This prevents transitive pairwise matches
+    from merging unrelated phrases into one model decision.
     """
     usable = [p for p in phrases
               if min_words <= len(p.tokens) <= MAX_WORDS]
-    group_of: dict = {}
-    groups: list = []
+    groups: list[list[Phrase]] = []
 
     for j, later in enumerate(usable):
-        best, best_score = None, min_similarity
+        best_group: list[Phrase] | None = None
+        best_score = min_similarity
+        best_new_pair: Phrase | None = None
+        best_new_score = min_similarity
+
         for earlier in reversed(usable[max(0, j - LOOKBACK):j]):
             if later.start - earlier.end > window:
                 break
-            score = similarity(earlier, later)
-            if score >= best_score:
-                best, best_score = earlier, score
-        if best is None:
-            continue
-        gi = group_of.get(id(best))
-        if gi is None:
-            gi = len(groups)
-            groups.append([best])
-            group_of[id(best)] = gi
-        groups[gi].append(later)
-        group_of[id(later)] = gi
 
-    return [g for g in groups if len(g) > 1]
+            owning_group = next((group for group in groups if earlier in group), None)
+            if owning_group is not None:
+                score = _group_score(later, owning_group, min_similarity)
+                if score >= best_score:
+                    best_group = owning_group
+                    best_score = score
+                continue
+
+            score = similarity(earlier, later)
+            if score >= best_new_score:
+                best_new_pair = earlier
+                best_new_score = score
+
+        if best_group is not None:
+            best_group.append(later)
+        elif best_new_pair is not None:
+            groups.append([best_new_pair, later])
+
+    return [group for group in groups if len(group) > 1]
 
 
 # ── Stage 2: the model decides ───────────────────────────────────────────────
@@ -241,9 +223,6 @@ def _ask(group: list, complete) -> dict | None:
     data = llm.parse_json(raw)
     if not isinstance(data, dict):
         return None
-    # Exact types, not truthiness. JSON "false" is a truthy string, and Python
-    # counts True as an int — so a sloppy check turns {"retake": "false"} and
-    # {"keep": true} into real cuts, which is the one thing this must not do.
     if data.get("retake") is not True:
         return None
     keep = data.get("keep")
@@ -254,22 +233,7 @@ def _ask(group: list, complete) -> dict | None:
 
 def detect(words: list, media_path: str | None = None, silences: list | None = None,
            complete=None, max_groups: int = DEFAULT_MAX_GROUPS) -> dict:
-    """
-    Retake suggestions for a transcript.
-
-    Returns {"cuts": [Cut, ...], "groups": [...], "status": str}. Cuts are
-    always `auto=False`: a retake is seconds of real speech and gets confirmed
-    by a person, every time.
-
-    `complete` is injectable so the detector can be exercised without a network
-    call. `status` explains an empty result: "no retakes", "no API key", and
-    "the key was rejected" look identical from the outside and mean very
-    different things.
-
-    `max_groups` bounds cost on a long recording. Whatever it drops is reported
-    in `skipped` and surfaced by both callers — a cap the user cannot see reads
-    as "we checked everything".
-    """
+    """Retake suggestions for a transcript; all retake cuts require confirmation."""
     from . import llm, tighten
 
     if complete is None:
@@ -283,7 +247,7 @@ def detect(words: list, media_path: str | None = None, silences: list | None = N
             silences = [(c.start, c.end) for c in
                         tighten.detect_silences_from_audio(media_path,
                                                            tighten.TightenConfig())]
-        except Exception:                                   # noqa: BLE001
+        except Exception:
             silences = None
 
     phrases = split_phrases(words, silences)
@@ -298,9 +262,6 @@ def detect(words: list, media_path: str | None = None, silences: list | None = N
         try:
             verdict = _ask(group, complete)
         except llm.LLMError as e:
-            # One failure means the rest will fail the same way — a rejected
-            # key does not start working on the next call. Stop and say so,
-            # rather than burning quota to report "nothing found".
             return {"cuts": cuts, "groups": reported, "status": "model-error",
                     "error": str(e), "asked": asked,
                     "skipped": max(0, len(groups) - asked)}
