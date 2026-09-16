@@ -26,6 +26,7 @@ retakes would be expensive, unreproducible, and worse on longer files. Stage 1
 turns that into a handful of small, focused questions.
 """
 
+import math
 import re
 from dataclasses import dataclass
 
@@ -308,9 +309,12 @@ def detect(words: list, media_path: str | None = None, silences: list | None = N
             continue
         keep = verdict["keep"]
         try:
-            confidence = min(1.0, max(0.0, float(verdict.get("confidence") or 0.0)))
-        except (TypeError, ValueError):
+            confidence = float(verdict.get("confidence") or 0.0)
+        except (TypeError, ValueError, OverflowError):
             confidence = 0.0
+        if not math.isfinite(confidence):
+            confidence = 0.0
+        confidence = min(1.0, max(0.0, confidence))
         dropped = []
         for i, p in enumerate(group):
             if i == keep:
