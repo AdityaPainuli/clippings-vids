@@ -19,6 +19,10 @@ class RomanizeValidationTests(unittest.TestCase):
         with patch.object(romanize, "_rule_romanize", side_effect=["main", "achchh"]):
             self.assertFalse(romanize._valid_llm_output(words, ["what", "good"]))
 
+    def test_rejects_short_translated_token(self):
+        with patch.object(romanize, "_rule_romanize", return_value="hain"):
+            self.assertFalse(romanize._valid_llm_output(["हैं"], ["he"]))
+
     def test_rejects_changed_latin_input(self):
         self.assertFalse(romanize._valid_llm_output(["hello"], ["hi"]))
 
