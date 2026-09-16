@@ -126,6 +126,29 @@ def _transcribe_openai_whisper(audio: str, language: str | None) -> dict:
             "words": _words_from_result(result)}
 
 
+def _transcribe_with_fallbacks(audio: str, language: str | None) -> dict:
+    """Try each available backend in priority order, falling through failures."""
+    backends = (
+        _transcribe_mlx,
+        _transcribe_faster_whisper,
+        _transcribe_openai_whisper,
+    )
+    failures = []
+
+    for backend in backends:
+        try:
+            result = backend(audio, language)
+        except Exception as exc:
+            failures.append(f"{backend.__name__}: {exc}")
+            continue
+        if result is not None:
+            return result
+
+    if failures:
+        raise RuntimeError("All transcription backends failed: " + "; ".join(failures))
+    raise RuntimeError("No transcription backend is available")
+
+
 def transcribe_video(video_path: str, language: str | None = None) -> dict:
     """
     Returns {"language": str, "backend": str, "words": [...]}.
@@ -134,10 +157,4 @@ def transcribe_video(video_path: str, language: str | None = None) -> dict:
     with tempfile.TemporaryDirectory() as tmpdir:
         audio = os.path.join(tmpdir, "audio.wav")
         _extract_audio(video_path, audio)
-
-        result = _transcribe_mlx(audio, language)
-        if result is None:
-            result = _transcribe_faster_whisper(audio, language)
-        if result is None:
-            result = _transcribe_openai_whisper(audio, language)
-        return result
+        return _transcribe_with_fallbacks(audio, language)
