@@ -129,17 +129,17 @@ def _transcribe_openai_whisper(audio: str, language: str | None) -> dict:
 def _transcribe_with_fallbacks(audio: str, language: str | None) -> dict:
     """Try each available backend in priority order, falling through failures."""
     backends = (
-        _transcribe_mlx,
-        _transcribe_faster_whisper,
-        _transcribe_openai_whisper,
+        ("mlx-whisper", _transcribe_mlx),
+        ("faster-whisper", _transcribe_faster_whisper),
+        ("openai-whisper", _transcribe_openai_whisper),
     )
     failures = []
 
-    for backend in backends:
+    for name, backend in backends:
         try:
             result = backend(audio, language)
         except Exception as exc:
-            failures.append(f"{backend.__name__}: {exc}")
+            failures.append(f"{name}: {exc}")
             continue
         if result is not None:
             return result
