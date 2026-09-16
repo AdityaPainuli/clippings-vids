@@ -35,7 +35,12 @@ class PersistentStreamTokenStore:
             "expires_at": expires,
             "used_at": None,
         }
-        response = supabase.table(TABLE).upsert(row, on_conflict="token_hash").execute()
+        response = (
+            supabase.table(TABLE)
+            .upsert(row, on_conflict="token_hash")
+            .select("token_hash")
+            .execute()
+        )
         if not response.data:
             raise RuntimeError("stream token insert returned no row")
 
@@ -52,6 +57,7 @@ class PersistentStreamTokenStore:
             .eq("token_hash", _hash_token(token))
             .is_("used_at", "null")
             .gt("expires_at", now)
+            .select("user_id, expires_at")
             .execute()
         )
         if not response.data:
