@@ -9,7 +9,7 @@ create table if not exists caption_jobs (
   kind          text not null check (kind in ('transcribe', 'render')),
   status        text not null default 'queued'
                 check (status in ('queued', 'transcribing', 'romanizing',
-                                  'rendering', 'completed', 'failed')),
+                                  'rendering', 'completed', 'failed', 'cancelled')),
   export        text,                -- burned | overlay | ass | srt (render jobs)
   error         text,
   transcript    jsonb,               -- {language, backend, words: [...]}

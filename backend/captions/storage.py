@@ -48,13 +48,34 @@ def create_job(user_id: str, kind: str, **fields) -> str:
 
 def update_job(job_id: str, **fields):
     fields["updated_at"] = datetime.now(timezone.utc).isoformat()
-    supabase.table("caption_jobs").update(fields).eq("id", job_id).execute()
-
+    (
+        supabase.table("caption_jobs")
+        .update(fields)
+        .eq("id", job_id)
+        .neq("status", "cancelled")
+        .execute()
+    )
 
 def get_job(job_id: str) -> dict | None:
     res = supabase.table("caption_jobs").select("*").eq("id", job_id).execute()
     return res.data[0] if res.data else None
 
+def cancel_job(job_id: str) -> dict | None:
+    res = (
+        supabase.table("caption_jobs")
+        .update({
+            "status": "cancelled",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+        .eq("id", job_id)
+        .in_("status", ["queued", "transcribing", "romanizing", "rendering"])
+        .execute()
+    )
+    return res.data[0] if res.data else None
+
+def is_job_cancelled(job_id: str) -> bool:
+    job = get_job(job_id)
+    return bool(job and job.get("status") == "cancelled")
 
 def list_jobs(user_id: str, limit: int = 50) -> list:
     res = (supabase.table("caption_jobs").select(
