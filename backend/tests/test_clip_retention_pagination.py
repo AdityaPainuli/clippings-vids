@@ -1,6 +1,7 @@
 import importlib
 import os
 import sys
+import types
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -20,6 +21,15 @@ class ClipRetentionPaginationTests(unittest.TestCase):
     def setUpClass(cls):
         os.environ.setdefault("SUPABASE_URL", "https://example.supabase.co")
         os.environ.setdefault("SUPABASE_SERVICE_KEY", "test-key")
+
+        supabase_module = types.ModuleType("supabase")
+        supabase_module.Client = object
+        supabase_module.create_client = lambda *args, **kwargs: object()
+        sys.modules.setdefault("supabase", supabase_module)
+
+        dotenv_module = types.ModuleType("dotenv")
+        dotenv_module.load_dotenv = lambda: None
+        sys.modules.setdefault("dotenv", dotenv_module)
 
         existing = sys.modules.get("supabase_client")
         if existing is not None and not hasattr(existing, "requests"):
