@@ -16,6 +16,7 @@ import subprocess
 import tempfile
 
 MLX_MODEL = os.getenv("CAPTIONS_MLX_MODEL", "mlx-community/whisper-large-v3-turbo")
+FFMPEG_TIMEOUT_SECONDS = 300
 
 
 def _cpu_model_name() -> str:
@@ -29,10 +30,15 @@ _cpu_model_cache = None     # (name, model)
 
 
 def _extract_audio(video_path: str, out_path: str):
-    r = subprocess.run(
-        ["ffmpeg", "-y", "-i", video_path, "-ac", "1", "-ar", "16000", "-vn", out_path],
-        capture_output=True, text=True,
-    )
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-i", video_path, "-ac", "1", "-ar", "16000", "-vn", out_path],
+            capture_output=True, text=True, timeout=FFMPEG_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"Audio extraction timed out after {FFMPEG_TIMEOUT_SECONDS} seconds."
+        ) from exc
     if r.returncode != 0:
         raise RuntimeError(f"Audio extraction failed: {r.stderr[-300:]}")
 
