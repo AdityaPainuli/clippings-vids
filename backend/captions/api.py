@@ -18,8 +18,8 @@ GET  /captions/jobs/{id}         job status (transcript included when done)
 GET  /captions/download/{id}     redirect to signed download URL
 GET  /captions/notifications     unseen finished jobs (in-app bell)
 POST /captions/notifications/seen  mark feed items read
-GET  /captions/presets           built-in style presets
-GET  /captions/style-schema      JSON schema for the style editor UI
+GET  /captions/presets            built-in style presets
+GET  /captions/style-schema       JSON schema for the style editor UI
 """
 
 import json
@@ -126,8 +126,8 @@ def _transcribe_task(job_id: str, local_path: str, language: Optional[str],
 @router.post("/transcribe")
 async def transcribe_endpoint(
     background_tasks: BackgroundTasks,
-    file: Optional[UploadFile] = File(None),      # small files (extracted audio)
-    storage_path: Optional[str] = Form(None),      # big files via /upload-url
+    file: Optional[UploadFile] = File(None),
+    storage_path: Optional[str] = Form(None),
     language: Optional[str] = Form(None),
     hinglish: bool = Form(True),
     user: dict = Depends(get_current_user),
@@ -142,7 +142,6 @@ async def transcribe_endpoint(
 
     local_path = os.path.join(WORK_DIR, f"{job_id}_source")
     if file is not None:
-        # Stream to disk in chunks — never buffer the whole upload in memory
         with open(local_path, "wb") as f:
             while chunk := await file.read(1 << 20):
                 f.write(chunk)
@@ -179,6 +178,7 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
                  words: list, style: styles.CaptionStyle, export: str,
                  text_key: str, video_info: Optional[dict]):
     local_source = None
+    out = None
     try:
         storage.update_job(job_id, status="rendering")
 
@@ -210,43 +210,40 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
             out = render.burn_video(
                 local_source, ass_path, os.path.join(WORK_DIR, f"{job_id}_subtitled.mp4"))
 
-        # Push the finished file to storage; fall back to serving the local
-        # copy if the upload fails (e.g. file exceeds the plan's size limit).
         filename = os.path.basename(out)
-        download_url = None
-        try:
-            output_path = storage.upload_output(out, user_id, job_id)
-            download_url = storage.signed_download_url(output_path)
-            storage.update_job(job_id, status="completed",
-                               output_path=output_path, filename=filename)
-            os.remove(out)
-        except Exception as up_err:
-            print(f"  [render] Output upload failed, serving locally: {up_err}")
-            storage.update_job(job_id, status="completed", filename=filename)
-
+        output_path = storage.upload_output(out, user_id, job_id)
+        download_url = storage.signed_download_url(output_path)
+        storage.update_job(job_id, status="completed",
+                           output_path=output_path, filename=filename)
+        os.remove(out)
+        out = None
         notify.notify_completed(email, job_id, filename, download_url)
 
     except Exception as e:
+        if out:
+            try:
+                os.remove(out)
+            except OSError:
+                pass
         storage.update_job(job_id, status="failed", error=str(e)[:500])
         notify.notify_failed(email, job_id, str(e))
     finally:
-        for p in (local_source,):
-            if p:
-                try:
-                    os.remove(p)
-                except OSError:
-                    pass
+        if local_source:
+            try:
+                os.remove(local_source)
+            except OSError:
+                pass
 
 
 @router.post("/render")
 async def render_endpoint(
     background_tasks: BackgroundTasks,
-    transcript: str = Form(...),           # {"words": [{start,end,text,hinglish?}]}
-    style_json: str = Form(...),           # CaptionStyle JSON or {"preset": "name", ...overrides}
+    transcript: str = Form(...),
+    style_json: str = Form(...),
     export: ExportFormat = Form("burned"),
     text_key: str = Form("hinglish"),
-    storage_path: Optional[str] = Form(None),   # source video from /upload-url
-    video_info: Optional[str] = Form(None),     # {"width","height","duration","fps"}
+    storage_path: Optional[str] = Form(None),
+    video_info: Optional[str] = Form(None),
     user: dict = Depends(get_current_user),
 ):
     try:
@@ -310,16 +307,10 @@ async def download(job_id: str, user: dict = Depends(get_current_user)):
     if job.get("status") != "completed":
         raise HTTPException(status_code=409, detail=f"Job status: {job.get('status')}")
 
-    if job.get("output_path"):
-        return RedirectResponse(storage.signed_download_url(job["output_path"], 3600))
+    if not job.get("output_path"):
+        raise HTTPException(status_code=410, detail="Rendered output is unavailable")
 
-    # Fallback: output stayed local (storage upload failed)
-    from fastapi.responses import FileResponse
-    for suffix in ("_subtitled.mp4", "_overlay.mov", ".ass", ".srt"):
-        local = os.path.join(WORK_DIR, f"{job_id}{suffix}")
-        if os.path.exists(local):
-            return FileResponse(local, filename=job.get("filename") or os.path.basename(local))
-    raise HTTPException(status_code=410, detail="File expired or removed")
+    return RedirectResponse(storage.signed_download_url(job["output_path"], 3600))
 
 
 @router.get("/notifications")
@@ -329,7 +320,7 @@ async def notifications(user: dict = Depends(get_current_user)):
 
 @router.post("/notifications/seen")
 async def notifications_seen(
-    job_ids: str = Form(...),   # JSON array of job ids
+    job_ids: str = Form(...),
     user: dict = Depends(get_current_user),
 ):
     try:
