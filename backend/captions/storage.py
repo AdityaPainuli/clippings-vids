@@ -31,6 +31,8 @@ _STORAGE_URL = f"{SUPABASE_URL}/storage/v1"
 _CTRL_TIMEOUT     = (10, 30)
 _TRANSFER_TIMEOUT = (10, 600)
 
+_ACTIVE_STATUSES = ("queued", "transcribing", "romanizing", "rendering")
+
 
 # ── Job rows ─────────────────────────────────────────────────────────────────
 
@@ -47,13 +49,60 @@ def create_job(user_id: str, kind: str, **fields) -> str:
 
 
 def update_job(job_id: str, **fields):
+    """Update a job without allowing normal workers to resurrect a cancelled job."""
+    next_status = fields.get("status")
+    if next_status not in (None, "cancelled", "failed"):
+        current = get_job(job_id)
+        if current and current.get("status") == "cancelled":
+            return False
+
     fields["updated_at"] = datetime.now(timezone.utc).isoformat()
     supabase.table("caption_jobs").update(fields).eq("id", job_id).execute()
+    return True
 
 
 def get_job(job_id: str) -> dict | None:
     res = supabase.table("caption_jobs").select("*").eq("id", job_id).execute()
     return res.data[0] if res.data else None
+
+
+def request_cancel(job_id: str, user_id: str) -> str:
+    """Cancel a queued/active job while enforcing ownership and terminal-state rules."""
+    job = get_job(job_id)
+    if not job:
+        return "not_found"
+    if job.get("user_id") != user_id:
+        return "forbidden"
+
+    status = job.get("status")
+    if status == "cancelled":
+        return "already_cancelled"
+    if status in ("completed", "failed"):
+        return status
+
+    response = (supabase.table("caption_jobs")
+                .update({
+                    "status": "cancelled",
+                    "error": "Job cancelled by user",
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                })
+                .eq("id", job_id)
+                .eq("user_id", user_id)
+                .in_("status", list(_ACTIVE_STATUSES))
+                .execute())
+
+    if response.data:
+        return "cancelled"
+
+    current = get_job(job_id)
+    if not current:
+        return "not_found"
+    return current.get("status", "failed") if current.get("user_id") == user_id else "forbidden"
+
+
+def is_cancelled(job_id: str) -> bool:
+    job = get_job(job_id)
+    return bool(job and job.get("status") == "cancelled")
 
 
 def list_jobs(user_id: str, limit: int = 50) -> list:
@@ -68,7 +117,7 @@ def unseen_completed(user_id: str) -> list:
     res = (supabase.table("caption_jobs").select(
                "id, kind, status, export, error, filename, created_at, expires_at")
            .eq("user_id", user_id).eq("seen", False)
-           .in_("status", ["completed", "failed"])
+           .in_("status", ["completed", "failed", "cancelled"])
            .order("created_at", desc=True).execute())
     return res.data or []
 
@@ -82,10 +131,7 @@ def mark_seen(user_id: str, job_ids: list):
 # ── Direct-to-storage uploads ────────────────────────────────────────────────
 
 def create_signed_upload(user_id: str, job_id: str, filename: str) -> dict:
-    """
-    Signed upload URL so the browser sends the video straight to Supabase
-    Storage — the file never passes through this server.
-    """
+    """Signed upload URL so the browser sends the video straight to Supabase Storage."""
     path = f"{user_id}/sources/{job_id}/{filename}"
     resp = requests.post(
         f"{_STORAGE_URL}/object/upload/sign/{BUCKET}/{path}",
@@ -157,10 +203,7 @@ def _delete_storage_paths(paths: list):
 # ── Retention cleanup ────────────────────────────────────────────────────────
 
 def delete_expired(local_dir: str = "captions_output") -> int:
-    """
-    Remove storage objects + job rows past expires_at, and any leftover
-    local files older than the retention window. Returns rows deleted.
-    """
+    """Remove storage objects + job rows past expires_at and old local files."""
     now = datetime.now(timezone.utc).isoformat()
     res = (supabase.table("caption_jobs")
            .select("id, source_path, output_path")
@@ -172,7 +215,6 @@ def delete_expired(local_dir: str = "captions_output") -> int:
     if rows:
         supabase.table("caption_jobs").delete().in_("id", [r["id"] for r in rows]).execute()
 
-    # Local temp/render files past retention
     if os.path.isdir(local_dir):
         cutoff = time.time() - RETENTION_SECONDS
         for fname in os.listdir(local_dir):
