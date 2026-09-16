@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from captions import retakes
+from captions import retakes, tighten
 
 
 class RetakeSilenceFailureTests(unittest.TestCase):
@@ -29,7 +29,7 @@ class RetakeSilenceFailureTests(unittest.TestCase):
             return '{"retake": false}'
 
         with patch.object(
-            retakes.tighten,
+            tighten,
             "detect_silences_from_audio",
             side_effect=RuntimeError("ffmpeg exited with status 1"),
         ):
@@ -55,7 +55,7 @@ class RetakeSilenceFailureTests(unittest.TestCase):
             return '{"retake": false}'
 
         with patch.object(
-            retakes.tighten,
+            tighten,
             "detect_silences_from_audio",
             side_effect=RuntimeError("silencedetect failed"),
         ):
