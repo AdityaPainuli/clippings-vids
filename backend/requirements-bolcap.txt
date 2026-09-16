@@ -1,8 +1,9 @@
 # Bolcap local app — runtime deps (no torch, no cloud SDKs; see DECISIONS.md)
-fastapi
-uvicorn
-python-multipart
-pydantic
-requests
-faster-whisper
-indic-transliteration
+# Direct dependencies are pinned to exact versions for reproducible release builds.
+fastapi==0.141.1
+uvicorn==0.53.0
+python-multipart==0.0.32
+pydantic==2.13.5
+requests==2.34.2
+faster-whisper==1.2.1
+indic-transliteration==2.3.82
