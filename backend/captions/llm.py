@@ -100,7 +100,7 @@ def _anthropic(requests, prompt: str, system: str, max_tokens: int) -> str | Non
     return "".join(p.get("text", "") for p in parts if p.get("type") == "text") or None
 
 
-def _gemini(requests, prompt: str, system: str, max_tokens: int) -> str | None:
+def _gemini(requests, prompt: str, system: str, max_tokens: int) -> str:
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{GEMINI_MODEL}:generateContent")
     body = {
@@ -117,11 +117,31 @@ def _gemini(requests, prompt: str, system: str, max_tokens: int) -> str | None:
     )
     if r.status_code != 200:
         raise LLMError(_http_reason("Gemini", r))
-    try:
-        parts = r.json()["candidates"][0]["content"]["parts"]
-    except (KeyError, IndexError):
-        return None
-    return "".join(p.get("text", "") for p in parts) or None
+
+    payload = r.json()
+    prompt_feedback = payload.get("promptFeedback") or {}
+    block_reason = prompt_feedback.get("blockReason")
+    if block_reason:
+        message = prompt_feedback.get("blockReasonMessage")
+        detail = f": {message}" if message else ""
+        raise LLMError(f"Gemini blocked the request ({block_reason}){detail}")
+
+    candidates = payload.get("candidates") or []
+    if not candidates:
+        raise LLMError("Gemini returned no candidates")
+
+    candidate = candidates[0]
+    finish_reason = candidate.get("finishReason")
+    if finish_reason in {"SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"}:
+        raise LLMError(f"Gemini blocked the response ({finish_reason})")
+
+    content = candidate.get("content") or {}
+    parts = content.get("parts") or []
+    text = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+    if not text.strip():
+        reason = f" ({finish_reason})" if finish_reason else ""
+        raise LLMError(f"Gemini returned an empty response{reason}")
+    return text
 
 
 def _http_reason(name: str, r) -> str:
