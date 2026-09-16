@@ -2,6 +2,7 @@ import importlib
 import os
 import sys
 import tempfile
+import time
 import types
 import unittest
 from unittest.mock import patch
@@ -47,7 +48,7 @@ class RenderOutputDurabilityTests(unittest.TestCase):
     def setUp(self):
         self.api = importlib.import_module("captions.api")
 
-    def _run_render_task(self, storage, notify, work_dir):
+    def _run_render_task(self, storage, notify, work_dir, export="ass"):
         def fake_build_ass(*args, **kwargs):
             return "[Script Info]\n"
 
@@ -65,7 +66,7 @@ class RenderOutputDurabilityTests(unittest.TestCase):
                 source_path=None,
                 words=[{"start": 0.0, "end": 1.0, "text": "hello"}],
                 style=types.SimpleNamespace(words_per_line=3),
-                export="ass",
+                export=export,
                 text_key="text",
                 video_info={"width": 1080, "height": 1920, "duration": 1.0, "fps": 30},
             )
@@ -110,6 +111,36 @@ class RenderOutputDurabilityTests(unittest.TestCase):
                 any(name.endswith(".ass") for name in os.listdir(work_dir)),
                 os.listdir(work_dir),
             )
+
+    def test_long_render_refreshes_heartbeat_timestamp(self):
+        storage = _FakeStorage()
+        notify = _FakeNotify()
+        original_interval = self.api.HEARTBEAT_INTERVAL_SECONDS
+
+        def slow_overlay(*args, **kwargs):
+            time.sleep(0.06)
+            output_path = args[1]
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write("overlay")
+            return output_path
+
+        try:
+            self.api.HEARTBEAT_INTERVAL_SECONDS = 0.01
+            with tempfile.TemporaryDirectory() as work_dir, \
+                 patch.object(self.api.render, "render_overlay", side_effect=slow_overlay):
+                self._run_render_task(storage, notify, work_dir, export="overlay")
+        finally:
+            self.api.HEARTBEAT_INTERVAL_SECONDS = original_interval
+
+        rendering_updates = [
+            fields for _, fields in storage.updated if fields.get("status") == "rendering"
+        ]
+        completed = [fields for _, fields in storage.updated if fields.get("status") == "completed"]
+
+        self.assertGreaterEqual(len(rendering_updates), 2)
+        self.assertEqual(len(completed), 1)
+        self.assertEqual(len(notify.completed), 1)
+        self.assertEqual(len(notify.failed), 0)
 
 
 if __name__ == "__main__":
