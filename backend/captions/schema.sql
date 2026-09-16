@@ -28,14 +28,15 @@ create index if not exists caption_jobs_user_idx    on caption_jobs (user_id, cr
 create index if not exists caption_jobs_expiry_idx  on caption_jobs (expires_at);
 
 -- Signed source uploads are created before a transcribe/render job exists.
--- Keep their storage paths durable so abandoned uploads can be reclaimed
--- without attaching unclaimed objects to a fake caption job.
+-- Keep their storage paths durable long enough to cover both the signed URL
+-- lifetime and the full caption-job retention window if the upload is adopted
+-- near the end of the URL lifetime.
 create table if not exists caption_uploads (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null,
   storage_path  text not null unique,
   created_at    timestamptz not null default now(),
-  expires_at    timestamptz not null default now() + interval '48 hours'
+  expires_at    timestamptz not null default now() + interval '54 hours'
 );
 
 create index if not exists caption_uploads_expiry_idx on caption_uploads (expires_at);
