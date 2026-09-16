@@ -13,6 +13,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from dotenv import load_dotenv
 
+from egress import validate_egress_url
+
 load_dotenv()
 
 
@@ -112,6 +114,7 @@ CAPTION_MARGIN_V     = CAPTION_PRESETS["default"]["margin_v"]
 # ---------------------------------------------------------------------------
 
 def download_video(url, output_path="downloads"):
+    validate_egress_url(url)
     os.makedirs(output_path, exist_ok=True)
     ydl_opts = {
         'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best',
@@ -836,8 +839,8 @@ def _render_single_clip(args):
                     "crop=1080:1920,"
                     "gblur=sigma=40,"
                     "eq=brightness=-0.3[bg_blurred];"
-                    "[fg]scale=1080:1920:force_original_aspect_ratio=decrease,"
-                    "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black@0[fg_scaled];"
+                    f"[fg]scale=1080:1920:force_original_aspect_ratio=decrease,"
+                    f"pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black@0[fg_scaled];"
                     "[bg_blurred][fg_scaled]overlay=0:0"
                 )
                 cmd1_retry = [
