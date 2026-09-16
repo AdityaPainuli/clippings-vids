@@ -16,6 +16,8 @@ from difflib import SequenceMatcher
 DEVANAGARI_RE = re.compile(r"[ऀ-ॿ]")
 CHUNK = 80  # words per LLM call — small enough to keep alignment reliable
 MIN_LLM_SIMILARITY = 0.45
+MIN_LLM_LENGTH_RATIO = 0.6
+MAX_LLM_LENGTH_RATIO = 1.8
 
 # IAST → colloquial fixes applied after transliteration (fallback path)
 _COMMON = {
@@ -76,6 +78,10 @@ def _valid_llm_output(words: list[str], output: object) -> bool:
         baseline = _normalized_latin(_rule_romanize(source))
         actual = _normalized_latin(candidate)
         if not baseline or not actual:
+            return False
+
+        length_ratio = len(actual) / len(baseline)
+        if not MIN_LLM_LENGTH_RATIO <= length_ratio <= MAX_LLM_LENGTH_RATIO:
             return False
         if SequenceMatcher(None, baseline, actual).ratio() < MIN_LLM_SIMILARITY:
             return False
