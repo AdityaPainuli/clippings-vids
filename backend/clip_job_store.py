@@ -3,24 +3,13 @@
 from __future__ import annotations
 
 import os
-import time
 from datetime import datetime, timedelta, timezone
 
 import requests
 
 from supabase_client import SUPABASE_SERVICE_KEY, SUPABASE_URL, supabase
 
-JOB_STATUSES = (
-    "queued",
-    "downloading",
-    "analyzing",
-    "clipping",
-    "uploading",
-    "completed",
-    "failed",
-)
 ACTIVE_STATUSES = ("downloading", "analyzing", "clipping", "uploading")
-
 CLIP_SOURCE_BUCKET = "clip-sources"
 _STORAGE_URL = f"{SUPABASE_URL}/storage/v1"
 _HEADERS = {
@@ -49,6 +38,7 @@ def create_job(
     max_clip_length: int | None,
     cache_key: str | None = None,
 ) -> dict:
+    now = _now().isoformat()
     row = {
         "id": job_id,
         "user_id": user_id,
@@ -70,8 +60,8 @@ def create_job(
         "cached": False,
         "worker_id": None,
         "lease_until": None,
-        "created_at": _now().isoformat(),
-        "updated_at": _now().isoformat(),
+        "created_at": now,
+        "updated_at": now,
     }
     response = supabase.table("clip_jobs").insert(row).execute()
     if not response.data:
@@ -95,11 +85,6 @@ def list_jobs(user_id: str) -> list[dict]:
     return response.data or []
 
 
-def count_clips(user_id: str) -> int:
-    jobs = list_jobs(user_id)
-    return sum(len(job.get("results") or []) for job in jobs)
-
-
 def update_job(job_id: str, **fields) -> dict:
     fields["updated_at"] = _now().isoformat()
     response = supabase.table("clip_jobs").update(fields).eq("id", job_id).execute()
@@ -113,17 +98,17 @@ def delete_job(job_id: str) -> None:
 
 
 def requeue_expired_jobs() -> int:
-    now = _now()
+    now = _now().isoformat()
     response = (
         supabase.table("clip_jobs")
         .update({
             "status": "queued",
             "worker_id": None,
             "lease_until": None,
-            "updated_at": now.isoformat(),
+            "updated_at": now,
         })
         .in_("status", list(ACTIVE_STATUSES))
-        .lt("lease_until", now.isoformat())
+        .lt("lease_until", now)
         .execute()
     )
     return len(response.data or [])
@@ -173,15 +158,6 @@ def renew_lease(job_id: str, worker_id: str, lease_seconds: int) -> None:
     )
 
 
-def release_lease(job_id: str) -> None:
-    (
-        supabase.table("clip_jobs")
-        .update({"worker_id": None, "lease_until": None, "updated_at": _now().isoformat()})
-        .eq("id", job_id)
-        .execute()
-    )
-
-
 def upload_source(local_path: str, user_id: str, job_id: str, filename: str) -> str:
     safe_filename = os.path.basename(filename).replace("\\", "_").replace("/", "_")
     storage_path = f"{user_id}/{job_id}/{safe_filename[:120]}"
@@ -222,3 +198,26 @@ def delete_source(storage_path: str | None) -> None:
         json={"prefixes": [storage_path]},
         timeout=(10, 30),
     )
+
+
+def clear_previous_results(job_id: str) -> None:
+    rows = (
+        supabase.table("clip_metadata")
+        .select("storage_path")
+        .eq("job_id", job_id)
+        .execute()
+        .data
+        or []
+    )
+    paths = [row["storage_path"] for row in rows if row.get("storage_path")]
+    for start in range(0, len(paths), 100):
+        batch = paths[start : start + 100]
+        if batch:
+            requests.delete(
+                f"{_STORAGE_URL}/object/clips",
+                headers={**_HEADERS, "Content-Type": "application/json"},
+                json={"prefixes": batch},
+                timeout=(10, 30),
+            )
+    if rows:
+        supabase.table("clip_metadata").delete().eq("job_id", job_id).execute()
