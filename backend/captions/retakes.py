@@ -56,6 +56,25 @@ MIN_WORDS = 6           # shorter phrases match each other by accident
 MAX_WORDS = 40
 MIN_SIMILARITY = 0.35   # loose on purpose — stage 2 is the precision stage
 
+# Common function/discourse words contribute very little evidence that two
+# phrases are the same spoken line. They can still help the bigram signal, but
+# they must not be enough to make the candidate stage spend an LLM call.
+# Keep this deliberately small and transcript-oriented rather than importing a
+# language model or a heavyweight NLP stopword package into the backend.
+SIMILARITY_STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "been", "but", "by",
+    "can", "could", "did", "do", "does", "for", "from", "had", "has",
+    "have", "he", "her", "here", "his", "how", "i", "if", "in", "is",
+    "it", "its", "just", "me", "my", "no", "not", "of", "on", "or",
+    "our", "she", "so", "than", "that", "the", "their", "them", "then",
+    "there", "these", "they", "this", "to", "too", "us", "was", "we",
+    "were", "what", "when", "where", "which", "who", "will", "with",
+    "would", "you", "your", "okay", "ok", "well", "like", "right",
+    "actually", "basically", "literally", "matlab", "yaani", "yani", "toh",
+    "na", "haan", "haan", "achha", "acha",
+}
+MIN_SHARED_CONTENT_WORDS = 2
+
 # Overlap over the smaller set rewards short phrases: two shared words out of
 # five reads as 0.40. These floors demand the match be real before the ratio is
 # allowed to speak.
@@ -149,7 +168,8 @@ def similarity(a: Phrase, b: Phrase) -> float:
     connectives cannot score on its own.
 
     Returns 0 when the two are too lopsided in length to be takes of one line,
-    or when the overlap is too small to mean anything regardless of ratio.
+    when they share too few content words, or when the overlap is too small to
+    mean anything regardless of ratio.
     """
     ta, tb = set(a.tokens), set(b.tokens)
     if not ta or not tb:
@@ -163,13 +183,26 @@ def similarity(a: Phrase, b: Phrase) -> float:
     if len(shared) < MIN_SHARED_WORDS:
         return 0.0
 
+    content_a = ta - SIMILARITY_STOPWORDS
+    content_b = tb - SIMILARITY_STOPWORDS
+    shared_content = content_a & content_b
+    if len(shared_content) < MIN_SHARED_CONTENT_WORDS:
+        return 0.0
+
     sa, sb = _shingles(a.tokens), _shingles(b.tokens)
     shared_bi = sa & sb
     if len(shared_bi) < MIN_SHARED_BIGRAMS:
         return 0.0
 
-    uni = len(shared) / min(len(ta), len(tb))
-    bi = len(shared_bi) / min(len(sa), len(sb)) if sa and sb else 0.0
+    informative_bi = {
+        pair for pair in shared_bi
+        if any(token not in SIMILARITY_STOPWORDS for token in pair)
+    }
+    if not informative_bi:
+        return 0.0
+
+    uni = len(shared_content) / min(len(content_a), len(content_b))
+    bi = len(informative_bi) / min(len(sa), len(sb)) if sa and sb else 0.0
     return 0.6 * uni + 0.4 * bi
 
 
