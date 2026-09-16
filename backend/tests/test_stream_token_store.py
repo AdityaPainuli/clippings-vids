@@ -32,6 +32,9 @@ class FakeQuery:
         self.payload = payload
         return self
 
+    def select(self, columns):
+        return self
+
     def eq(self, key, value):
         self.filters[key] = ("eq", value)
         return self
@@ -124,7 +127,7 @@ class PersistentStreamTokenStoreTests(unittest.TestCase):
         second = self.store.pop(token)
 
         self.assertEqual(first["user_id"], "user-1")
-        self.assertEqual(second, None)
+        self.assertIsNone(second)
 
     def test_pop_rejects_expired_token(self):
         token = "expired"
