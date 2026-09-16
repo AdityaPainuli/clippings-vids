@@ -56,8 +56,11 @@ class RetakeRetryTests(unittest.TestCase):
         with patch.object(retakes, "split_phrases", return_value=[]), \
                 patch.object(retakes, "find_candidates", return_value=groups), \
                 patch.object(retakes, "_ask_with_retry", side_effect=[transient, verdict]):
-            result = retakes.detect([{"start": 0.0, "end": 1.0, "text": "unused"}],
-                                    silences=[])
+            result = retakes.detect(
+                [{"start": 0.0, "end": 1.0, "text": "unused"}],
+                silences=[],
+                complete=lambda *args, **kwargs: None,
+            )
 
         self.assertEqual(result["asked"], 2)
         self.assertEqual(len(result["groups"]), 1)
