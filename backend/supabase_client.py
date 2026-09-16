@@ -32,6 +32,22 @@ SIGNED_URL_SECONDS   = CLIP_TTL_SECONDS
 # Used only for auth operations (login/signup/verify JWT)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+security = HTTPBearer()
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    """Verify JWT and return user dict."""
+    try:
+        # get_user verifies the JWT with the Supabase auth server
+        user_resp = supabase.auth.get_user(credentials.credentials)
+        if not user_resp or not user_resp.user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return {"user_id": user_resp.user.id, "email": user_resp.user.email}
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Authentication failed: {e}")
+
 # Direct REST headers — bypasses supabase-py storage client and RLS entirely
 _HEADERS = {
     "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",

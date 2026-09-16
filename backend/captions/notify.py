@@ -12,6 +12,7 @@ retention window — recipients can download without logging back in.
 """
 
 import os
+from html import escape as _esc
 
 import requests
 
@@ -41,11 +42,12 @@ def _send_email(to: str, subject: str, html: str) -> bool:
 
 def notify_completed(email: str, job_id: str, filename: str,
                      download_url: str | None) -> bool:
-    link = (f'<p><a href="{download_url}">Download {filename}</a></p>'
+    safe_name = _esc(filename)
+    link = (f'<p><a href="{_esc(download_url)}">Download {safe_name}</a></p>'
             if download_url else
-            f'<p>Open <a href="{APP_URL}">the app</a> to download it.</p>')
+            f'<p>Open <a href="{_esc(APP_URL)}">the app</a> to download it.</p>')
     html = (
-        f"<p>Your captioned file <strong>{filename}</strong> is ready.</p>"
+        f"<p>Your captioned file <strong>{safe_name}</strong> is ready.</p>"
         f"{link}"
         f"<p>It will be deleted after {RETENTION_HOURS} hours — "
         f"download it before then.</p>"
@@ -58,7 +60,7 @@ def notify_completed(email: str, job_id: str, filename: str,
 
 def notify_failed(email: str, job_id: str, error: str) -> bool:
     html = (
-        f"<p>Your caption job failed: {error[:300]}</p>"
-        f'<p>No credits were consumed. Try again from <a href="{APP_URL}">the app</a>.</p>'
+        f"<p>Your caption job failed: {_esc(error[:300])}</p>"
+        f'<p>No credits were consumed. Try again from <a href="{_esc(APP_URL)}">the app</a>.</p>'
     )
     return _send_email(email, "Caption job failed", html)

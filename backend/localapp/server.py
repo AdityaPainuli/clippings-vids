@@ -433,7 +433,7 @@ def _render_worker(job_id: str, export: str, style: styles.CaptionStyle,
             # Cut first, then re-time the words onto the new timeline so the
             # captions and the cuts can never disagree.
             cut_objs = [tighten.Cut(c["start"], c["end"], c.get("reason", "silence"),
-                                    c.get("confidence", 1.0), auto=True) for c in cuts]
+                                 c.get("confidence", 1.0), text="", auto=True) for c in cuts]
             result = tighten.apply_cuts(words, cut_objs, info["duration"])
             if not result["kept"]:
                 raise RuntimeError("Every part of the video was cut")

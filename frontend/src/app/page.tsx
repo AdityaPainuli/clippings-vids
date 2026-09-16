@@ -31,6 +31,8 @@ const CAPTION_STYLES = [
   { id: "karaoke", label: "Karaoke", desc: "Progressive fill" },
 ];
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "${API_URL}";
+
 export default function Home() {
   const [url, setUrl] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -85,6 +87,33 @@ export default function Home() {
     }
   }, []);
 
+  // Auto-refresh access token every 50 minutes (Supabase tokens expire in ~1h)
+  useEffect(() => {
+    if (!token) return;
+    const REFRESH_INTERVAL = 50 * 60 * 1000; // 50 minutes
+    const refreshToken = async () => {
+      const storedRefresh = localStorage.getItem("clipwave_refresh_token");
+      if (!storedRefresh) return;
+      try {
+        const formData = new FormData();
+        formData.append("refresh_token", storedRefresh);
+        const res = await fetch(`${API_URL}/auth/refresh`, { method: "POST", body: formData });
+        if (res.ok) {
+          const data = await res.json();
+          localStorage.setItem("clipwave_access_token", data.access_token);
+          localStorage.setItem("clipwave_refresh_token", data.refresh_token);
+          setToken(data.access_token);
+        } else {
+          handleLogoutRef.current();
+        }
+      } catch {
+        // Network error — retry on next interval
+      }
+    };
+    const interval = setInterval(refreshToken, REFRESH_INTERVAL);
+    return () => clearInterval(interval);
+  }, [token]);
+
   // Cleanup SSE + polling on unmount
   useEffect(() => {
     return () => {
@@ -93,8 +122,9 @@ export default function Home() {
     };
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     localStorage.removeItem("clipwave_access_token");
+    localStorage.removeItem("clipwave_refresh_token");
     localStorage.removeItem("clipwave_user_email");
     setToken(null);
     setUserEmail(null);
@@ -102,7 +132,10 @@ export default function Home() {
     setJobId(null);
     eventSourceRef.current?.close();
     stopPolling();
-  };
+  }, []);
+
+  const handleLogoutRef = useRef(handleLogout);
+  handleLogoutRef.current = handleLogout;
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,7 +149,7 @@ export default function Home() {
       formData.append("email", authEmail);
       formData.append("password", authPassword);
 
-      const response = await fetch(`http://localhost:8000${endpoint}`, {
+      const response = await fetch(`${API_URL}${endpoint}`, {
         method: "POST",
         body: formData,
       });
@@ -129,6 +162,7 @@ export default function Home() {
 
       if (authMode === "login") {
         localStorage.setItem("clipwave_access_token", data.access_token);
+        localStorage.setItem("clipwave_refresh_token", data.refresh_token);
         localStorage.setItem("clipwave_user_email", data.email);
         setToken(data.access_token);
         setUserEmail(data.email);
@@ -161,7 +195,7 @@ export default function Home() {
 
     let streamToken: string;
     try {
-      const tokenRes = await fetch("http://localhost:8000/stream-token", {
+      const tokenRes = await fetch("${API_URL}/stream-token", {
         method: "POST",
         headers: { "Authorization": `Bearer ${authToken}` },
       });
@@ -174,7 +208,7 @@ export default function Home() {
     }
 
     const es = new EventSource(
-      `http://localhost:8000/stream/${jobId}?token=${encodeURIComponent(streamToken)}`
+      `${API_URL}/stream/${jobId}?token=${encodeURIComponent(streamToken)}`
     );
     eventSourceRef.current = es;
 
@@ -214,14 +248,14 @@ export default function Home() {
     stopPolling();
     const interval = setInterval(async () => {
       try {
-        const response = await fetch(`http://localhost:8000/status/${jobId}`, {
+        const response = await fetch(`${API_URL}/status/${jobId}`, {
           headers: { "Authorization": `Bearer ${authToken}` }
         });
         const data = await response.json();
 
         if (!response.ok) {
           if (response.status === 401 || response.status === 403) {
-            handleLogout();
+            handleLogoutRef.current();
             throw new Error("Session expired. Please log in again.");
           }
           throw new Error(data.detail || "Failed to fetch status");
@@ -282,7 +316,7 @@ export default function Home() {
       formData.append("min_clip_length", String(minLength));
       formData.append("max_clip_length", String(maxLength));
 
-      const response = await fetch("http://localhost:8000/process-url", {
+      const response = await fetch("${API_URL}/process-url", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`
@@ -305,7 +339,7 @@ export default function Home() {
       // If cached, results are already in the response
       if (data.status === "completed") {
         // Fetch full status to get results
-        const statusRes = await fetch(`http://localhost:8000/status/${data.job_id}`, {
+        const statusRes = await fetch(`${API_URL}/status/${data.job_id}`, {
           headers: { "Authorization": `Bearer ${token}` }
         });
         const statusData = await statusRes.json();
@@ -382,7 +416,7 @@ export default function Home() {
   };
 
   const getClipUrl = (clip: Clip) =>
-    clip.url || clip.src || (clip.path ? (clip.path.startsWith("http") ? clip.path : `http://localhost:8000${clip.path}`) : "");
+    clip.url || clip.src || (clip.path ? (clip.path.startsWith("http") ? clip.path : `${API_URL}${clip.path}`) : "");
 
   return (
     <main>

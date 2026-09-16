@@ -46,20 +46,7 @@ os.makedirs(WORK_DIR, exist_ok=True)
 # (server restarted mid-render; BackgroundTasks don't survive restarts).
 STALE_SECONDS = int(os.getenv("CAPTION_STALE_SECONDS", 1800))
 
-bearer = HTTPBearer()
-
-
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer)) -> dict:
-    token = credentials.credentials
-    try:
-        user = supabase.auth.get_user(token)
-        if not user or not user.user:
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
-        return {"user_id": user.user.id, "email": user.user.email}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Auth error: {str(e)}")
+from supabase_client import get_current_user
 
 
 def _owned_job(job_id: str, user_id: str) -> dict:

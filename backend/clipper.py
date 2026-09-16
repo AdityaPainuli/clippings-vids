@@ -175,7 +175,7 @@ def _parse_vtt_to_text(vtt_path):
         line = line.strip()
         if "-->" in line:
             current_time = line.split("-->")[0].strip()[:8]
-        elif line and current_time and not line.startswith("WEBVTT") and not line[0].isdigit():
+        elif line and current_time and not line.startswith("WEBVTT") and not line.strip().isdigit():
             clean = re.sub(r"<[^>]+>", "", line).strip()
             if clean:
                 lines.append(f"[{current_time}] {clean}")
@@ -192,7 +192,9 @@ def _find_vtt_file(video_path, info):
     parent = os.path.dirname(video_path)
     for fname in os.listdir(parent):
         if fname.startswith(os.path.basename(base)) and fname.endswith(".vtt"):
-            return os.path.join(parent, fname)
+            # Don't accidentally match another language like .ko.vtt
+            if ".en" in fname or fname == f"{os.path.basename(base)}.vtt":
+                return os.path.join(parent, fname)
     return None
 
 
@@ -200,10 +202,31 @@ def _parse_gemini_json(text):
     text = text.strip()
     if "```" in text:
         parts = text.split("```")
-        text = parts[1]
-        if text.lower().startswith("json"):
-            text = text[4:]
-    return json.loads(text.strip())
+        # Try each fenced block (parts[1], parts[3], ...) until one parses
+        for i in range(1, len(parts), 2):
+            candidate = parts[i]
+            if candidate.lower().startswith("json"):
+                candidate = candidate[4:]
+            candidate = candidate.strip()
+            if candidate:
+                try:
+                    return json.loads(candidate)
+                except json.JSONDecodeError:
+                    continue
+    # Try parsing the whole text directly
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    # Last resort: find outermost JSON array or object
+    start = min((i for i in (text.find("["), text.find("{")) if i >= 0), default=-1)
+    end = max(text.rfind("]"), text.rfind("}"))
+    if start >= 0 and end > start:
+        try:
+            return json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            pass
+    raise ValueError(f"No valid JSON found in response: {text[:200]}")
 
 
 # ---------------------------------------------------------------------------
@@ -919,7 +942,8 @@ def create_clips(video_path, clips_metadata, output_dir="output", captions=True,
     try:
         total_duration = float(probe.stdout.strip())
     except ValueError:
-        total_duration = VideoFileClip(video_path).duration
+        with VideoFileClip(video_path) as clip:
+            total_duration = clip.duration
 
     # Build task list
     tasks, meta_map = [], {}

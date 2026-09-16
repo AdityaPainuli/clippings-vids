@@ -19,7 +19,7 @@ interface PastClip {
   expires_at: string;
   expires_in_seconds: number;
   expires_in_human: string;
-  size_mb: number;
+  size_mb?: number;
 }
 
 interface MyClipsResponse {
@@ -27,6 +27,8 @@ interface MyClipsResponse {
   ttl_hours: number;
   clips: PastClip[];
 }
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function MyClips() {
   const [clipsData, setClipsData] = useState<MyClipsResponse | null>(null);
@@ -43,7 +45,7 @@ export default function MyClips() {
       }
 
       try {
-        const response = await fetch("http://localhost:8000/my-clips", {
+        const response = await fetch(`${API_URL}/my-clips`, {
           headers: {
             "Authorization": `Bearer ${token}`
           }
@@ -166,7 +168,7 @@ export default function MyClips() {
                       </p>
                       <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
                         <span>Size:</span>
-                        <span>{clip.size_mb} MB</span>
+                        <span>{clip.size_mb != null ? `${clip.size_mb} MB` : '—'}</span>
                       </p>
                     </div>
 

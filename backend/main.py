@@ -17,9 +17,11 @@ from captions.api import router as captions_router
 app = FastAPI()
 app.include_router(captions_router)
 
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -70,26 +72,7 @@ def _notify_job(job_id: str, event_data: dict):
         except asyncio.QueueFull:
             pass
 
-# ─────────────────────────────────────────────
-# Auth — validate Supabase JWT on protected routes
-# ─────────────────────────────────────────────
-bearer = HTTPBearer()
-
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer)) -> dict:
-    """
-    Verify the JWT that Supabase issues on login.
-    Returns the decoded user payload so routes can access user_id.
-    """
-    token = credentials.credentials
-    try:
-        # supabase-py verifies signature + expiry against the project's JWT secret
-        user = supabase.auth.get_user(token)
-        if not user or not user.user:
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
-        return {"user_id": user.user.id, "email": user.user.email}
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Auth error: {str(e)}")
-
+from supabase_client import get_current_user
 
 # ─────────────────────────────────────────────
 # Helpers
@@ -106,12 +89,35 @@ def _video_cache_key(url: str, instructions: Optional[str], user_id: str,
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
+CLIP_CACHE_MAX = int(os.getenv("CLIP_CACHE_MAX", 200))
+
+
+def _validate_clip_params(clip_style: str, caption_style: str,
+                          clip_count: Optional[int],
+                          min_clip_length: Optional[int],
+                          max_clip_length: Optional[int]):
+    """Shared validation for /process-url and /upload endpoints."""
+    if clip_style not in clipper.CLIP_STYLES:
+        raise HTTPException(status_code=400, detail=f"Invalid clip_style. Choose from: {list(clipper.CLIP_STYLES.keys())}")
+    if caption_style not in clipper.CAPTION_PRESETS:
+        raise HTTPException(status_code=400, detail=f"Invalid caption_style. Choose from: {list(clipper.CAPTION_PRESETS.keys())}")
+    if clip_count is not None and not (1 <= clip_count <= 10):
+        raise HTTPException(status_code=400, detail="clip_count must be between 1 and 10")
+    if min_clip_length is not None and not (5 <= min_clip_length <= 120):
+        raise HTTPException(status_code=400, detail="min_clip_length must be between 5 and 120 seconds")
+    if max_clip_length is not None and not (10 <= max_clip_length <= 180):
+        raise HTTPException(status_code=400, detail="max_clip_length must be between 10 and 180 seconds")
+    if (min_clip_length is not None and max_clip_length is not None
+            and min_clip_length > max_clip_length):
+        raise HTTPException(status_code=400, detail="min_clip_length cannot exceed max_clip_length")
+
+
 async def _maybe_cleanup():
     """Trigger Supabase storage cleanup at most once per CLEANUP_INT."""
     global _last_cleanup
     if time.time() - _last_cleanup > CLEANUP_INT:
         _last_cleanup = time.time()
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         deleted = 0
         try:
@@ -131,6 +137,12 @@ async def _maybe_cleanup():
         stale = [jid for jid, j in jobs.items() if j.get("created_at", now) < now - JOB_TTL]
         for jid in stale:
             jobs.pop(jid, None)
+
+        # Evict oldest clip cache entries if over the limit
+        if len(_clip_cache) > CLIP_CACHE_MAX:
+            excess = len(_clip_cache) - CLIP_CACHE_MAX
+            for key in list(_clip_cache.keys())[:excess]:
+                _clip_cache.pop(key, None)
 
         if deleted or stale:
             print(f"[cleanup] {deleted} storage file(s) deleted, {len(stale)} job record(s) purged")
@@ -154,7 +166,7 @@ async def process_video_task(
     min_clip_length: Optional[int] = None,
     max_clip_length: Optional[int] = None,
 ):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         # ── 1. Analyse ────────────────────────────────────────────────────────
         jobs[job_id]["status"] = "analyzing"
@@ -277,7 +289,7 @@ async def download_and_process(
     min_clip_length: Optional[int] = None,
     max_clip_length: Optional[int] = None,
 ):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         jobs[job_id]["status"] = "downloading"
         _notify_job(job_id, {"status": "downloading", "detail": "Downloading video..."})
@@ -360,20 +372,7 @@ async def process_url(
     max_clip_length: Optional[int] = Form(None),
     user: dict = Depends(get_current_user),
 ):
-    # Validate style params
-    if clip_style not in clipper.CLIP_STYLES:
-        raise HTTPException(status_code=400, detail=f"Invalid clip_style. Choose from: {list(clipper.CLIP_STYLES.keys())}")
-    if caption_style not in clipper.CAPTION_PRESETS:
-        raise HTTPException(status_code=400, detail=f"Invalid caption_style. Choose from: {list(clipper.CAPTION_PRESETS.keys())}")
-    if clip_count is not None and not (1 <= clip_count <= 10):
-        raise HTTPException(status_code=400, detail="clip_count must be between 1 and 10")
-    if min_clip_length is not None and not (5 <= min_clip_length <= 120):
-        raise HTTPException(status_code=400, detail="min_clip_length must be between 5 and 120 seconds")
-    if max_clip_length is not None and not (10 <= max_clip_length <= 180):
-        raise HTTPException(status_code=400, detail="max_clip_length must be between 10 and 180 seconds")
-    if (min_clip_length is not None and max_clip_length is not None
-            and min_clip_length > max_clip_length):
-        raise HTTPException(status_code=400, detail="min_clip_length cannot exceed max_clip_length")
+    _validate_clip_params(clip_style, caption_style, clip_count, min_clip_length, max_clip_length)
 
     await _maybe_cleanup()
     user_id   = user["user_id"]
@@ -424,19 +423,7 @@ async def upload_video(
     max_clip_length: Optional[int] = Form(None),
     user: dict = Depends(get_current_user),
 ):
-    if clip_style not in clipper.CLIP_STYLES:
-        raise HTTPException(status_code=400, detail=f"Invalid clip_style. Choose from: {list(clipper.CLIP_STYLES.keys())}")
-    if caption_style not in clipper.CAPTION_PRESETS:
-        raise HTTPException(status_code=400, detail=f"Invalid caption_style. Choose from: {list(clipper.CAPTION_PRESETS.keys())}")
-    if clip_count is not None and not (1 <= clip_count <= 10):
-        raise HTTPException(status_code=400, detail="clip_count must be between 1 and 10")
-    if min_clip_length is not None and not (5 <= min_clip_length <= 120):
-        raise HTTPException(status_code=400, detail="min_clip_length must be between 5 and 120 seconds")
-    if max_clip_length is not None and not (10 <= max_clip_length <= 180):
-        raise HTTPException(status_code=400, detail="max_clip_length must be between 10 and 180 seconds")
-    if (min_clip_length is not None and max_clip_length is not None
-            and min_clip_length > max_clip_length):
-        raise HTTPException(status_code=400, detail="min_clip_length cannot exceed max_clip_length")
+    _validate_clip_params(clip_style, caption_style, clip_count, min_clip_length, max_clip_length)
 
     await _maybe_cleanup()
     try:
@@ -508,9 +495,9 @@ async def stream_status(job_id: str, request: Request, token: str = ""):
         raise HTTPException(status_code=403, detail="Not your job")
 
     queue: asyncio.Queue = asyncio.Queue(maxsize=50)
-    _sse_subscribers.setdefault(job_id, []).append(queue)
 
     async def event_generator():
+        _sse_subscribers.setdefault(job_id, []).append(queue)
         try:
             # Send current state immediately
             job = jobs.get(job_id, {})

@@ -519,8 +519,8 @@ def summarize(cuts: list, duration: float) -> dict:
     return {
         "original_duration": round(duration, 2),
         "tightened_duration": round(duration - removed, 2),
-        "removed_seconds": removed,
-        "removed_percent": round(removed / duration * 100, 1) if duration else 0.0,
+        "auto_removed_seconds": removed,
+        "auto_removed_percent": round(removed / duration * 100, 1) if duration else 0.0,
         "auto_cuts": len(applied),
         "suggested_cuts": len(cuts) - len(applied),
         "by_reason": by_reason,
