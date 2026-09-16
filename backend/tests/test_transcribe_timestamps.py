@@ -54,8 +54,8 @@ class ASRTimestampValidationTests(unittest.TestCase):
     def test_rejects_non_ordered_word_end(self):
         with self.assertRaisesRegex(ValueError, "timestamps must be ordered"):
             transcribe._words_from_result(self._result([
-                {"start": 0.0, "end": 0.9, "word": "one"},
-                {"start": 1.0, "end": 0.8, "word": "two"},
+                {"start": 0.0, "end": 2.0, "word": "one"},
+                {"start": 1.0, "end": 1.5, "word": "two"},
             ]))
 
     def test_validates_sentence_fallback_timestamps(self):
