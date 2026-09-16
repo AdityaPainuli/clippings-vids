@@ -10,6 +10,7 @@ import asyncio
 import time
 import hashlib
 import clipper
+from stream_token_store import PersistentStreamTokenStore
 from supabase_client import supabase, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips
 from captions.api import router as captions_router
 
@@ -43,21 +44,16 @@ _last_cleanup: float = time.time()
 # SSE subscribers: job_id → list of asyncio.Queue
 _sse_subscribers: Dict[str, list] = {}
 
-# One-time stream tokens: token → {"user_id", "expires"}. The bearer JWT
-# never goes in a URL (query strings leak via logs/history); the client
-# exchanges it for a short-lived single-use token instead.
-_stream_tokens: Dict[str, dict] = {}
+# One-time stream tokens: durable/shared across application workers.
+# The raw token remains client-side and is stored only as a hash server-side.
+_stream_tokens = PersistentStreamTokenStore()
 STREAM_TOKEN_TTL = 300
 
 
 def _consume_stream_token(token: str) -> Optional[str]:
-    """Validate and burn a one-time stream token. Returns user_id or None."""
-    now = time.time()
-    # Drop expired tokens opportunistically
-    for t in [t for t, v in _stream_tokens.items() if v["expires"] < now]:
-        _stream_tokens.pop(t, None)
+    """Validate and atomically consume a one-time stream token."""
     entry = _stream_tokens.pop(token, None)
-    if entry and entry["expires"] >= now:
+    if entry and entry["expires"] >= time.time():
         return entry["user_id"]
     return None
 
