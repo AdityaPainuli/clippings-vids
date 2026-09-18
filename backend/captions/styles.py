@@ -7,7 +7,8 @@ Users edit colors as hex (#RRGGBB or #RRGGBBAA); conversion to ASS
 
 import re
 from typing import Literal, Optional
-from pydantic import BaseModel, Field, field_validator
+
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 HEX_RE = re.compile(r"^#?([0-9a-fA-F]{6})([0-9a-fA-F]{2})?$")
 
@@ -31,6 +32,7 @@ class Animation(BaseModel):
     scale_end: int = Field(115, ge=100, le=200)
     # pop/fade: total entrance duration (pop splits it into overshoot + settle)
     duration_ms: int = Field(150, ge=50, le=1000)
+    model_config = ConfigDict(extra="forbid")
 
 
 class CaptionStyle(BaseModel):
@@ -48,12 +50,14 @@ class CaptionStyle(BaseModel):
     shadow_color: str = "#00000099"
     outline_width: int = Field(4, ge=0, le=10)
     shadow_width: int = Field(3, ge=0, le=10)
-
+    
     # 1-9 numpad alignment (2 = bottom-center); margin_v in PlayRes pixels
     alignment: int = Field(2, ge=1, le=9)
     margin_v: int = Field(320, ge=0, le=1920)
 
     animation: Animation = Animation()
+    
+    model_config = ConfigDict(extra="forbid")
 
     @field_validator("text_color", "highlight_color", "outline_color", "shadow_color")
     @classmethod
