@@ -228,7 +228,9 @@ def detect(words: list, media_path: str | None = None, silences: list | None = N
     """
     Retake suggestions for a transcript.
 
-    Returns {"cuts": [Cut, ...], "groups": [...], "status": str}. Cuts are
+    Returns {"cuts": [Cut, ...], "groups": [...], "status": str}. A
+    `partial-model-error` status means every candidate group was scanned, but
+    one or more transient model failures were exhausted and skipped. Cuts are
     always `auto=False`: a retake is seconds of real speech and gets confirmed
     by a person, every time.
     """
@@ -293,7 +295,7 @@ def detect(words: list, media_path: str | None = None, silences: list | None = N
     error = None
     status = "ok" if reported else "none-confirmed"
     if transient_errors:
-        status = "model-error"
+        status = "partial-model-error"
         error = ("Transient LLM failure after retry; continued with the remaining "
                  "candidate groups: " + "; ".join(transient_errors))
     return {"cuts": cuts, "groups": reported, "status": status, "error": error,
