@@ -195,6 +195,11 @@ export default function Home() {
           setIsProcessing(false);
           setJobId(null);
           es.close();
+        } else if (data.status === "cancelled") {
+          setError(data.error || "Processing cancelled");
+          setIsProcessing(false);
+          setJobId(null);
+          es.close();
         }
       } catch {
         // ignore parse errors on heartbeats
@@ -230,13 +235,18 @@ export default function Home() {
         setStatus(data.status);
 
         if (data.status === "completed") {
-          setClips(data.results);
+          setClips(data.results || []);
           if (data.warnings) setWarning(data.warnings);
           setIsProcessing(false);
           setJobId(null);
           clearInterval(interval);
         } else if (data.status === "failed") {
           setError(data.error || "Processing failed");
+          setIsProcessing(false);
+          setJobId(null);
+          clearInterval(interval);
+        } else if (data.status === "cancelled") {
+          setError(data.error || "Processing cancelled");
           setIsProcessing(false);
           setJobId(null);
           clearInterval(interval);
