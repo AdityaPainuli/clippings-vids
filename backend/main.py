@@ -140,7 +140,6 @@ async def _maybe_cleanup():
             print(f"[cleanup] {deleted} storage file(s) deleted, {len(stale)} job record(s) purged")
 
 
-
 # ─────────────────────────────────────────────
 # Background tasks
 # ─────────────────────────────────────────────
