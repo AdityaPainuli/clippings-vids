@@ -99,6 +99,25 @@ class JobCancellationTests(unittest.TestCase):
         finally:
             storage.supabase = original
 
+    def test_worker_transition_is_rejected_when_cancellation_wins(self):
+        fake = FakeSupabase(
+            {"id": "job-1", "user_id": "owner", "status": "cancelled"},
+            update_result=[],
+        )
+        original = storage.supabase
+        storage.supabase = fake
+        try:
+            self.assertFalse(
+                storage.update_job("job-1", status="completed", filename="out.mp4")
+            )
+            self.assertEqual(
+                fake.table_instance.filters["status"],
+                ["queued", "transcribing", "romanizing", "rendering"],
+            )
+            self.assertEqual(fake.table_instance.update_payload["status"], "completed")
+        finally:
+            storage.supabase = original
+
 
 if __name__ == "__main__":
     unittest.main()
