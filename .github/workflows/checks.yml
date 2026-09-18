@@ -39,3 +39,16 @@ jobs:
 
       - name: Fit to length
         run: python scripts/check_fit.py
+
+      # Contributor unit tests. The suites stub the heavy imports (yt_dlp,
+      # whisper, moviepy) themselves, so this needs no dep beyond the runtime
+      # ones already installed above, and no pytest. The guard keeps the job
+      # green on a tree that has fixtures but no test modules yet; it goes
+      # live on its own the first time one lands.
+      - name: Unit tests
+        run: |
+          if ls tests/test_*.py >/dev/null 2>&1; then
+            python -m unittest discover -s tests -p "test_*.py" -v
+          else
+            echo "No test modules under backend/tests, nothing to run."
+          fi
