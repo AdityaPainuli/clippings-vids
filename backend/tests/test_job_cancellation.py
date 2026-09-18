@@ -100,5 +100,47 @@ class TestJobCancellation(unittest.IsolatedAsyncioTestCase):
         mock_cancel_job.assert_not_called()
 
 
+
+    @patch("captions.api.storage.is_job_cancelled", side_effect=[False, False, False, False, True])
+    @patch("captions.api.render.export_srt")
+    @patch("captions.api.engine.build_ass", return_value="[Script Info]")
+    async def test_cancelled_render_cleans_generated_files(
+        self,
+        mock_build_ass,
+        mock_export_srt,
+        mock_is_cancelled,
+    ):
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as temp_dir:
+            with patch("captions.api.WORK_DIR", temp_dir):
+                ass_path = os.path.join(temp_dir, "job-render.ass")
+                srt_path = os.path.join(temp_dir, "job-render.srt")
+
+                def create_srt_file(words, out_path, words_per_line, text_key="text"):
+                    Path(out_path).write_text("test subtitle", encoding="utf-8")
+                    return out_path
+
+                mock_export_srt.side_effect = create_srt_file
+
+                style = MagicMock()
+                style.words_per_line = 3
+
+                api._render_task(
+                    "job-render",
+                    "user-123",
+                    "test@example.com",
+                    None,
+                    [{"start": 0, "end": 1, "text": "hello"}],
+                    style,
+                    "srt",
+                    "text",
+                    {"width": 1080, "height": 1920, "duration": 1, "fps": 30},
+                )
+
+                self.assertFalse(os.path.exists(ass_path))
+                self.assertFalse(os.path.exists(srt_path))
+                mock_export_srt.assert_called_once()
+
 if __name__ == "__main__":
     unittest.main()

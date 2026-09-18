@@ -203,6 +203,7 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
                  words: list, style: styles.CaptionStyle, export: str,
                  text_key: str, video_info: Optional[dict]):
     local_source = None
+    generated_paths = set()
     try:
         if storage.is_job_cancelled(job_id):
             return
@@ -224,6 +225,7 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
             return
 
         ass_path = os.path.join(WORK_DIR, f"{job_id}.ass")
+        generated_paths.add(ass_path)
         with open(ass_path, "w", encoding="utf-8") as f:
             f.write(engine.build_ass(words, style, info["width"], info["height"],
                                      text_key=text_key))
@@ -234,24 +236,26 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
         if export == "ass":
             out = ass_path
         elif export == "srt":
-            out = render.export_srt(words, os.path.join(WORK_DIR, f"{job_id}.srt"),
+            out_path = os.path.join(WORK_DIR, f"{job_id}.srt")
+            generated_paths.add(out_path)
+            out = render.export_srt(words, out_path,
                                     style.words_per_line, text_key=text_key)
         elif export == "overlay":
+            out_path = os.path.join(WORK_DIR, f"{job_id}_overlay.mov")
+            generated_paths.add(out_path)
             out = render.render_overlay(
-                ass_path, os.path.join(WORK_DIR, f"{job_id}_overlay.mov"),
+                ass_path, out_path,
                 info["width"], info["height"], info["duration"], info["fps"])
         else:
             if not local_source:
                 raise RuntimeError("burned export requires an uploaded video")
+            out_path = os.path.join(WORK_DIR, f"{job_id}_subtitled.mp4")
+            generated_paths.add(out_path)
             out = render.burn_video(
                 local_source, ass_path,
-                os.path.join(WORK_DIR, f"{job_id}_subtitled.mp4"))
+                out_path)
 
         if storage.is_job_cancelled(job_id):
-            try:
-                os.remove(out)
-            except OSError:
-                pass
             return
 
         # Push the finished file to storage; fall back to serving the local
@@ -260,14 +264,13 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
         download_url = None
         try:
             if storage.is_job_cancelled(job_id):
-                try:
-                    os.remove(out)
-                except OSError:
-                    pass
                 return
 
             output_path = storage.upload_output(out, user_id, job_id)
             download_url = storage.signed_download_url(output_path)
+            if storage.is_job_cancelled(job_id):
+                storage._delete_storage_paths([output_path])
+                return
 
             if not storage.is_job_cancelled(job_id):
                 storage.update_job(job_id, status="completed",
@@ -286,7 +289,7 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
             storage.update_job(job_id, status="failed", error=str(e)[:500])
             notify.notify_failed(email, job_id, str(e))
     finally:
-        for p in (local_source,):
+        for p in (local_source, *generated_paths):
             if p:
                 try:
                     os.remove(p)

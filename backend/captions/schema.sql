@@ -24,6 +24,9 @@ create table if not exists caption_jobs (
   expires_at    timestamptz not null default now() + interval '48 hours'
 );
 
+alter table caption_jobs drop constraint if exists caption_jobs_status_check;
+alter table caption_jobs add constraint caption_jobs_status_check check (status in ('queued', 'transcribing', 'romanizing', 'rendering', 'completed', 'failed', 'cancelled'));
+
 create index if not exists caption_jobs_user_idx    on caption_jobs (user_id, created_at desc);
 create index if not exists caption_jobs_expiry_idx  on caption_jobs (expires_at);
 
