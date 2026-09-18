@@ -132,7 +132,10 @@ def _gemini(requests, prompt: str, system: str, max_tokens: int) -> str:
 
     candidate = candidates[0]
     finish_reason = candidate.get("finishReason")
-    if finish_reason in {"SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"}:
+    if finish_reason in {
+        "SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII",
+        "RECITATION", "LANGUAGE",
+    }:
         raise LLMError(f"Gemini blocked the response ({finish_reason})")
 
     content = candidate.get("content") or {}
