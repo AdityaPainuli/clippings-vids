@@ -175,6 +175,11 @@ def _delete_paths(paths: list) -> None:
         )
 
 
+def delete_clip_metadata(job_id: str) -> None:
+    """Delete all clip metadata rows produced by a job."""
+    supabase.table("clip_metadata").delete().eq("job_id", job_id).execute()
+
+
 def delete_old_clips() -> int:
     """
     Scan all files in the bucket via REST and delete anything older than
