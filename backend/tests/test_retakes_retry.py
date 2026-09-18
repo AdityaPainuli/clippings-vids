@@ -65,7 +65,7 @@ class RetakeRetryTests(unittest.TestCase):
         self.assertEqual(result["asked"], 2)
         self.assertEqual(len(result["groups"]), 1)
         self.assertEqual(result["groups"][0]["keep"], 1)
-        self.assertEqual(result["status"], "model-error")
+        self.assertEqual(result["status"], "partial-model-error")
         self.assertIn("continued with the remaining candidate groups", result["error"])
         self.assertEqual(len(result["cuts"]), 1)
 
