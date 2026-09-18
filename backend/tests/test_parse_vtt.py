@@ -213,6 +213,22 @@ class ParseVttStressTest(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_cue_text_containing_arrow_is_preserved(self):
+        path = self._write_vtt(
+            "WEBVTT\n\n"
+            "00:00:01.000 --> 00:00:04.000\n"
+            "Transition from Plan A --> Plan B\n"
+            "and finalize.\n\n"
+        )
+        try:
+            result = _parse_vtt_to_text(path)
+            self.assertEqual(
+                result,
+                "[00:00:01] Transition from Plan A --> Plan B and finalize.",
+            )
+        finally:
+            os.unlink(path)
+
 
 class ParseVttEdgeCasesTest(unittest.TestCase):
     def test_nonexistent_file_returns_none(self):
