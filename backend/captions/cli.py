@@ -132,6 +132,8 @@ def main():
                   "GOOGLE_API_KEY")
         elif found["status"] == "model-error":
             print(f"  detection did not finish: {found['error']}")
+        elif found["status"] == "partial-model-error":
+            print(f"  detection completed with transient model failures: {found['error']}")
         elif not found["groups"]:
             print("  none found")
         for g in found["groups"]:
