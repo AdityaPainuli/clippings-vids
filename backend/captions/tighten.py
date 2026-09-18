@@ -40,7 +40,7 @@ NONLEXICAL_FILLERS = {
 # in the original script.
 # Only sounds with no lexical meaning. Deliberately excludes "आ" (the
 # imperative "come") and other single vowels, which are real words.
-NONLEXICAL_FILLERS |= {"उम", "उम्म", "हम्म", "हूँ", "अःः"}
+NONLEXICAL_FILLERS |= {"उम", "उम्म", "हम्म", "अःः"}
 
 # Real vocabulary that is *sometimes* filler. Never cut on spelling alone.
 LEXICAL_FILLERS = {

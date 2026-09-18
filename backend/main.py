@@ -488,7 +488,7 @@ async def upload_video(
     # completely into memory at once.
     upload_chunk_size = 1024 * 1024  # 1 MiB
 
-    filename = file.filename or "uploaded_video"
+    filename = os.path.basename(file.filename or "uploaded_video") or "uploaded_video"
     file_path = os.path.join(UPLOAD_DIR, f"{job_id}_{filename}")
 
     try:
