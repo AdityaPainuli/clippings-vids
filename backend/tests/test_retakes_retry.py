@@ -16,11 +16,14 @@ class RetakeRetryTests(unittest.TestCase):
         group = self._group()
         transient = llm.LLMError("service unavailable", retryable=True)
 
-        with patch.object(retakes, "_ask", side_effect=[transient, {"retake": False}]) as ask, \
-                patch.object(retakes.time, "sleep") as sleep:
+        with patch.object(
+                retakes, "_ask",
+                side_effect=[transient, {"retake": True, "keep": 1, "confidence": 0.8, "reason": "same line"}],
+        ) as ask, patch.object(retakes.time, "sleep") as sleep:
             result = retakes._ask_with_retry(group, lambda *args, **kwargs: None)
 
-        self.assertEqual(result, {"retake": False})
+        self.assertTrue(result["retake"])
+        self.assertEqual(result["keep"], 1)
         self.assertEqual(ask.call_count, 2)
         sleep.assert_called_once_with(retakes.TRANSIENT_RETRY_DELAY)
 
