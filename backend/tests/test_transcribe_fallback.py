@@ -1,3 +1,4 @@
+import builtins
 import unittest
 from unittest.mock import patch
 
@@ -61,6 +62,17 @@ class TranscriptionFallbackTests(unittest.TestCase):
         mlx.assert_called_once_with("audio.wav", None)
         faster.assert_called_once_with("audio.wav", None)
         whisper.assert_called_once_with("audio.wav", None)
+
+    def test_openai_whisper_missing_module_is_unavailable(self):
+        real_import = builtins.__import__
+
+        def import_without_whisper(name, *args, **kwargs):
+            if name == "whisper":
+                raise ModuleNotFoundError("No module named 'whisper'", name="whisper")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=import_without_whisper):
+            self.assertIsNone(transcribe._transcribe_openai_whisper("audio.wav", None))
 
     def test_no_backend_available_has_distinct_error(self):
         with patch.object(transcribe, "_transcribe_mlx", return_value=None), patch.object(
