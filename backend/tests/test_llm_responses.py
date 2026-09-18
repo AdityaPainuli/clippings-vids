@@ -51,6 +51,32 @@ class TestGeminiResponses(unittest.TestCase):
         with self.assertRaisesRegex(llm.LLMError, r"Gemini blocked the response \(SAFETY\)"):
             self._call_gemini(requests)
 
+    def test_recitation_finish_reason_is_reported(self):
+        response = self._response({
+            "candidates": [{
+                "finishReason": "RECITATION",
+                "content": {"parts": []},
+            }]
+        })
+        requests = Mock()
+        requests.post.return_value = response
+
+        with self.assertRaisesRegex(llm.LLMError, r"Gemini blocked the response \\(RECITATION\\)"):
+            self._call_gemini(requests)
+
+    def test_language_finish_reason_is_reported(self):
+        response = self._response({
+            "candidates": [{
+                "finishReason": "LANGUAGE",
+                "content": {"parts": []},
+            }]
+        })
+        requests = Mock()
+        requests.post.return_value = response
+
+        with self.assertRaisesRegex(llm.LLMError, r"Gemini blocked the response \\(LANGUAGE\\)"):
+            self._call_gemini(requests)
+
     def test_empty_text_candidate_is_not_treated_as_success(self):
         response = self._response({
             "candidates": [{
