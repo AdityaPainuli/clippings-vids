@@ -56,7 +56,7 @@ _HINDI_LATIN = {
     "karta", "karti",
     "dena", "do", "diya", "lena", "lo", "liya", "aana", "jaan", "sochna",
     "dekhna", "dekho", "dekha", "baat", "samajhna",
-    "handle", "bhejta", "leke",
+    "bhejta", "leke",
     # Fillers & discourse markers (lexical)
     "matlab", "yaani", "yani", "waise", "aisa", "aise", "bilkul",
     "achha", "acha", "haan", "arre", "yaar", "bas", "sahi", "thik",
@@ -80,12 +80,12 @@ _TAMIL_LATIN = {
     # Verbs (common)
     "pogo", "poren", "varen", "solren", "pakuren", "panren",
     "irukku", "irukken", "illa", "illai", "irukkum",
-    "panni", "kandupidikkirom", "solren",
+    "panni", "kandupidikkirom", "solren", "pannuvanga", "pannirukkeengala",
     # Particles & common function words
     "antha", "ana", "aana", "aprom", "appuram", "ellam", "konjam",
     "romba", "mokka", "sari", "enna", "yenna", "endha",
     "aa", "la", "da", "di", "dei", "machan", "mama", "pa", "bro",
-    "pola", "maari", "mathiri", "theriyum", "therila",
+    "pola", "maari", "mathiri", "theriyum", "therila", "theriyuma",
     "vandhu", "pottu", "vechu", "eduthu",
     "pakkalaam", "solla", "paaru",
 }
@@ -98,13 +98,13 @@ _TELUGU_LATIN = {
     # Verbs (common)
     "chestunna", "cheyyadam", "cheppanu", "cheppu", "poni",
     "veltunna", "vastunna", "undi", "ledu",
-    "chestundi", "build", "chestaam",
+    "chestundi", "chestaam",
     # Particles & conjunctions
     "ante", "ayithe", "kaani", "kani", "mari", "aina", "oka", "okka",
     "anni", "chala", "chaaala", "konni", "koncham",
     "ga", "emo", "ra", "babai", "anna", "akka", "bro",
     "ayya", "amma",
-    "manchidi", "baagundi", "thelusaa", "telusaa", "telusa",
+    "manchidi", "baagundi", "bagundi", "thelusaa", "telusaa", "telusa",
     "cheyyi", "cheyyadam", "enti",
 }
 
@@ -124,6 +124,12 @@ _ENGLISH_OVERRIDE = {
     "first", "second", "one", "two", "three", "time", "day", "year",
     "people", "way", "work", "know", "think", "see", "come", "go",
     "get", "make", "use", "want", "need", "say", "tell", "give", "take",
+}
+
+
+_NONLEXICAL_SOUNDS = {
+    "um", "umm", "ummm", "uh", "uhh", "uhm", "erm", "er", "hmm", "hmmm",
+    "mmm", "mm", "ahh", "uhhh", "eh", "err", "ah",
 }
 
 
@@ -149,9 +155,9 @@ def _latin_lang(token: str, segment_lang: str) -> str:
 
     Priority order:
     1. Unambiguous English word → "en"
-    2. Regional lexicon match → regional code
-    3. Inherit segment_lang from Whisper detection
-    4. Fall back to "en"
+    2. Non-lexical hesitation sounds in regional speech → inherit segment_lang
+    3. Regional lexicon match → regional code
+    4. Unmatched Latin word (technical vocabulary, loan words) → "en"
     """
     t = token.lower().strip(".,!?;:\"'-–—")
     if not t:
@@ -165,6 +171,10 @@ def _latin_lang(token: str, segment_lang: str) -> str:
     # override set, trust that — don't pull it into a regional language.
     if segment_lang == "en" and t in _ENGLISH_OVERRIDE:
         return "en"
+
+    # Non-lexical hesitations in regional speech inherit the segment language
+    if t in _NONLEXICAL_SOUNDS and segment_lang in ("hi", "ta", "te"):
+        return segment_lang
 
     # Regional lexicons take priority for known regional vocabulary.
     if t in _HINDI_LATIN:
@@ -217,9 +227,10 @@ def tag_words(
             continue
         text = (w.get("hinglish") or w.get("text") or "").strip()
         script_hit = _script_lang(text)
+        norm_text = text.strip(".,!?;:\"'-–— \t\n")
         if script_hit is not None:
             lang = script_hit
-        elif LATIN_RE.match(text.replace(" ", "")):
+        elif LATIN_RE.match(norm_text.replace(" ", "")):
             lang = _latin_lang(text, base)
         else:
             lang = base

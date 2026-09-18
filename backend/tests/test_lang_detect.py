@@ -188,5 +188,66 @@ class MonolingualRegressionTest(unittest.TestCase):
         self.assertTrue(all(w["lang"] == "hi" for w in result))
 
 
+class DetectionEdgeCasesAndIntegrationTest(unittest.TestCase):
+    """Punctuation stripping, technical words, fixture roundtrips, and transcription integration."""
+
+    def test_punctuation_attached_tokens(self):
+        words = _words("project,", "hain.", "API!", "toh...")
+        result = tag_words(words, segment_lang="hi")
+        self.assertEqual(result[0]["lang"], "en")   # project, should be en despite hi segment
+        self.assertEqual(result[1]["lang"], "hi")   # hain. should be hi
+        self.assertEqual(result[2]["lang"], "en")   # API! should be en
+        self.assertEqual(result[3]["lang"], "hi")   # toh... should be hi
+
+    def test_technical_words_stay_english(self):
+        words_hi = _words("handle", "server", "architecture")
+        res_hi = tag_words(words_hi, segment_lang="hi")
+        self.assertTrue(all(w["lang"] == "en" for w in res_hi))
+
+        words_te = _words("build", "pipeline", "service")
+        res_te = tag_words(words_te, segment_lang="te")
+        self.assertTrue(all(w["lang"] == "en" for w in res_te))
+
+    def test_fixtures_untagged_roundtrip(self):
+        import json
+        fixtures_dir = os.path.join(os.path.dirname(__file__), "fixtures")
+        cases = [
+            ("hinglish_codemixed.json", "hi"),
+            ("tanglish_codemixed.json", "ta"),
+            ("tenglish_codemixed.json", "te"),
+        ]
+        for fname, slang in cases:
+            path = os.path.join(fixtures_dir, fname)
+            with open(path, encoding="utf-8") as f:
+                fx = json.load(f)
+            expected = [w["lang"] for w in fx["words"]]
+            stripped = [{k: v for k, v in w.items() if k != "lang"} for w in fx["words"]]
+            tagged = tag_words(stripped, segment_lang=slang)
+            actual = [w["lang"] for w in tagged]
+            self.assertEqual(
+                actual, expected,
+                f"Tagging mismatch on untagged words in {fname}"
+            )
+
+    def test_transcribe_video_integrates_tag_words(self):
+        from unittest.mock import patch
+        from captions import transcribe
+
+        fake_result = {
+            "language": "hi",
+            "backend": "whisper:test",
+            "words": [
+                {"start": 0.0, "end": 0.5, "text": "matlab"},
+                {"start": 0.5, "end": 1.0, "text": "project,"},
+            ],
+        }
+        with patch.object(transcribe, "_extract_audio"), \
+             patch.object(transcribe, "_transcribe_mlx", return_value=fake_result):
+            out = transcribe.transcribe_video("fake.mp4")
+            self.assertIn("lang", out["words"][0])
+            self.assertEqual(out["words"][0]["lang"], "hi")
+            self.assertEqual(out["words"][1]["lang"], "en")
+
+
 if __name__ == "__main__":
     unittest.main()
