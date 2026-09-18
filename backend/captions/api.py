@@ -9,17 +9,6 @@ directly to /captions/transcribe.
 Jobs live in the caption_jobs table (see schema.sql): they survive
 restarts, power the notification feed, and expire after the retention
 window (default 48h) when storage + rows are cleaned up.
-
-POST /captions/upload-url        signed direct-to-storage upload URL
-POST /captions/transcribe        audio/video (file or storage_path) → transcript
-POST /captions/render            transcript + style → export, emailed when done
-GET  /captions/jobs              my jobs
-GET  /captions/jobs/{id}         job status (transcript included when done)
-GET  /captions/download/{id}     redirect to signed download URL
-GET  /captions/notifications     unseen finished jobs (in-app bell)
-POST /captions/notifications/seen  mark feed items read
-GET  /captions/presets           built-in style presets
-GET  /captions/style-schema      JSON schema for the style editor UI
 """
 
 import json
@@ -38,14 +27,9 @@ from supabase_client import supabase
 from . import engine, notify, render, romanize, storage, styles, transcribe
 
 router = APIRouter(prefix="/captions", tags=["captions"])
-
 WORK_DIR = "captions_output"
 os.makedirs(WORK_DIR, exist_ok=True)
-
-# Jobs stuck in an active state longer than this are reported failed
-# (server restarted mid-render; BackgroundTasks don't survive restarts).
 STALE_SECONDS = int(os.getenv("CAPTION_STALE_SECONDS", 1800))
-
 bearer = HTTPBearer()
 
 
@@ -72,10 +56,6 @@ def _owned_job(job_id: str, user_id: str) -> dict:
 
 
 def _with_staleness(job: dict) -> dict:
-    """
-    Flag jobs orphaned by a server restart as failed, persisting the state
-    so notifications and later reads see the same durable status.
-    """
     if job["status"] in ("queued", "transcribing", "romanizing", "rendering"):
         try:
             from datetime import datetime
@@ -89,14 +69,17 @@ def _with_staleness(job: dict) -> dict:
     return job
 
 
-# ── Direct-to-storage upload ─────────────────────────────────────────────────
+def _cleanup_local_job_files(job_id: str) -> None:
+    """Best-effort removal of deterministic temporary files for a cancelled job."""
+    for suffix in ("_source", ".ass", ".srt", "_overlay.mov", "_subtitled.mp4"):
+        try:
+            os.remove(os.path.join(WORK_DIR, f"{job_id}{suffix}"))
+        except OSError:
+            pass
+
 
 @router.post("/upload-url")
-async def upload_url(
-    filename: str = Form(...),
-    user: dict = Depends(get_current_user),
-):
-    """Browser uploads the video straight to storage with this URL (PUT)."""
+async def upload_url(filename: str = Form(...), user: dict = Depends(get_current_user)):
     safe_name = os.path.basename(filename).replace(" ", "_")[:120]
     return storage.create_signed_upload(user["user_id"], uuid.uuid4().hex[:12], safe_name)
 
@@ -106,15 +89,26 @@ async def upload_url(
 def _transcribe_task(job_id: str, local_path: str, language: Optional[str],
                      hinglish: bool, cleanup_local: bool):
     try:
-        storage.update_job(job_id, status="transcribing")
+        if storage.is_cancelled(job_id):
+            return
+        if not storage.update_job(job_id, status="transcribing"):
+            return
         result = transcribe.transcribe_video(local_path, language=language)
+        if storage.is_cancelled(job_id):
+            return
         if hinglish:
-            storage.update_job(job_id, status="romanizing")
+            if not storage.update_job(job_id, status="romanizing"):
+                return
             result["words"] = romanize.romanize_words(result["words"])
+        if storage.is_cancelled(job_id):
+            return
         info = render.probe_video(local_path)
+        if storage.is_cancelled(job_id):
+            return
         storage.update_job(job_id, status="completed", transcript=result, video_info=info)
     except Exception as e:
-        storage.update_job(job_id, status="failed", error=str(e)[:500])
+        if not storage.is_cancelled(job_id):
+            storage.update_job(job_id, status="failed", error=str(e)[:500])
     finally:
         if cleanup_local:
             try:
@@ -126,8 +120,8 @@ def _transcribe_task(job_id: str, local_path: str, language: Optional[str],
 @router.post("/transcribe")
 async def transcribe_endpoint(
     background_tasks: BackgroundTasks,
-    file: Optional[UploadFile] = File(None),      # small files (extracted audio)
-    storage_path: Optional[str] = Form(None),      # big files via /upload-url
+    file: Optional[UploadFile] = File(None),
+    storage_path: Optional[str] = Form(None),
     language: Optional[str] = Form(None),
     hinglish: bool = Form(True),
     user: dict = Depends(get_current_user),
@@ -137,12 +131,9 @@ async def transcribe_endpoint(
     if storage_path and not storage_path.startswith(f"{user['user_id']}/"):
         raise HTTPException(status_code=403, detail="Not your upload")
 
-    job_id = storage.create_job(user["user_id"], "transcribe",
-                                source_path=storage_path)
-
+    job_id = storage.create_job(user["user_id"], "transcribe", source_path=storage_path)
     local_path = os.path.join(WORK_DIR, f"{job_id}_source")
     if file is not None:
-        # Stream to disk in chunks — never buffer the whole upload in memory
         with open(local_path, "wb") as f:
             while chunk := await file.read(1 << 20):
                 f.write(chunk)
@@ -152,13 +143,9 @@ async def transcribe_endpoint(
         except Exception as e:
             storage.update_job(job_id, status="failed", error=str(e)[:500])
             raise HTTPException(status_code=502, detail=f"Could not fetch upload: {e}")
-
-    background_tasks.add_task(_transcribe_task, job_id, local_path, language,
-                              hinglish, cleanup_local=True)
+    background_tasks.add_task(_transcribe_task, job_id, local_path, language, hinglish, True)
     return {"job_id": job_id, "status": "queued"}
 
-
-# ── Styles ───────────────────────────────────────────────────────────────────
 
 @router.get("/presets")
 async def list_presets():
@@ -179,74 +166,109 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
                  words: list, style: styles.CaptionStyle, export: str,
                  text_key: str, video_info: Optional[dict]):
     local_source = None
+    output_local = None
+    ass_path = None
     try:
-        storage.update_job(job_id, status="rendering")
+        if storage.is_cancelled(job_id):
+            return
+        if not storage.update_job(job_id, status="rendering"):
+            return
 
         if source_path:
             local_source = os.path.join(WORK_DIR, f"{job_id}_source")
             storage.download_to_file(source_path, local_source)
+            if storage.is_cancelled(job_id):
+                return
 
         info = video_info or (render.probe_video(local_source) if local_source else
                               {"width": 1080, "height": 1920,
                                "duration": words[-1]["end"], "fps": 30})
+        if storage.is_cancelled(job_id):
+            return
 
         ass_path = os.path.join(WORK_DIR, f"{job_id}.ass")
         with open(ass_path, "w", encoding="utf-8") as f:
-            f.write(engine.build_ass(words, style, info["width"], info["height"],
-                                     text_key=text_key))
+            f.write(engine.build_ass(words, style, info["width"], info["height"], text_key=text_key))
 
         if export == "ass":
-            out = ass_path
+            output_local = ass_path
         elif export == "srt":
-            out = render.export_srt(words, os.path.join(WORK_DIR, f"{job_id}.srt"),
-                                    style.words_per_line, text_key=text_key)
+            output_local = render.export_srt(words, os.path.join(WORK_DIR, f"{job_id}.srt"),
+                                              style.words_per_line, text_key=text_key)
         elif export == "overlay":
-            out = render.render_overlay(
+            output_local = render.render_overlay(
                 ass_path, os.path.join(WORK_DIR, f"{job_id}_overlay.mov"),
                 info["width"], info["height"], info["duration"], info["fps"])
         else:
             if not local_source:
                 raise RuntimeError("burned export requires an uploaded video")
-            out = render.burn_video(
+            output_local = render.burn_video(
                 local_source, ass_path, os.path.join(WORK_DIR, f"{job_id}_subtitled.mp4"))
 
-        # Push the finished file to storage; fall back to serving the local
-        # copy if the upload fails (e.g. file exceeds the plan's size limit).
-        filename = os.path.basename(out)
+        if storage.is_cancelled(job_id):
+            return
+
+        filename = os.path.basename(output_local)
         download_url = None
         try:
-            output_path = storage.upload_output(out, user_id, job_id)
-            download_url = storage.signed_download_url(output_path)
-            storage.update_job(job_id, status="completed",
-                               output_path=output_path, filename=filename)
-            os.remove(out)
+            output_storage = storage.upload_output(output_local, user_id, job_id)
+            if storage.is_cancelled(job_id):
+                try:
+                    storage._delete_storage_paths([output_storage])
+                except Exception:
+                    pass
+                return
+            download_url = storage.signed_download_url(output_storage)
+            if not storage.update_job(job_id, status="completed",
+                                      output_path=output_storage, filename=filename):
+                try:
+                    storage._delete_storage_paths([output_storage])
+                except Exception:
+                    pass
+                return
+            try:
+                os.remove(output_local)
+            except OSError:
+                pass
+            output_local = None
         except Exception as up_err:
+            if storage.is_cancelled(job_id):
+                return
             print(f"  [render] Output upload failed, serving locally: {up_err}")
-            storage.update_job(job_id, status="completed", filename=filename)
+            if not storage.update_job(job_id, status="completed", filename=filename):
+                return
 
-        notify.notify_completed(email, job_id, filename, download_url)
+        if not storage.is_cancelled(job_id):
+            notify.notify_completed(email, job_id, filename, download_url)
 
     except Exception as e:
-        storage.update_job(job_id, status="failed", error=str(e)[:500])
-        notify.notify_failed(email, job_id, str(e))
+        if not storage.is_cancelled(job_id):
+            storage.update_job(job_id, status="failed", error=str(e)[:500])
+            notify.notify_failed(email, job_id, str(e))
     finally:
-        for p in (local_source,):
-            if p:
-                try:
-                    os.remove(p)
-                except OSError:
-                    pass
+        if local_source:
+            try:
+                os.remove(local_source)
+            except OSError:
+                pass
+        if storage.is_cancelled(job_id):
+            for local_path in (local_source, output_local, ass_path):
+                if local_path:
+                    try:
+                        os.remove(local_path)
+                    except OSError:
+                        pass
 
 
 @router.post("/render")
 async def render_endpoint(
     background_tasks: BackgroundTasks,
-    transcript: str = Form(...),           # {"words": [{start,end,text,hinglish?}]}
-    style_json: str = Form(...),           # CaptionStyle JSON or {"preset": "name", ...overrides}
+    transcript: str = Form(...),
+    style_json: str = Form(...),
     export: ExportFormat = Form("burned"),
     text_key: str = Form("hinglish"),
-    storage_path: Optional[str] = Form(None),   # source video from /upload-url
-    video_info: Optional[str] = Form(None),     # {"width","height","duration","fps"}
+    storage_path: Optional[str] = Form(None),
+    video_info: Optional[str] = Form(None),
     user: dict = Depends(get_current_user),
 ):
     try:
@@ -270,8 +292,7 @@ async def render_endpoint(
         raise HTTPException(status_code=400, detail=f"Bad style: {e}")
 
     if export == "burned" and not storage_path:
-        raise HTTPException(status_code=400,
-                            detail="burned export requires storage_path (see /captions/upload-url)")
+        raise HTTPException(status_code=400, detail="burned export requires storage_path (see /captions/upload-url)")
     if storage_path and not storage_path.startswith(f"{user['user_id']}/"):
         raise HTTPException(status_code=403, detail="Not your upload")
 
@@ -282,14 +303,13 @@ async def render_endpoint(
     except (json.JSONDecodeError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Bad video_info: {e}")
 
-    job_id = storage.create_job(user["user_id"], "render", export=export,
-                                source_path=storage_path)
+    job_id = storage.create_job(user["user_id"], "render", export=export, source_path=storage_path)
     background_tasks.add_task(_render_task, job_id, user["user_id"], user["email"],
                               storage_path, words, style, export, text_key, info)
     return {"job_id": job_id, "status": "queued"}
 
 
-# ── Jobs / downloads / notifications ─────────────────────────────────────────
+# ── Jobs / cancellation / downloads / notifications ─────────────────────────
 
 @router.get("/jobs")
 async def my_jobs(user: dict = Depends(get_current_user)):
@@ -304,16 +324,34 @@ async def job_status(job_id: str, user: dict = Depends(get_current_user)):
     return job
 
 
+@router.post("/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str, user: dict = Depends(get_current_user)):
+    result = storage.request_cancel(job_id, user["user_id"])
+    if result == "not_found":
+        raise HTTPException(status_code=404, detail="Job not found")
+    if result == "forbidden":
+        raise HTTPException(status_code=403, detail="Not your job")
+    if result == "completed":
+        raise HTTPException(status_code=409, detail="Completed jobs cannot be cancelled")
+    if result == "failed":
+        raise HTTPException(status_code=409, detail="Failed jobs cannot be cancelled")
+    if result in ("cancelled", "already_cancelled"):
+        try:
+            storage.cleanup_cancelled_job(job_id, user["user_id"])
+        except Exception as e:
+            print(f"[cancel cleanup] storage cleanup failed for {job_id}: {e}")
+        _cleanup_local_job_files(job_id)
+        return {"job_id": job_id, "status": "cancelled"}
+
+
 @router.get("/download/{job_id}")
 async def download(job_id: str, user: dict = Depends(get_current_user)):
     job = _owned_job(job_id, user["user_id"])
     if job.get("status") != "completed":
         raise HTTPException(status_code=409, detail=f"Job status: {job.get('status')}")
-
     if job.get("output_path"):
         return RedirectResponse(storage.signed_download_url(job["output_path"], 3600))
 
-    # Fallback: output stayed local (storage upload failed)
     from fastapi.responses import FileResponse
     for suffix in ("_subtitled.mp4", "_overlay.mov", ".ass", ".srt"):
         local = os.path.join(WORK_DIR, f"{job_id}{suffix}")
@@ -328,10 +366,7 @@ async def notifications(user: dict = Depends(get_current_user)):
 
 
 @router.post("/notifications/seen")
-async def notifications_seen(
-    job_ids: str = Form(...),   # JSON array of job ids
-    user: dict = Depends(get_current_user),
-):
+async def notifications_seen(job_ids: str = Form(...), user: dict = Depends(get_current_user)):
     try:
         ids = json.loads(job_ids)
         if not isinstance(ids, list):

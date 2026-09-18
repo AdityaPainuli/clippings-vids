@@ -155,6 +155,7 @@ GET  /captions/style-schema        JSON schema for building a style-editor UI
 POST /captions/render              transcript + style + export → render job (email on finish)
 GET  /captions/jobs                my jobs
 GET  /captions/jobs/{id}           job status + transcript
+POST /captions/jobs/{id}/cancel    cancel an active caption job
 GET  /captions/download/{id}       redirect to signed download URL
 GET  /captions/notifications       unseen finished jobs (bell badge)
 POST /captions/notifications/seen  mark feed items read
@@ -164,7 +165,7 @@ All `/captions/*` routes require a Supabase bearer token (same auth as the clipp
 
 ## Clipper
 
-`POST /process-url` or `POST /upload` with optional `instructions`, `clip_style` (funny / educational / emotional / controversial / highlights) and `caption_style`. Jobs run in the background; poll `GET /status/{job_id}`. Finished clips upload to Supabase Storage with signed URLs and a 6-hour TTL.
+`POST /process-url` or `POST /upload` with optional `instructions`, `clip_style` (funny / educational / emotional / controversial / highlights) and `caption_style`. Jobs run in the background; poll `GET /status/{job_id}`. Cancel a queued or active job with `POST /jobs/{job_id}/cancel`. Finished clips upload to Supabase Storage with signed URLs and a 6-hour TTL.
 
 ## Setup
 
