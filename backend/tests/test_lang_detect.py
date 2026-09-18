@@ -200,13 +200,22 @@ class DetectionEdgeCasesAndIntegrationTest(unittest.TestCase):
         self.assertEqual(result[3]["lang"], "hi")   # toh... should be hi
 
     def test_technical_words_stay_english(self):
-        words_hi = _words("handle", "server", "architecture")
+        words_hi = _words("handle", "server", "architecture", "log")
         res_hi = tag_words(words_hi, segment_lang="hi")
         self.assertTrue(all(w["lang"] == "en" for w in res_hi))
 
-        words_te = _words("build", "pipeline", "service")
+        words_te = _words("build", "pipeline", "service", "bro")
         res_te = tag_words(words_te, segment_lang="te")
         self.assertTrue(all(w["lang"] == "en" for w in res_te))
+
+        # Utterance test cases cited in review:
+        s1 = _words("I", "need", "to", "do", "the", "log", "analysis")
+        res_s1 = tag_words(s1, segment_lang="hi")
+        self.assertEqual([w["lang"] for w in res_s1], ["en"] * 7)
+
+        s2 = _words("Hi", "bro", "can", "you", "handle", "the", "sound")
+        res_s2 = tag_words(s2, segment_lang="ta")
+        self.assertEqual([w["lang"] for w in res_s2], ["en"] * 7)
 
     def test_fixtures_untagged_roundtrip(self):
         import json

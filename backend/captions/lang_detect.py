@@ -45,16 +45,16 @@ LATIN_RE = re.compile(r"^[A-Za-z'\-]+$")
 _HINDI_LATIN = {
     # Pronouns & particles
     "main", "mein", "hum", "hamare", "aap", "tum", "woh", "yeh", "ye", "wo",
-    "kya", "hai", "hain", "tha", "thi", "the", "hoga", "hogi", "honge",
-    "ka", "ki", "ke", "ko", "se", "par", "tak", "bhi", "hi",
+    "kya", "hai", "hain", "tha", "thi", "hoga", "hogi", "honge",
+    "ka", "ki", "ke", "ko", "se", "par", "tak", "bhi",
     "na", "nahi", "nahin", "nhin",
     # Conjunctions/connectives
-    "aur", "lekin", "magar", "kyunki", "isliye", "toh", "to",
+    "aur", "lekin", "magar", "kyunki", "isliye", "toh",
     "agar", "phir", "jab", "tab", "jabtak",
     # Common verbs (infinitive/present)
     "karna", "karo", "kar", "kiya", "kiye", "karte", "karti", "karein",
     "karta", "karti",
-    "dena", "do", "diya", "lena", "lo", "liya", "aana", "jaan", "sochna",
+    "dena", "diya", "lena", "lo", "liya", "aana", "jaan", "sochna",
     "dekhna", "dekho", "dekha", "baat", "samajhna",
     "bhejta", "leke",
     # Fillers & discourse markers (lexical)
@@ -62,7 +62,7 @@ _HINDI_LATIN = {
     "achha", "acha", "haan", "arre", "yaar", "bas", "sahi", "thik",
     "theek",
     # Nouns & adjectives common in Hinglish
-    "paise", "kaam", "log", "cheez", "jagah", "waqt", "din",
+    "paise", "kaam", "cheez", "jagah", "waqt", "din",
     "roz", "baar", "thoda", "bahut", "zyada", "kam", "acchi", "bura",
     "naya", "purana", "chhota", "bada", "lamba",
     # Common demonstratives, quantifiers, adverbs
@@ -84,7 +84,7 @@ _TAMIL_LATIN = {
     # Particles & common function words
     "antha", "ana", "aana", "aprom", "appuram", "ellam", "konjam",
     "romba", "mokka", "sari", "enna", "yenna", "endha",
-    "aa", "la", "da", "di", "dei", "machan", "mama", "pa", "bro",
+    "aa", "la", "da", "di", "dei", "machan", "mama", "pa",
     "pola", "maari", "mathiri", "theriyum", "therila", "theriyuma",
     "vandhu", "pottu", "vechu", "eduthu",
     "pakkalaam", "solla", "paaru",
@@ -102,7 +102,7 @@ _TELUGU_LATIN = {
     # Particles & conjunctions
     "ante", "ayithe", "kaani", "kani", "mari", "aina", "oka", "okka",
     "anni", "chala", "chaaala", "konni", "koncham",
-    "ga", "emo", "ra", "babai", "anna", "akka", "bro",
+    "ga", "emo", "ra", "babai", "anna", "akka",
     "ayya", "amma",
     "manchidi", "baagundi", "bagundi", "thelusaa", "telusaa", "telusa",
     "cheyyi", "cheyyadam", "enti",
