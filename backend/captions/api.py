@@ -69,6 +69,15 @@ def _with_staleness(job: dict) -> dict:
     return job
 
 
+def _cleanup_local_job_files(job_id: str) -> None:
+    """Best-effort removal of deterministic temporary files for a cancelled job."""
+    for suffix in ("_source", ".ass", ".srt", "_overlay.mov", "_subtitled.mp4"):
+        try:
+            os.remove(os.path.join(WORK_DIR, f"{job_id}{suffix}"))
+        except OSError:
+            pass
+
+
 @router.post("/upload-url")
 async def upload_url(filename: str = Form(...), user: dict = Depends(get_current_user)):
     safe_name = os.path.basename(filename).replace(" ", "_")[:120]
@@ -82,12 +91,14 @@ def _transcribe_task(job_id: str, local_path: str, language: Optional[str],
     try:
         if storage.is_cancelled(job_id):
             return
-        storage.update_job(job_id, status="transcribing")
+        if not storage.update_job(job_id, status="transcribing"):
+            return
         result = transcribe.transcribe_video(local_path, language=language)
         if storage.is_cancelled(job_id):
             return
         if hinglish:
-            storage.update_job(job_id, status="romanizing")
+            if not storage.update_job(job_id, status="romanizing"):
+                return
             result["words"] = romanize.romanize_words(result["words"])
         if storage.is_cancelled(job_id):
             return
@@ -156,10 +167,12 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
                  text_key: str, video_info: Optional[dict]):
     local_source = None
     output_local = None
+    ass_path = None
     try:
         if storage.is_cancelled(job_id):
             return
-        storage.update_job(job_id, status="rendering")
+        if not storage.update_job(job_id, status="rendering"):
+            return
 
         if source_path:
             local_source = os.path.join(WORK_DIR, f"{job_id}_source")
@@ -206,7 +219,13 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
                     pass
                 return
             download_url = storage.signed_download_url(output_storage)
-            storage.update_job(job_id, status="completed", output_path=output_storage, filename=filename)
+            if not storage.update_job(job_id, status="completed",
+                                      output_path=output_storage, filename=filename):
+                try:
+                    storage._delete_storage_paths([output_storage])
+                except Exception:
+                    pass
+                return
             try:
                 os.remove(output_local)
             except OSError:
@@ -216,7 +235,8 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
             if storage.is_cancelled(job_id):
                 return
             print(f"  [render] Output upload failed, serving locally: {up_err}")
-            storage.update_job(job_id, status="completed", filename=filename)
+            if not storage.update_job(job_id, status="completed", filename=filename):
+                return
 
         if not storage.is_cancelled(job_id):
             notify.notify_completed(email, job_id, filename, download_url)
@@ -231,13 +251,13 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
                 os.remove(local_source)
             except OSError:
                 pass
-        # Keep locally-served outputs when the storage upload failed. They are
-        # removed by the existing retention cleanup path.
-        if output_local and storage.is_cancelled(job_id):
-            try:
-                os.remove(output_local)
-            except OSError:
-                pass
+        if storage.is_cancelled(job_id):
+            for local_path in (local_source, output_local, ass_path):
+                if local_path:
+                    try:
+                        os.remove(local_path)
+                    except OSError:
+                        pass
 
 
 @router.post("/render")
@@ -315,7 +335,13 @@ async def cancel_job(job_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=409, detail="Completed jobs cannot be cancelled")
     if result == "failed":
         raise HTTPException(status_code=409, detail="Failed jobs cannot be cancelled")
-    return {"job_id": job_id, "status": "cancelled"}
+    if result in ("cancelled", "already_cancelled"):
+        try:
+            storage.cleanup_cancelled_job(job_id, user["user_id"])
+        except Exception as e:
+            print(f"[cancel cleanup] storage cleanup failed for {job_id}: {e}")
+        _cleanup_local_job_files(job_id)
+        return {"job_id": job_id, "status": "cancelled"}
 
 
 @router.get("/download/{job_id}")

@@ -49,16 +49,16 @@ def create_job(user_id: str, kind: str, **fields) -> str:
 
 
 def update_job(job_id: str, **fields):
-    """Update a job without allowing normal workers to resurrect a cancelled job."""
+    """Update a job, atomically rejecting worker transitions after cancellation."""
     next_status = fields.get("status")
-    if next_status not in (None, "cancelled", "failed"):
-        current = get_job(job_id)
-        if current and current.get("status") == "cancelled":
-            return False
-
     fields["updated_at"] = datetime.now(timezone.utc).isoformat()
-    supabase.table("caption_jobs").update(fields).eq("id", job_id).execute()
-    return True
+
+    query = supabase.table("caption_jobs").update(fields).eq("id", job_id)
+    if next_status in _ACTIVE_STATUSES or next_status in ("completed", "failed"):
+        query = query.in_("status", list(_ACTIVE_STATUSES))
+
+    response = query.execute()
+    return bool(response.data) if next_status is not None else True
 
 
 def get_job(job_id: str) -> dict | None:
@@ -103,6 +103,29 @@ def request_cancel(job_id: str, user_id: str) -> str:
 def is_cancelled(job_id: str) -> bool:
     job = get_job(job_id)
     return bool(job and job.get("status") == "cancelled")
+
+
+def cleanup_cancelled_job(job_id: str, user_id: str) -> None:
+    """Best-effort cleanup of storage artifacts owned by a cancelled job."""
+    job = get_job(job_id)
+    if not job or job.get("user_id") != user_id:
+        return
+
+    output_path = job.get("output_path")
+    source_path = job.get("source_path")
+
+    if output_path:
+        _delete_storage_paths([output_path])
+
+    if source_path:
+        refs = (supabase.table("caption_jobs")
+                .select("id")
+                .eq("source_path", source_path)
+                .neq("id", job_id)
+                .limit(1)
+                .execute())
+        if not refs.data:
+            _delete_storage_paths([source_path])
 
 
 def list_jobs(user_id: str, limit: int = 50) -> list:
