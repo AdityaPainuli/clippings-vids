@@ -112,9 +112,12 @@ def _transcribe_faster_whisper(audio: str, language: str | None) -> dict | None:
             "words": words or [s for s in sentence_fallback if s["text"]]}
 
 
-def _transcribe_openai_whisper(audio: str, language: str | None) -> dict:
+def _transcribe_openai_whisper(audio: str, language: str | None) -> dict | None:
     global _cpu_model_cache
-    import whisper
+    try:
+        import whisper
+    except ImportError:
+        return None
     name = _cpu_model_name()
     if _cpu_model_cache is None or _cpu_model_cache[0] != name:
         _cpu_model_cache = (name, whisper.load_model(name))
