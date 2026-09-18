@@ -12,7 +12,7 @@ import hashlib
 import clipper
 from supabase_client import supabase, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips
 from captions.api import router as captions_router
-
+from media_validation import validate_media_file, InvalidMediaError
 
 app = FastAPI()
 app.include_router(captions_router)
@@ -442,9 +442,18 @@ async def upload_video(
     try:
         user_id   = user["user_id"]
         job_id    = str(uuid.uuid4())
+                   
         file_path = os.path.join(UPLOAD_DIR, f"{job_id}_{file.filename}")
+                    
         with open(file_path, "wb") as buffer:
+            
             buffer.write(await file.read())
+
+        try:
+            validate_media_file(file_path)
+        except InvalidMediaError as e:
+            os.remove(file_path)
+            raise HTTPException(status_code=400, detail=f"Invalid media file: {e}")
 
         jobs[job_id] = {
             "status":     "queued",
