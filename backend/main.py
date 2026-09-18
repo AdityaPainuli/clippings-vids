@@ -93,10 +93,8 @@ def _mark_cancelled(job_id: str, detail: str = "Job cancelled by user") -> None:
 
 def _cleanup_job_files(job_id: str, video_path: Optional[str] = None, results: Optional[list] = None) -> None:
     """Best-effort cleanup for local files and already-uploaded clip artifacts."""
-    paths = [
-        c.get("storage_path") for c in (results or [])
-        if c.get("storage_path")
-    ]
+    results = results or []
+    paths = [c.get("storage_path") for c in results if c.get("storage_path")]
     if paths:
         try:
             from supabase_client import _delete_paths
@@ -104,12 +102,23 @@ def _cleanup_job_files(job_id: str, video_path: Optional[str] = None, results: O
         except Exception as e:
             print(f"[cancel cleanup] storage cleanup failed for {job_id}: {e}")
 
+    try:
+        from supabase_client import delete_clip_metadata
+        delete_clip_metadata(job_id)
+    except Exception as e:
+        print(f"[cancel cleanup] metadata cleanup failed for {job_id}: {e}")
+
     candidates = []
     if video_path:
         candidates.append(video_path)
     job = jobs.get(job_id, {})
     if job.get("video_path"):
         candidates.append(job["video_path"])
+    candidates.extend(
+        os.path.join(OUTPUT_DIR, c["filename"])
+        for c in results
+        if c.get("filename")
+    )
     for p in candidates:
         try:
             if p and os.path.exists(p):
@@ -201,6 +210,7 @@ async def process_video_task(
     cancel_event = _cancel_event(job_id)
     try:
         if cancel_event.is_set():
+            _cleanup_job_files(job_id, video_path)
             _mark_cancelled(job_id)
             return
 
@@ -270,6 +280,10 @@ async def process_video_task(
                         from supabase_client import _delete_paths
                         _delete_paths([storage_path])
                     except Exception:
+                        pass
+                    try:
+                        os.remove(local_path)
+                    except OSError:
                         pass
                     _cleanup_job_files(job_id, video_path, results)
                     _mark_cancelled(job_id)
@@ -547,6 +561,7 @@ async def upload_video(
             "error": None,
             "created_at": time.time(),
             "user_id": user_id,
+            "video_path": file_path,
         }
         _cancel_event(job_id)
         background_tasks.add_task(
