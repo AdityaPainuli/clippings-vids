@@ -17,7 +17,7 @@ from captions.api import router as captions_router
 app = FastAPI()
 app.include_router(captions_router)
 
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+CORS_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,
