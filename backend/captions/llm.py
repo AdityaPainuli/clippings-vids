@@ -16,6 +16,7 @@ Only transcript text is ever sent. Audio and video never leave the machine.
 
 import json
 import os
+import time
 
 # Canonical provider → environment variable map. The desktop app's config
 # layer reads this rather than keeping its own copy, so the two can never
@@ -48,16 +49,35 @@ TIMEOUT = 60
 class LLMError(RuntimeError):
     """The call did not complete. Distinct from the model answering 'no'."""
 
+_LOCAL_AVAILABILITY_CACHE = None
+_LOCAL_AVAILABILITY_CHECKED_AT = 0.0
+_LOCAL_AVAILABILITY_TTL = 10.0
+
 
 def _local_available(requests) -> bool:
+    global _LOCAL_AVAILABILITY_CACHE, _LOCAL_AVAILABILITY_CHECKED_AT
+
+    now = time.monotonic()
+
+    if (
+        _LOCAL_AVAILABILITY_CACHE is not None
+        and now - _LOCAL_AVAILABILITY_CHECKED_AT < _LOCAL_AVAILABILITY_TTL
+    ):
+        return _LOCAL_AVAILABILITY_CACHE
+
     try:
         r = requests.get(
             f"{OPENAI_COMPATIBLE_BASE_URL.rstrip('/')}/models",
             timeout=5,
         )
-        return r.status_code == 200
+        available = r.status_code == 200
     except requests.RequestException:
-        return False
+        available = False
+
+    _LOCAL_AVAILABILITY_CACHE = available
+    _LOCAL_AVAILABILITY_CHECKED_AT = now
+
+    return available
 
 
 def provider() -> str | None:

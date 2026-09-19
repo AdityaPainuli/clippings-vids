@@ -1137,8 +1137,12 @@ function renderKeyState() {
   }
 
   const info = apiKeys[llmProvider] || {};
-  const where = info.source === "environment"
-    ? "from the environment" : "saved on this machine";
+  const where =
+  info.source === "environment"
+    ? "from the environment"
+    : info.source === "local"
+      ? "local endpoint"
+      : "saved on this machine";
   $("r-status").textContent = "";
   $("key-note").textContent =
     `Using ${llmProvider} ${info.hint || ""} (${where}).`;

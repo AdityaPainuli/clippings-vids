@@ -1,9 +1,15 @@
 """
 Hinglish romanization - Devanagari words → natural Latin spellings.
 
+<<<<<<< HEAD
 Primary path: the configured LLM provider rewrites the word list the way people
 actually type Hinglish ("chunautiyan", not IAST "cunatiyam"), preserving 1:1
 word alignment so timings survive. Fallback path: rule-based transliteration
+=======
+Primary path: the configured LLM provider rewrites the word list the way people actually type
+Hinglish ("chunautiyan", not IAST "cunatiyam"), preserving 1:1 word
+alignment so timing survives. Fallback path: rule-based transliteration
+>>>>>>> 1a12d60 (fix: cache local provider checks and clarify UI status)
 (indic-transliteration + cleanup) when no LLM is configured or available.
 
 Lang-tag aware: if a word carries a ``lang`` tag from lang_detect, only words
