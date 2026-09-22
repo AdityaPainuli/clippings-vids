@@ -126,9 +126,13 @@ async def _maybe_cleanup():
         except Exception as e:
             print(f"[cleanup] Caption cleanup failed: {e}")
 
-        # Also purge stale in-memory job records
+        # Also purge stale in-memory job records (only in terminal states)
         now = time.time()
-        stale = [jid for jid, j in jobs.items() if j.get("created_at", now) < now - JOB_TTL]
+        stale = [
+            jid for jid, j in list(jobs.items())
+            if j.get("created_at", now) < now - JOB_TTL
+            and j.get("status") in ("completed", "failed")
+        ]
         for jid in stale:
             jobs.pop(jid, None)
 
