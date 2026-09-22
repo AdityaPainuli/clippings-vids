@@ -107,9 +107,9 @@ def _transcribe_task(job_id: str, local_path: str, language: Optional[str],
                      hinglish: bool, cleanup_local: bool,
                      source_path: Optional[str] = None):
     try:
+        storage.update_job(job_id, status="transcribing")
         if source_path:
             storage.download_to_file(source_path, local_path)
-        storage.update_job(job_id, status="transcribing")
         result = transcribe.transcribe_video(local_path, language=language)
         if hinglish:
             storage.update_job(job_id, status="romanizing")
@@ -140,8 +140,11 @@ async def transcribe_endpoint(
     if storage_path and not storage_path.startswith(f"{user['user_id']}/"):
         raise HTTPException(status_code=403, detail="Not your upload")
 
+    # Direct-upload file takes precedence over storage_path if both are supplied
+    effective_source_path = storage_path if file is None else None
+
     job_id = storage.create_job(user["user_id"], "transcribe",
-                                source_path=storage_path)
+                                source_path=effective_source_path)
 
     local_path = os.path.join(WORK_DIR, f"{job_id}_source")
     if file is not None:
@@ -151,7 +154,7 @@ async def transcribe_endpoint(
                 f.write(chunk)
 
     background_tasks.add_task(_transcribe_task, job_id, local_path, language,
-                              hinglish, cleanup_local=True, source_path=storage_path)
+                              hinglish, cleanup_local=True, source_path=effective_source_path)
     return {"job_id": job_id, "status": "queued"}
 
 

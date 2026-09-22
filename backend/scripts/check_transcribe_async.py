@@ -9,7 +9,7 @@ in _transcribe_task instead of blocking the request handler synchronously.
 import asyncio
 import os
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, mock_open, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -52,8 +52,38 @@ def test_endpoint_queues_immediately():
         assert task.kwargs.get("cleanup_local") is True
 
 
+def test_endpoint_file_precedence_over_storage_path():
+    """Ensure direct-upload file takes precedence over storage_path when both are supplied."""
+    bg = BackgroundTasks()
+    user = {"user_id": "user123", "email": "user@example.com"}
+    mock_file = MagicMock()
+    mock_file.read = AsyncMock(side_effect=[b"sample_audio_content", b""])
+
+    with patch.object(api.storage, "create_job", return_value="job_xyz") as mock_create_job, \
+         patch("builtins.open", mock_open()) as m_open:
+
+        res = asyncio.run(api.transcribe_endpoint(
+            background_tasks=bg,
+            file=mock_file,
+            storage_path="user123/sources/job_xyz/video.mp4",
+            language=None,
+            hinglish=True,
+            user=user,
+        ))
+
+        assert res == {"job_id": "job_xyz", "status": "queued"}
+        # source_path should be None to prevent overwriting the uploaded file
+        mock_create_job.assert_called_once_with("user123", "transcribe", source_path=None)
+
+        assert len(bg.tasks) == 1
+        task = bg.tasks[0]
+        assert task.func == api._transcribe_task
+        assert task.kwargs.get("source_path") is None
+        assert task.kwargs.get("cleanup_local") is True
+
+
 def test_transcribe_task_downloads_and_handles_error():
-    """Ensure _transcribe_task downloads when source_path is present and marks failed on error."""
+    """Ensure _transcribe_task marks transcribing first, downloads when source_path is present, and marks failed on error."""
     with patch.object(api.storage, "download_to_file", side_effect=RuntimeError("Storage connection failed")) as mock_dl, \
          patch.object(api.storage, "update_job") as mock_update:
 
@@ -67,7 +97,10 @@ def test_transcribe_task_downloads_and_handles_error():
         )
 
         mock_dl.assert_called_once_with("user123/sources/job_abc/video.mp4", "captions_output/job_abc_source")
-        mock_update.assert_called_once_with("job_abc", status="failed", error="Storage connection failed")
+        assert mock_update.call_args_list == [
+            call("job_abc", status="transcribing"),
+            call("job_abc", status="failed", error="Storage connection failed"),
+        ]
 
 
 def test_transcribe_task_success():
@@ -96,6 +129,7 @@ def test_transcribe_task_success():
 
 def main():
     test_endpoint_queues_immediately()
+    test_endpoint_file_precedence_over_storage_path()
     test_transcribe_task_downloads_and_handles_error()
     test_transcribe_task_success()
     print("PASS — transcribe endpoint queues immediately without blocking event loop, background task downloads and handles errors.")
