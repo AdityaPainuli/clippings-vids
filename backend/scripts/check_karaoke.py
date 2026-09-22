@@ -11,6 +11,14 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from unittest.mock import MagicMock
+
+# Mock dependencies so check runs without ML/ffmpeg/ytdlp packages
+for mod in ("yt_dlp", "moviepy", "google.generativeai", "whisper", "cv2"):
+    if mod not in sys.modules:
+        sys.modules[mod] = MagicMock()
+
+import clipper  # noqa: E402
 from captions.styles import CaptionStyle, Animation, STYLE_PRESETS  # noqa: E402
 from captions.engine import build_ass  # noqa: E402
 
@@ -71,6 +79,29 @@ def main():
     if "Dialogue:" not in ass_pop:
         failures.append("Pop preset failed to generate Dialogue events")
 
+    # 6. Legacy clipper generator karaoke header and pause handling
+    clipper_header = clipper._build_ass_header("karaoke")
+    if "&H000000FF" in clipper_header:
+        failures.append("Legacy clipper ASS header still hardcodes &H000000FF")
+
+    clipper_preset = clipper.CAPTION_PRESETS["karaoke"]
+    expected_clipper_caption = f"Style: Caption,{clipper_preset['font']},{clipper_preset['fontsize']},{clipper_preset['highlight']},{clipper_preset['color']}"
+    if expected_clipper_caption not in clipper_header:
+        failures.append(f"Legacy clipper Style: Caption does not match expected colors:\nExpected: {expected_clipper_caption}")
+
+    clipper_events = clipper._words_to_ass_events(words, "karaoke")
+    if expected_event not in clipper_events:
+        failures.append(f"Legacy clipper karaoke missing pause tag:\nExpected: {expected_event}\nGot events:\n{clipper_events}")
+
+    clipper_cont_events = clipper._words_to_ass_events(continuous_words, "karaoke")
+    if expected_continuous not in clipper_cont_events:
+        failures.append(f"Legacy clipper continuous karaoke mismatch:\nExpected: {expected_continuous}\nGot events:\n{clipper_cont_events}")
+
+    # Non-karaoke legacy clipper header doesn't contain hardcoded red
+    default_header = clipper._build_ass_header("default")
+    if "&H000000FF" in default_header:
+        failures.append("Legacy clipper default ASS header still hardcodes &H000000FF")
+
     if failures:
         print("FAIL")
         for f in failures:
@@ -78,7 +109,7 @@ def main():
         return 1
 
     print("PASS — karaoke timing synchronized across pauses, highlight_color respected, "
-          "no hardcoded red, non-karaoke styles unaffected.")
+          "legacy clipper generator synced, no hardcoded red, non-karaoke styles unaffected.")
     return 0
 
 

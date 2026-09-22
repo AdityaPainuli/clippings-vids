@@ -39,3 +39,6 @@ jobs:
 
       - name: Fit to length
         run: python scripts/check_fit.py
+
+      - name: Karaoke timing and colors
+        run: python scripts/check_karaoke.py
