@@ -92,4 +92,11 @@ STYLE_PRESETS: dict[str, CaptionStyle] = {
         words_per_line=5, highlight_color="#FF5500", shadow_width=2,
         animation=Animation(type="karaoke"),
     ),
+    "neon": CaptionStyle(
+        font="Arial Black", font_size=76, uppercase=True, words_per_line=3,
+        text_color="#FFFFFF", highlight_color="#00E5FF",
+        outline_color="#FF00AA", shadow_color="#FF00AA88",
+        outline_width=4, shadow_width=2,
+        animation=Animation(type="pop", scale_start=60, scale_end=120, duration_ms=140),
+    ),
 }
