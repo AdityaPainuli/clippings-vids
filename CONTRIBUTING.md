@@ -112,7 +112,36 @@ don't need to. Open PRs and closed-unmerged PRs score nothing.
 Issues carry a difficulty label (`easy`, `medium`, `hard`, `expert`) and a PR
 inherits it when the body says `Closes #N`.
 
-Generated code is fine as a starting point. Generated code nobody read is not.
-If the issue you are "fixing" describes a bug that does not exist in the
-current code, the PR gets closed, so verify the problem is real before you
-write the fix.
+## On AI-assisted contributions
+
+Use whatever tools you like. I do. What I care about is whether you understood
+the change before you sent it.
+
+The line is simple: **an AI can help you write the fix, it cannot be the only
+thing that read the issue.** If you cannot explain in review why the bug
+happens, the PR is not ready.
+
+Things that get a PR closed without a detailed review:
+
+- **Fixing a bug that does not exist.** Before you write the fix, reproduce the
+  problem against current `main` and paste what you saw. Several PRs here have
+  "fixed" behaviour that was already correct, including one that added a
+  `math.isfinite` guard for a case the existing clamp already handled.
+- **Filing an issue and the PR that fixes it minutes apart, repeatedly.** One or
+  two is initiative. Twenty in an afternoon is not review-able and will be
+  treated as one batch, not twenty contributions.
+- **Tests that do not test the change.** Delete the line you are fixing. If the
+  test still passes, it proves nothing. This has happened here with a validator
+  whose test matched Pydantic's own built-in error message.
+- **Claiming you ran things you did not run.** "All tests pass" on a suite that
+  fails at import is the fastest way to lose the benefit of the doubt.
+- **Generated PR descriptions that do not match the diff.** If the body
+  documents functions that do not exist in the code, I stop trusting the rest
+  of it.
+
+None of this is about detecting AI. It is about whether a human checked the
+work. A short PR where you clearly understood the problem beats a large
+polished one you did not read, every time.
+
+If a PR gets closed for this, it is not a ban. Open a focused one on an issue
+you have actually reproduced and it gets reviewed like any other.
