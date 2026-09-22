@@ -104,8 +104,11 @@ async def upload_url(
 # ── Transcription ────────────────────────────────────────────────────────────
 
 def _transcribe_task(job_id: str, local_path: str, language: Optional[str],
-                     hinglish: bool, cleanup_local: bool):
+                     hinglish: bool, cleanup_local: bool,
+                     source_path: Optional[str] = None):
     try:
+        if source_path:
+            storage.download_to_file(source_path, local_path)
         storage.update_job(job_id, status="transcribing")
         result = transcribe.transcribe_video(local_path, language=language)
         if hinglish:
@@ -146,15 +149,9 @@ async def transcribe_endpoint(
         with open(local_path, "wb") as f:
             while chunk := await file.read(1 << 20):
                 f.write(chunk)
-    else:
-        try:
-            storage.download_to_file(storage_path, local_path)
-        except Exception as e:
-            storage.update_job(job_id, status="failed", error=str(e)[:500])
-            raise HTTPException(status_code=502, detail=f"Could not fetch upload: {e}")
 
     background_tasks.add_task(_transcribe_task, job_id, local_path, language,
-                              hinglish, cleanup_local=True)
+                              hinglish, cleanup_local=True, source_path=storage_path)
     return {"job_id": job_id, "status": "queued"}
 
 
