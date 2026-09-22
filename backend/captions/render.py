@@ -157,34 +157,49 @@ def render_cut(video_path: str, keep: list, out_path: str,
     fade at each edge — inaudible as a fade, and the difference between
     "sounds edited" and "sounds broken". Cuts are frame-accurate, which
     means a real re-encode; stream copy can only cut on keyframes.
+
+    Video-only inputs (no audio stream) are handled gracefully: the audio
+    filter chain and concat's a=1 are omitted so FFmpeg does not error on
+    a missing stream specifier.
     """
     if not keep:
         raise RuntimeError("Nothing left to render — every span was cut")
+
+    has_audio = probe_audio(video_path)["has_audio"]
 
     parts, vlabels, alabels = [], [], []
     for i, (s, e) in enumerate(keep):
         dur = e - s
         f = min(fade, dur / 3) if dur > 0 else 0
         parts.append(f"[0:v]trim=start={s:.3f}:end={e:.3f},setpts=PTS-STARTPTS[v{i}]")
-        afilters = [f"atrim=start={s:.3f}:end={e:.3f}", "asetpts=PTS-STARTPTS"]
-        if f > 0:
-            afilters.append(f"afade=t=in:st=0:d={f:.3f}")
-            afilters.append(f"afade=t=out:st={max(0, dur - f):.3f}:d={f:.3f}")
-        parts.append(f"[0:a]{','.join(afilters)}[a{i}]")
+        if has_audio:
+            afilters = [f"atrim=start={s:.3f}:end={e:.3f}", "asetpts=PTS-STARTPTS"]
+            if f > 0:
+                afilters.append(f"afade=t=in:st=0:d={f:.3f}")
+                afilters.append(f"afade=t=out:st={max(0, dur - f):.3f}:d={f:.3f}")
+            parts.append(f"[0:a]{','.join(afilters)}[a{i}]")
+            alabels.append(f"[a{i}]")
         vlabels.append(f"[v{i}]")
-        alabels.append(f"[a{i}]")
 
-    pairs = "".join(v + a for v, a in zip(vlabels, alabels))
-    parts.append(f"{pairs}concat=n={len(keep)}:v=1:a=1[vout][aout]")
+    if has_audio:
+        pairs = "".join(v + a for v, a in zip(vlabels, alabels))
+        parts.append(f"{pairs}concat=n={len(keep)}:v=1:a=1[vout][aout]")
+    else:
+        pairs = "".join(vlabels)
+        parts.append(f"{pairs}concat=n={len(keep)}:v=1:a=0[vout]")
+
     filtergraph = ";".join(parts)
 
     cmd = [
         "ffmpeg", "-y", "-i", video_path,
         "-filter_complex", filtergraph,
-        "-map", "[vout]", "-map", "[aout]",
+        "-map", "[vout]",
         "-c:v", "libx264", "-preset", "fast", "-crf", str(crf),
-        "-c:a", "aac", out_path,
     ]
+    if has_audio:
+        cmd += ["-map", "[aout]", "-c:a", "aac"]
+    cmd.append(out_path)
+
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"Cut render failed: {r.stderr[-400:]}")
