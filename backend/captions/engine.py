@@ -88,7 +88,7 @@ def _events(words: list, style: CaptionStyle) -> str:
         if anim.type == "karaoke":
             parts = []
             for w_idx, w in enumerate(chunk):
-                dur_cs = max(int(round((w["end"] - w["start"]) * 100)), 10)
+                dur_cs = max(int(round((w["end"] - w["start"]) * 100)), 1)
                 if w_idx > 0:
                     gap = w["start"] - chunk[w_idx - 1]["end"]
                     if gap > 0:

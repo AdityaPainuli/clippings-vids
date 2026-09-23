@@ -102,6 +102,20 @@ def main():
     if "&H000000FF" in default_header:
         failures.append("Legacy clipper default ASS header still hardcodes &H000000FF")
 
+    # 7. Short-word duration (<10cs) is accurately timed without artificial drift
+    short_words = [
+        {"start": 0.0, "end": 0.05, "text": "A"},
+        {"start": 0.05, "end": 0.50, "text": "test"},
+    ]
+    expected_short = r"{\kf5}A {\kf45}TEST"
+    ass_short = build_ass(short_words, karaoke_style)
+    if expected_short not in ass_short:
+        failures.append(f"Short-word karaoke timing drifted in build_ass:\nExpected: {expected_short}\nGot ASS:\n{ass_short}")
+
+    clipper_short = clipper._words_to_ass_events(short_words, "karaoke")
+    if expected_short not in clipper_short:
+        failures.append(f"Legacy clipper short-word karaoke timing drifted:\nExpected: {expected_short}\nGot events:\n{clipper_short}")
+
     if failures:
         print("FAIL")
         for f in failures:

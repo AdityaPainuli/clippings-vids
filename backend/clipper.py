@@ -610,7 +610,7 @@ def _words_to_ass_events(words: list, preset_name: str = "default") -> str:
             seg_start = chunk[0]["start"]
             parts = []
             for w_idx, w in enumerate(chunk):
-                dur_cs = max(int(round((w["end"] - w["start"]) * 100)), 10)
+                dur_cs = max(int(round((w["end"] - w["start"]) * 100)), 1)
                 if w_idx > 0:
                     gap = w["start"] - chunk[w_idx - 1]["end"]
                     if gap > 0:
