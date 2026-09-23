@@ -20,6 +20,7 @@ create index if not exists sse_events_created_at_idx
 
 alter table sse_events enable row level security;
 
+drop policy if exists "Service role can manage SSE events" on sse_events;
 revoke all on table sse_events from anon;
 grant select on table sse_events to authenticated;
 
@@ -42,4 +43,5 @@ create index if not exists sse_stream_tokens_expires_at_idx
 
 alter table sse_stream_tokens enable row level security;
 
+drop policy if exists "Service role can manage SSE stream tokens" on sse_stream_tokens;
 revoke all on table sse_stream_tokens from anon, authenticated;
