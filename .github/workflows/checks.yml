@@ -39,3 +39,6 @@ jobs:
 
       - name: Fit to length
         run: python scripts/check_fit.py
+
+      - name: CLI argument validation
+        run: python scripts/check_cli.py
