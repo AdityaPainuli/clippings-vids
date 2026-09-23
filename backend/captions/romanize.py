@@ -5,6 +5,11 @@ Primary path: Gemini rewrites the word list the way people actually type
 Hinglish ("chunautiyan", not IAST "cunatiyam"), preserving 1:1 word
 alignment so timings survive. Fallback path: rule-based transliteration
 (indic-transliteration + cleanup) when no API key is configured.
+
+Lang-tag aware: if a word carries a ``lang`` tag from lang_detect, only
+words tagged ``"hi"`` with Devanagari script are sent through the LLM/rule
+pipeline. Latin-script words of any lang pass through unchanged, as does
+any word already carrying a ``hinglish`` field.
 """
 
 import json
@@ -74,22 +79,53 @@ def _llm_romanize_chunk(words: list[str]) -> list[str] | None:
     return None
 
 
+def _needs_romanize(word: dict) -> bool:
+    """
+    True when a word requires Devanagari → Latin conversion.
+
+    Decision order:
+    1. Already has a ``hinglish`` field → already done, skip.
+    2. Has an explicit ``lang`` tag:
+       - ``"hi"`` + Devanagari script → needs romanization.
+       - Any other lang, or ``"hi"`` already in Latin → pass through.
+    3. No tag: fall back to DEVANAGARI_RE scan (legacy/untagged transcripts).
+    """
+    if word.get("hinglish"):
+        return False
+    text = word.get("text", "")
+    lang = word.get("lang")
+    if lang is not None:
+        return lang == "hi" and bool(DEVANAGARI_RE.search(text))
+    # Legacy path — no lang tag present
+    return bool(DEVANAGARI_RE.search(text))
+
+
 def romanize_words(words: list[dict]) -> list[dict]:
     """
-    Input/output: [{"start", "end", "text"}, ...]. Adds "hinglish" to each
-    word; "text" keeps the original script so edits stay lossless.
+    Input/output: [{"start", "end", "text", ...}, ...]. Adds ``hinglish`` to
+    each word that needs Devanagari → Latin conversion; ``text`` keeps the
+    original script so edits stay lossless.
+
+    Words carrying an explicit ``lang`` tag other than ``"hi"`` are always
+    passed through untouched (they are already in Latin script).
     """
     texts = [w["text"] for w in words]
     romanized: list[str] = []
 
     for i in range(0, len(texts), CHUNK):
-        chunk = texts[i : i + CHUNK]
-        if not any(DEVANAGARI_RE.search(t) for t in chunk):
-            romanized.extend(chunk)
+        chunk_words = words[i : i + CHUNK]
+        chunk_texts = texts[i : i + CHUNK]
+        # Only invoke the LLM/rule path when this chunk actually contains
+        # words that need romanization.
+        if not any(_needs_romanize(w) for w in chunk_words):
+            romanized.extend(chunk_texts)
             continue
-        out = _llm_romanize_chunk(chunk)
+        out = _llm_romanize_chunk(chunk_texts)
         if out is None:
-            out = [_rule_romanize(t) if DEVANAGARI_RE.search(t) else t for t in chunk]
+            out = [
+                _rule_romanize(t) if _needs_romanize(w) else t
+                for w, t in zip(chunk_words, chunk_texts)
+            ]
         romanized.extend(out)
 
     return [
