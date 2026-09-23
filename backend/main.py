@@ -41,29 +41,18 @@ jobs: Dict[str, dict] = {}
 _clip_cache: Dict[str, list] = {}
 _last_cleanup: float = time.time()
 
-# One-time stream tokens: token → {"user_id", "expires"}. The bearer JWT
-# never goes in a URL (query strings leak via logs/history); the client
-# exchanges it for a short-lived single-use token instead.
-_stream_tokens: Dict[str, dict] = {}
+# Stream-token lifetime. Token state is stored in Supabase so any worker can
+# issue and consume the token.
 STREAM_TOKEN_TTL = 300
+SSE_POLL_MIN_SECONDS = float(os.getenv("SSE_POLL_MIN_SECONDS", 1.0))
+SSE_POLL_MAX_SECONDS = float(os.getenv("SSE_POLL_MAX_SECONDS", 5.0))
+SSE_HEARTBEAT_SECONDS = float(os.getenv("SSE_HEARTBEAT_SECONDS", 15.0))
 
 
-def _consume_stream_token(token: str) -> Optional[str]:
-    """Validate and burn a one-time stream token. Returns user_id or None."""
-    now = time.time()
-    # Drop expired tokens opportunistically
-    for t in [t for t, v in _stream_tokens.items() if v["expires"] < now]:
-        _stream_tokens.pop(t, None)
-    entry = _stream_tokens.pop(token, None)
-    if entry and entry["expires"] >= now:
-        return entry["user_id"]
-    return None
-
-
-def _notify_job(job_id: str, event_data: dict):
+def _notify_job(job_id: str, user_id: str, event_data: dict):
     """Persist an SSE event so every application worker can observe it."""
     try:
-        sse_event_store.publish(job_id, event_data)
+        sse_event_store.publish(job_id, user_id, event_data)
     except Exception as e:
         print(f"[sse] Failed to persist event for job {job_id}: {e}")
 
@@ -132,6 +121,14 @@ async def _maybe_cleanup():
         except Exception as e:
             print(f"[cleanup] SSE event cleanup failed: {e}")
 
+        expired_stream_tokens = 0
+        try:
+            expired_stream_tokens = await loop.run_in_executor(
+                None, sse_event_store.cleanup_expired_stream_tokens
+            )
+        except Exception as e:
+            print(f"[cleanup] SSE stream-token cleanup failed: {e}")
+
         # Also purge stale in-memory job records (only in terminal states)
         now = time.time()
         stale = [
@@ -142,10 +139,12 @@ async def _maybe_cleanup():
         for jid in stale:
             jobs.pop(jid, None)
 
-        if deleted or deleted_events or stale:
+        if deleted or deleted_events or expired_stream_tokens or stale:
             print(
                 f"[cleanup] {deleted} storage file(s) deleted, "
-                f"{deleted_events} SSE event(s) deleted, {len(stale)} job record(s) purged"
+                f"{deleted_events} SSE event(s) deleted, "
+                f"{expired_stream_tokens} stream token(s) deleted, "
+                f"{len(stale)} job record(s) purged"
             )
 
 
@@ -171,7 +170,7 @@ async def process_video_task(
     try:
         # ── 1. Analyse ────────────────────────────────────────────────────────
         jobs[job_id]["status"] = "analyzing"
-        _notify_job(job_id, {"status": "analyzing", "detail": "Analyzing video for viral moments..."})
+        _notify_job(job_id, user_id, {"status": "analyzing", "detail": "Analyzing video for viral moments..."})
         clips_metadata = await loop.run_in_executor(
             None, clipper.analyze_video, video_path, instructions, info,
             clip_style, clip_count, min_clip_length, max_clip_length
@@ -405,6 +404,11 @@ async def process_url(
             "user_id":    user_id,
             "cached":     True,
         }
+        _notify_job(job_id, user_id, {
+            "status": "completed",
+            "results": _clip_cache[cache_key],
+            "cached": True,
+        })
         return {"job_id": job_id, "status": "completed", "cached": True}
 
     job_id = str(uuid.uuid4())
@@ -417,6 +421,7 @@ async def process_url(
         "user_id":    user_id,
         "cached":     False,
     }
+    _notify_job(job_id, user_id, {"status": "queued"})
     background_tasks.add_task(
         download_and_process, job_id, url, instructions, user_id, cache_key,
         captions, clip_style, caption_style, clip_count, min_clip_length, max_clip_length
@@ -466,6 +471,7 @@ async def upload_video(
             "created_at": time.time(),
             "user_id":    user_id,
         }
+        _notify_job(job_id, user_id, {"status": "queued"})
         background_tasks.add_task(
             process_video_task, job_id, file_path, instructions, user_id, None,
             captions, None, clip_style, caption_style, clip_count, min_clip_length, max_clip_length
@@ -491,14 +497,12 @@ async def create_stream_token(user: dict = Depends(get_current_user)):
     """
     Exchange the bearer JWT for a short-lived one-time SSE token.
     EventSource can't send Authorization headers, and putting the JWT in
-    the URL would leak it via logs/history — this token is safe to place
-    in a query param: single-use, 5-minute expiry, useless for other routes.
+    the URL would leak it via logs/history. The token is persisted in
+    Supabase so it can be consumed by any application worker.
     """
-    stream_token = uuid.uuid4().hex
-    _stream_tokens[stream_token] = {
-        "user_id": user["user_id"],
-        "expires": time.time() + STREAM_TOKEN_TTL,
-    }
+    stream_token = sse_event_store.issue_stream_token(
+        user["user_id"], STREAM_TOKEN_TTL
+    )
     return {"stream_token": stream_token, "expires_in": STREAM_TOKEN_TTL}
 
 
@@ -506,54 +510,63 @@ async def create_stream_token(user: dict = Depends(get_current_user)):
 async def stream_status(job_id: str, request: Request, token: str = ""):
     """
     SSE endpoint for real-time job status updates.
+
     Auth: one-time stream token from POST /stream-token (query param,
-    since EventSource doesn't support headers).
+    since EventSource doesn't support headers). Token consumption and job
+    ownership are checked against shared Supabase state, so the stream may
+    land on any application worker.
     """
     if not token:
         raise HTTPException(status_code=401, detail="Missing token")
-    user_id = _consume_stream_token(token)
+
+    user_id = sse_event_store.consume_stream_token(token)
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid or expired stream token")
 
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if jobs[job_id].get("user_id") != user_id:
-        raise HTTPException(status_code=403, detail="Not your job")
-
     loop = asyncio.get_event_loop()
     try:
-        # Capture the latest durable event before sending the current snapshot.
-        # Events published after this point are delivered by the polling loop.
-        last_event_id = await loop.run_in_executor(
-            None, sse_event_store.latest_event_id, job_id
+        current = await loop.run_in_executor(
+            None, sse_event_store.latest_event, job_id, user_id
         )
     except Exception as e:
-        print(f"[sse] Failed to initialize event cursor for job {job_id}: {e}")
-        last_event_id = 0
+        print(f"[sse] Failed to load job {job_id} for stream: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="SSE event storage temporarily unavailable",
+        )
+
+    if not current:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    last_event_id = int(current["id"])
+    current_event = current["event_data"]
 
     async def event_generator():
         nonlocal last_event_id
-        idle_polls = 0
+        poll_interval = SSE_POLL_MIN_SECONDS
+        next_heartbeat = time.monotonic() + SSE_HEARTBEAT_SECONDS
+
+        yield f"data: {json.dumps({'status': current_event.get('status', 'queued'), 'detail': 'Connected'})}\n\n"
+        yield f"data: {json.dumps(current_event)}\n\n"
+
+        if current_event.get("status") in ("completed", "failed"):
+            return
+
         try:
-            # Send current state immediately.
-            job = jobs.get(job_id, {})
-            yield f"data: {json.dumps({'status': job.get('status', 'queued'), 'detail': 'Connected'})}\n\n"
-
-            # If already done, send result and close.
-            if job.get("status") in ("completed", "failed"):
-                yield f"data: {json.dumps(job)}\n\n"
-                return
-
             while True:
                 if await request.is_disconnected():
                     break
 
                 try:
                     events = await loop.run_in_executor(
-                        None, sse_event_store.events_after, job_id, last_event_id
+                        None,
+                        sse_event_store.events_after,
+                        job_id,
+                        user_id,
+                        last_event_id,
                     )
                     if events:
-                        idle_polls = 0
+                        poll_interval = SSE_POLL_MIN_SECONDS
                         for event_record in events:
                             last_event_id = int(event_record["id"])
                             event = event_record["event_data"]
@@ -561,18 +574,25 @@ async def stream_status(job_id: str, request: Request, token: str = ""):
                             if event.get("status") in ("completed", "failed"):
                                 return
                     else:
-                        idle_polls += 1
-                        if idle_polls >= 15:
-                            yield ": heartbeat\n\n"
-                            idle_polls = 0
+                        poll_interval = min(
+                            SSE_POLL_MAX_SECONDS,
+                            max(SSE_POLL_MIN_SECONDS, poll_interval * 2),
+                        )
                 except Exception as e:
-                    # Keep the stream alive through a temporary persistence error.
-                    # A later poll can still deliver any events written afterward.
                     print(f"[sse] Event polling failed for job {job_id}: {e}")
+                    poll_interval = min(
+                        SSE_POLL_MAX_SECONDS,
+                        max(SSE_POLL_MIN_SECONDS, poll_interval * 2),
+                    )
 
-                await asyncio.sleep(1.0)
-        finally:
-            pass
+                now = time.monotonic()
+                if now >= next_heartbeat:
+                    yield ": heartbeat\n\n"
+                    next_heartbeat = now + SSE_HEARTBEAT_SECONDS
+
+                await asyncio.sleep(poll_interval)
+        except asyncio.CancelledError:
+            raise
 
     return StreamingResponse(
         event_generator(),
