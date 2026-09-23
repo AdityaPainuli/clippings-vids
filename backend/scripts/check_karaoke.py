@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from unittest.mock import MagicMock
 
 # Mock dependencies so check runs without ML/ffmpeg/ytdlp packages
-for mod in ("yt_dlp", "moviepy", "google.generativeai", "whisper", "cv2"):
+for mod in ("yt_dlp", "moviepy", "google.generativeai", "whisper", "cv2", "dotenv"):
     if mod not in sys.modules:
         sys.modules[mod] = MagicMock()
 
