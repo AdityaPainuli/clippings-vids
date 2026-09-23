@@ -140,4 +140,7 @@ def transcribe_video(video_path: str, language: str | None = None) -> dict:
             result = _transcribe_faster_whisper(audio, language)
         if result is None:
             result = _transcribe_openai_whisper(audio, language)
+        if result and "words" in result:
+            from .lang_detect import tag_words
+            result["words"] = tag_words(result["words"], result.get("language"))
         return result

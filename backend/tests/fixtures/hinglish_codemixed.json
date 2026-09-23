@@ -1,0 +1,264 @@
+{
+  "name": "hinglish-mid-utterance-switches",
+  "source": "Hand-built fixture: Hindi-English code-mixed speech (Hinglish) with mid-utterance language switches. All words are in Latin script.",
+  "note": "Tests the Hindi Latin-script lexicon disambiguation path in lang_detect. 'matlab' and 'yaani' are fillers when surrounded by dead air; 'toh', 'bas', 'na' are real here (grammatical). Technical English nouns ('API', 'backend', 'server') should never be cut. This is the Hinglish equivalent of staged_fillers.json but with explicit lang tags.",
+  "duration": 32.0,
+  "words": [
+    {
+      "start": 0.1,
+      "end": 0.55,
+      "text": "toh",
+      "lang": "hi"
+    },
+    {
+      "start": 0.57,
+      "end": 1.05,
+      "text": "dekhiye",
+      "lang": "hi"
+    },
+    {
+      "start": 1.07,
+      "end": 1.55,
+      "text": "hamare",
+      "lang": "hi"
+    },
+    {
+      "start": 1.57,
+      "end": 2.05,
+      "text": "backend",
+      "lang": "en"
+    },
+    {
+      "start": 2.07,
+      "end": 2.55,
+      "text": "mein",
+      "lang": "hi"
+    },
+    {
+      "start": 2.57,
+      "end": 3.05,
+      "text": "teen",
+      "lang": "hi"
+    },
+    {
+      "start": 3.07,
+      "end": 3.55,
+      "text": "APIs",
+      "lang": "en"
+    },
+    {
+      "start": 3.57,
+      "end": 4.05,
+      "text": "hain",
+      "lang": "hi"
+    },
+    {
+      "start": 5.0,
+      "end": 5.9,
+      "text": "matlab",
+      "lang": "hi"
+    },
+    {
+      "start": 6.55,
+      "end": 7.05,
+      "text": "pehla",
+      "lang": "hi"
+    },
+    {
+      "start": 7.07,
+      "end": 7.55,
+      "text": "API",
+      "lang": "en"
+    },
+    {
+      "start": 7.57,
+      "end": 8.05,
+      "text": "authentication",
+      "lang": "en"
+    },
+    {
+      "start": 8.07,
+      "end": 8.55,
+      "text": "handle",
+      "lang": "en"
+    },
+    {
+      "start": 8.57,
+      "end": 9.05,
+      "text": "karta",
+      "lang": "hi"
+    },
+    {
+      "start": 9.07,
+      "end": 9.55,
+      "text": "hai",
+      "lang": "hi"
+    },
+    {
+      "start": 10.2,
+      "end": 10.65,
+      "text": "umm",
+      "lang": "hi"
+    },
+    {
+      "start": 11.1,
+      "end": 11.6,
+      "text": "doosra",
+      "lang": "hi"
+    },
+    {
+      "start": 11.62,
+      "end": 12.1,
+      "text": "wala",
+      "lang": "hi"
+    },
+    {
+      "start": 12.12,
+      "end": 12.6,
+      "text": "data",
+      "lang": "en"
+    },
+    {
+      "start": 12.62,
+      "end": 13.1,
+      "text": "processing",
+      "lang": "en"
+    },
+    {
+      "start": 13.12,
+      "end": 13.6,
+      "text": "karta",
+      "lang": "hi"
+    },
+    {
+      "start": 13.62,
+      "end": 14.1,
+      "text": "hai",
+      "lang": "hi"
+    },
+    {
+      "start": 14.8,
+      "end": 15.8,
+      "text": "yaani",
+      "lang": "hi"
+    },
+    {
+      "start": 16.45,
+      "end": 16.95,
+      "text": "raw",
+      "lang": "en"
+    },
+    {
+      "start": 16.97,
+      "end": 17.45,
+      "text": "data",
+      "lang": "en"
+    },
+    {
+      "start": 17.47,
+      "end": 17.95,
+      "text": "leke",
+      "lang": "hi"
+    },
+    {
+      "start": 17.97,
+      "end": 18.45,
+      "text": "process",
+      "lang": "en"
+    },
+    {
+      "start": 18.47,
+      "end": 18.95,
+      "text": "karta",
+      "lang": "hi"
+    },
+    {
+      "start": 18.97,
+      "end": 19.45,
+      "text": "hai",
+      "lang": "hi"
+    },
+    {
+      "start": 20.1,
+      "end": 20.55,
+      "text": "aur",
+      "lang": "hi"
+    },
+    {
+      "start": 20.57,
+      "end": 21.05,
+      "text": "teesra",
+      "lang": "hi"
+    },
+    {
+      "start": 21.07,
+      "end": 21.55,
+      "text": "server",
+      "lang": "en"
+    },
+    {
+      "start": 21.57,
+      "end": 22.05,
+      "text": "ko",
+      "lang": "hi"
+    },
+    {
+      "start": 22.07,
+      "end": 22.55,
+      "text": "response",
+      "lang": "en"
+    },
+    {
+      "start": 22.57,
+      "end": 23.05,
+      "text": "bhejta",
+      "lang": "hi"
+    },
+    {
+      "start": 23.07,
+      "end": 23.55,
+      "text": "hai",
+      "lang": "hi"
+    },
+    {
+      "start": 24.5,
+      "end": 24.95,
+      "text": "bas",
+      "lang": "hi"
+    },
+    {
+      "start": 24.97,
+      "end": 25.45,
+      "text": "itna",
+      "lang": "hi"
+    },
+    {
+      "start": 25.47,
+      "end": 25.95,
+      "text": "hi",
+      "lang": "en"
+    },
+    {
+      "start": 25.97,
+      "end": 26.45,
+      "text": "samajhna",
+      "lang": "hi"
+    },
+    {
+      "start": 26.47,
+      "end": 26.95,
+      "text": "hai",
+      "lang": "hi"
+    }
+  ],
+  "filler_indices": [
+    8,
+    15,
+    22
+  ],
+  "known_real_words": [
+    0,
+    37,
+    30
+  ]
+}
