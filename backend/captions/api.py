@@ -140,11 +140,10 @@ async def transcribe_endpoint(
     if storage_path and not storage_path.startswith(f"{user['user_id']}/"):
         raise HTTPException(status_code=403, detail="Not your upload")
 
-    # Direct-upload file takes precedence over storage_path if both are supplied
-    effective_source_path = storage_path if file is None else None
-
+    # Retain storage_path in caption_jobs so delete_expired() can clean it up,
+    # even when direct file upload takes precedence over storage download.
     job_id = storage.create_job(user["user_id"], "transcribe",
-                                source_path=effective_source_path)
+                                source_path=storage_path)
 
     local_path = os.path.join(WORK_DIR, f"{job_id}_source")
     if file is not None:
@@ -153,8 +152,11 @@ async def transcribe_endpoint(
             while chunk := await file.read(1 << 20):
                 f.write(chunk)
 
+    # Direct-upload file takes precedence over storage_path download if both are supplied
+    download_source_path = storage_path if file is None else None
+
     background_tasks.add_task(_transcribe_task, job_id, local_path, language,
-                              hinglish, cleanup_local=True, source_path=effective_source_path)
+                              hinglish, cleanup_local=True, source_path=download_source_path)
     return {"job_id": job_id, "status": "queued"}
 
 

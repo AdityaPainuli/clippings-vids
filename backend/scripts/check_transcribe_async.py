@@ -53,7 +53,8 @@ def test_endpoint_queues_immediately():
 
 
 def test_endpoint_file_precedence_over_storage_path():
-    """Ensure direct-upload file takes precedence over storage_path when both are supplied."""
+    """Ensure direct-upload file takes precedence over storage_path when both are supplied,
+    while retaining storage_path on the job row for cleanup."""
     bg = BackgroundTasks()
     user = {"user_id": "user123", "email": "user@example.com"}
     mock_file = MagicMock()
@@ -72,9 +73,10 @@ def test_endpoint_file_precedence_over_storage_path():
         ))
 
         assert res == {"job_id": "job_xyz", "status": "queued"}
-        # source_path should be None to prevent overwriting the uploaded file
-        mock_create_job.assert_called_once_with("user123", "transcribe", source_path=None)
+        # Retain original storage_path in caption_jobs for lifecycle cleanup
+        mock_create_job.assert_called_once_with("user123", "transcribe", source_path="user123/sources/job_xyz/video.mp4")
 
+        # But pass source_path=None to background task so the direct-upload file isn't overwritten
         assert len(bg.tasks) == 1
         task = bg.tasks[0]
         assert task.func == api._transcribe_task
