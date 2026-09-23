@@ -20,13 +20,15 @@ create index if not exists sse_events_created_at_idx
 
 alter table sse_events enable row level security;
 
-drop policy if exists "Service role can manage SSE events" on sse_events;
-create policy "Service role can manage SSE events"
+revoke all on table sse_events from anon;
+grant select on table sse_events to authenticated;
+
+drop policy if exists "Authenticated users can read their own SSE events" on sse_events;
+create policy "Authenticated users can read their own SSE events"
   on sse_events
-  for all
-  to service_role
-  using (true)
-  with check (true);
+  for select
+  to authenticated
+  using ((select auth.uid()::text) = user_id);
 
 create table if not exists sse_stream_tokens (
   token_hash text primary key,
@@ -40,10 +42,4 @@ create index if not exists sse_stream_tokens_expires_at_idx
 
 alter table sse_stream_tokens enable row level security;
 
-drop policy if exists "Service role can manage SSE stream tokens" on sse_stream_tokens;
-create policy "Service role can manage SSE stream tokens"
-  on sse_stream_tokens
-  for all
-  to service_role
-  using (true)
-  with check (true);
+revoke all on table sse_stream_tokens from anon, authenticated;
