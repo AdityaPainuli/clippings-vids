@@ -8,6 +8,29 @@ RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "bolcap-release.yml"
 
 
 class ReleaseDependencyTests(unittest.TestCase):
+    EXPECTED_RUNTIME_DEPENDENCIES = {
+        "fastapi",
+        "uvicorn",
+        "python-multipart",
+        "pydantic",
+        "requests",
+        "faster-whisper",
+        "indic-transliteration",
+    }
+
+    def test_bolcap_runtime_dependencies_preserve_expected_package_set(self):
+        requirement_lines = [
+            line.strip()
+            for line in REQUIREMENTS.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+
+        dependency_names = {line.split("==", 1)[0] for line in requirement_lines}
+        self.assertEqual(
+            dependency_names,
+            self.EXPECTED_RUNTIME_DEPENDENCIES,
+        )
+
     def test_bolcap_runtime_dependencies_are_exactly_pinned(self):
         requirement_lines = [
             line.strip()
@@ -15,7 +38,10 @@ class ReleaseDependencyTests(unittest.TestCase):
             if line.strip() and not line.lstrip().startswith("#")
         ]
 
-        self.assertGreater(len(requirement_lines), 0)
+        self.assertEqual(
+            len(requirement_lines),
+            len(self.EXPECTED_RUNTIME_DEPENDENCIES),
+        )
         for line in requirement_lines:
             self.assertRegex(
                 line,
