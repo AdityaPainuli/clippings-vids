@@ -179,14 +179,14 @@ async def process_video_task(
         if not clips_metadata:
             jobs[job_id]["status"] = "failed"
             jobs[job_id]["error"]  = "No viral moments found in this video"
-            _notify_job(job_id, {"status": "failed", "error": "No viral moments found in this video"})
+            _notify_job(job_id, user_id, {"status": "failed", "error": "No viral moments found in this video"})
             return
 
-        _notify_job(job_id, {"status": "analyzing", "detail": f"Found {len(clips_metadata)} potential clips"})
+        _notify_job(job_id, user_id, {"status": "analyzing", "detail": f"Found {len(clips_metadata)} potential clips"})
 
         # ── 2. Render clips locally ───────────────────────────────────────────
         jobs[job_id]["status"] = "clipping"
-        _notify_job(job_id, {"status": "clipping", "detail": f"Rendering {len(clips_metadata)} clips...", "total_clips": len(clips_metadata)})
+        _notify_job(job_id, user_id, {"status": "clipping", "detail": f"Rendering {len(clips_metadata)} clips...", "total_clips": len(clips_metadata)})
         clips, render_failures = await loop.run_in_executor(
             None, clipper.create_clips, video_path, clips_metadata, OUTPUT_DIR,
             captions, caption_style
@@ -194,7 +194,7 @@ async def process_video_task(
 
         # ── 3. Upload each clip to Supabase Storage ───────────────────────────
         jobs[job_id]["status"] = "uploading"
-        _notify_job(job_id, {"status": "uploading", "detail": f"Uploading {len(clips)} clips...", "rendered": len(clips)})
+        _notify_job(job_id, user_id, {"status": "uploading", "detail": f"Uploading {len(clips)} clips...", "rendered": len(clips)})
         results = []
         upload_errors = []
         source_url = jobs[job_id].get("url", "")
@@ -251,7 +251,7 @@ async def process_video_task(
                 jobs[job_id]["failed_clips"] = all_errors
             if cache_key:
                 _clip_cache[cache_key] = results
-            _notify_job(job_id, {
+            _notify_job(job_id, user_id, {
                 "status": "completed",
                 "results": results,
                 "warnings": jobs[job_id].get("warnings"),
@@ -261,7 +261,7 @@ async def process_video_task(
             jobs[job_id]["status"] = "failed"
             jobs[job_id]["error"]  = err_msg
             jobs[job_id]["failed_clips"] = all_errors
-            _notify_job(job_id, {"status": "failed", "error": err_msg})
+            _notify_job(job_id, user_id, {"status": "failed", "error": err_msg})
 
         # Delete source video
         try:
@@ -272,7 +272,7 @@ async def process_video_task(
     except Exception as e:
         jobs[job_id]["status"] = "failed"
         jobs[job_id]["error"]  = str(e)
-        _notify_job(job_id, {"status": "failed", "error": str(e)})
+        _notify_job(job_id, user_id, {"status": "failed", "error": str(e)})
         print(f"[job {job_id}] failed: {e}")
 
 
@@ -292,12 +292,12 @@ async def download_and_process(
     loop = asyncio.get_event_loop()
     try:
         jobs[job_id]["status"] = "downloading"
-        _notify_job(job_id, {"status": "downloading", "detail": "Downloading video..."})
+        _notify_job(job_id, user_id, {"status": "downloading", "detail": "Downloading video..."})
         video_path, info = await loop.run_in_executor(
             None, clipper.download_video, url, UPLOAD_DIR
         )
         jobs[job_id]["video_path"] = video_path
-        _notify_job(job_id, {"status": "downloading", "detail": "Download complete"})
+        _notify_job(job_id, user_id, {"status": "downloading", "detail": "Download complete"})
         await process_video_task(
             job_id, video_path, instructions, user_id, info, captions, cache_key,
             clip_style, caption_style, clip_count, min_clip_length, max_clip_length
@@ -305,7 +305,7 @@ async def download_and_process(
     except Exception as e:
         jobs[job_id]["status"] = "failed"
         jobs[job_id]["error"]  = str(e)
-        _notify_job(job_id, {"status": "failed", "error": str(e)})
+        _notify_job(job_id, user_id, {"status": "failed", "error": str(e)})
 
 
 # ─────────────────────────────────────────────
