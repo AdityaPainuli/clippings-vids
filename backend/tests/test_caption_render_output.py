@@ -15,8 +15,9 @@ sys.modules.setdefault("supabase_client", supabase_client_stub)
 
 
 class _FakeStorage:
-    def __init__(self, upload_error=None):
+    def __init__(self, upload_error=None, sign_error=None):
         self.upload_error = upload_error
+        self.sign_error = sign_error
         self.updated = []
 
     def upload_output(self, local_path, user_id, job_id):
@@ -25,6 +26,8 @@ class _FakeStorage:
         return f"{user_id}/outputs/{job_id}/{os.path.basename(local_path)}"
 
     def signed_download_url(self, output_path):
+        if self.sign_error:
+            raise self.sign_error
         return f"https://example.test/{output_path}"
 
     def update_job(self, job_id, **fields):
@@ -110,6 +113,38 @@ class RenderOutputDurabilityTests(unittest.TestCase):
                 any(name.endswith(".ass") for name in os.listdir(work_dir)),
                 os.listdir(work_dir),
             )
+
+    def test_failed_download_url_signing_preserves_uploaded_output_path(self):
+        storage = _FakeStorage(sign_error=RuntimeError("signing unavailable"))
+        notify = _FakeNotify()
+
+        with tempfile.TemporaryDirectory() as work_dir:
+            self._run_render_task(storage, notify, work_dir)
+
+        failed = [fields for _, fields in storage.updated if fields.get("status") == "failed"]
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(
+            failed[0]["output_path"],
+            "user-1/outputs/job-1/job-1.ass",
+        )
+        self.assertEqual(failed[0]["filename"], "job-1.ass")
+        self.assertEqual(len(notify.completed), 0)
+        self.assertEqual(len(notify.failed), 1)
+
+    def test_local_cleanup_failure_does_not_change_completed_job(self):
+        storage = _FakeStorage()
+        notify = _FakeNotify()
+
+        with tempfile.TemporaryDirectory() as work_dir:
+            with patch.object(self.api.os, "remove", side_effect=OSError("busy file")):
+                self._run_render_task(storage, notify, work_dir)
+
+        completed = [fields for _, fields in storage.updated if fields.get("status") == "completed"]
+        failed = [fields for _, fields in storage.updated if fields.get("status") == "failed"]
+        self.assertEqual(len(completed), 1)
+        self.assertEqual(len(failed), 0)
+        self.assertEqual(len(notify.completed), 1)
+        self.assertEqual(len(notify.failed), 0)
 
 
 if __name__ == "__main__":
