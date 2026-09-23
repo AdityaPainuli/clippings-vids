@@ -54,6 +54,41 @@ class ClipRetentionPaginationTests(unittest.TestCase):
             [0, 1000],
         )
 
+    def test_list_prefix_stops_after_short_page(self):
+        first_page = [{"name": f"clip-{i}"} for i in range(3)]
+
+        def post(url, **kwargs):
+            payload = kwargs["json"]
+            self.assertEqual(payload["offset"], 0)
+            self.assertEqual(payload["limit"], 1000)
+            return FakeResponse(data=first_page)
+
+        with patch.object(self.supabase_client.requests, "post", side_effect=post) as post_mock:
+            result = self.supabase_client._list_prefix("user/job")
+
+        self.assertEqual(result, first_page)
+        self.assertEqual(post_mock.call_count, 1)
+
+    def test_list_prefix_stops_after_exact_full_page_when_follow_up_is_empty(self):
+        first_page = [{"name": f"clip-{i}"} for i in range(1000)]
+
+        def post(url, **kwargs):
+            payload = kwargs["json"]
+            if payload["offset"] == 0:
+                return FakeResponse(data=first_page)
+            if payload["offset"] == 1000:
+                return FakeResponse(data=[])
+            raise AssertionError(f"Unexpected listing request: {payload}")
+
+        with patch.object(self.supabase_client.requests, "post", side_effect=post) as post_mock:
+            result = self.supabase_client._list_prefix("user/job")
+
+        self.assertEqual(len(result), 1000)
+        self.assertEqual(
+            [call.kwargs["json"]["offset"] for call in post_mock.call_args_list],
+            [0, 1000],
+        )
+
     def test_retention_scan_deletes_expired_object_on_second_page(self):
         fresh = "2099-01-01T00:00:00+00:00"
         old = "2000-01-01T00:00:00+00:00"
