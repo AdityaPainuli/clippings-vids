@@ -180,6 +180,8 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
                  text_key: str, video_info: Optional[dict]):
     local_source = None
     out = None
+    output_path = None
+    filename = None
     try:
         storage.update_job(job_id, status="rendering")
 
@@ -213,15 +215,43 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
 
         filename = os.path.basename(out)
         output_path = storage.upload_output(out, user_id, job_id)
-        download_url = storage.signed_download_url(output_path)
-        storage.update_job(job_id, status="completed",
-                           output_path=output_path, filename=filename)
-        os.remove(out)
+
+        try:
+            download_url = storage.signed_download_url(output_path)
+        except Exception as sign_err:
+            storage.update_job(
+                job_id,
+                status="failed",
+                error=str(sign_err)[:500],
+                output_path=output_path,
+                filename=filename,
+            )
+            notify.notify_failed(email, job_id, str(sign_err))
+            return
+
+        storage.update_job(
+            job_id,
+            status="completed",
+            output_path=output_path,
+            filename=filename,
+        )
+
+        completed_path = out
         out = None
+        try:
+            os.remove(completed_path)
+        except OSError as cleanup_err:
+            print(f"  [render] Local output cleanup failed: {cleanup_err}")
+
         notify.notify_completed(email, job_id, filename, download_url)
 
     except Exception as e:
-        storage.update_job(job_id, status="failed", error=str(e)[:500])
+        fields = {"status": "failed", "error": str(e)[:500]}
+        if output_path:
+            fields["output_path"] = output_path
+        if filename:
+            fields["filename"] = filename
+        storage.update_job(job_id, **fields)
         notify.notify_failed(email, job_id, str(e))
     finally:
         for p in (local_source, out):
