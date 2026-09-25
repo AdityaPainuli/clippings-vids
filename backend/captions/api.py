@@ -104,9 +104,12 @@ async def upload_url(
 # ── Transcription ────────────────────────────────────────────────────────────
 
 def _transcribe_task(job_id: str, local_path: str, language: Optional[str],
-                     hinglish: bool, cleanup_local: bool):
+                     hinglish: bool, cleanup_local: bool,
+                     source_path: Optional[str] = None):
     try:
         storage.update_job(job_id, status="transcribing")
+        if source_path:
+            storage.download_to_file(source_path, local_path)
         result = transcribe.transcribe_video(local_path, language=language)
         if hinglish:
             storage.update_job(job_id, status="romanizing")
@@ -137,6 +140,8 @@ async def transcribe_endpoint(
     if storage_path and not storage_path.startswith(f"{user['user_id']}/"):
         raise HTTPException(status_code=403, detail="Not your upload")
 
+    # Retain storage_path in caption_jobs so delete_expired() can clean it up,
+    # even when direct file upload takes precedence over storage download.
     job_id = storage.create_job(user["user_id"], "transcribe",
                                 source_path=storage_path)
 
@@ -146,15 +151,12 @@ async def transcribe_endpoint(
         with open(local_path, "wb") as f:
             while chunk := await file.read(1 << 20):
                 f.write(chunk)
-    else:
-        try:
-            storage.download_to_file(storage_path, local_path)
-        except Exception as e:
-            storage.update_job(job_id, status="failed", error=str(e)[:500])
-            raise HTTPException(status_code=502, detail=f"Could not fetch upload: {e}")
+
+    # Direct-upload file takes precedence over storage_path download if both are supplied
+    download_source_path = storage_path if file is None else None
 
     background_tasks.add_task(_transcribe_task, job_id, local_path, language,
-                              hinglish, cleanup_local=True)
+                              hinglish, cleanup_local=True, source_path=download_source_path)
     return {"job_id": job_id, "status": "queued"}
 
 
