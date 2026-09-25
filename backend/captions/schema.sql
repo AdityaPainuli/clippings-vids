@@ -9,7 +9,7 @@ create table if not exists caption_jobs (
   kind          text not null check (kind in ('transcribe', 'render')),
   status        text not null default 'queued'
                 check (status in ('queued', 'transcribing', 'romanizing',
-                                  'rendering', 'completed', 'failed')),
+                                  'rendering', 'completed', 'failed', 'cancelled')),
   export        text,                -- burned | overlay | ass | srt (render jobs)
   error         text,
   transcript    jsonb,               -- {language, backend, words: [...]}
@@ -23,6 +23,9 @@ create table if not exists caption_jobs (
   updated_at    timestamptz not null default now(),
   expires_at    timestamptz not null default now() + interval '48 hours'
 );
+
+alter table caption_jobs drop constraint if exists caption_jobs_status_check;
+alter table caption_jobs add constraint caption_jobs_status_check check (status in ('queued', 'transcribing', 'romanizing', 'rendering', 'completed', 'failed', 'cancelled'));
 
 create index if not exists caption_jobs_user_idx    on caption_jobs (user_id, created_at desc);
 create index if not exists caption_jobs_expiry_idx  on caption_jobs (expires_at);
