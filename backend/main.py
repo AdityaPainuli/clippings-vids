@@ -309,6 +309,35 @@ async def root():
     return {"message": "Clipwave API is running"}
 
 
+@app.get("/health")
+async def health():
+    """Liveness probe — returns 200 as long as the process is running."""
+    return {"status": "ok"}
+
+
+@app.get("/ready")
+async def ready():
+    """Readiness probe — verifies required external dependencies."""
+    checks: Dict[str, str] = {}
+    failed = False
+
+    # Supabase connectivity check
+    try:
+        supabase.table("clips").select("id").limit(1).execute()
+        checks["supabase"] = "ok"
+    except Exception:
+        checks["supabase"] = "unavailable"
+        failed = True
+
+    if failed:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not ready", "checks": checks},
+        )
+    return {"status": "ready", "checks": checks}
+
+
 @app.post("/auth/signup")
 async def signup(email: str = Form(...), password: str = Form(...)):
     """Create a new Supabase user account."""
