@@ -1,7 +1,7 @@
 """
 CLI — run the full caption flow locally, no server needed.
 
-  python -m captions.cli video.mp4                          # transcribe + burn, default style
+  python -m captions.cli video.mp4                         # transcribe + burn, default style
   python -m captions.cli video.mp4 --preset bold_impact
   python -m captions.cli video.mp4 --style my_style.json --export overlay
   python -m captions.cli video.mp4 --transcript saved.json  # reuse transcript, skip whisper
@@ -15,6 +15,7 @@ import json
 import math
 import os
 import sys
+from pydantic import ValidationError
 
 
 def parse_length(text: str) -> float:
@@ -71,15 +72,45 @@ def main():
     args = ap.parse_args()
 
     from . import (engine, render, retakes, romanize, styles, tighten, timeline,
-                   transcribe)
+                    transcribe)
 
     base = os.path.splitext(args.video)[0]
 
-    if args.style:
-        with open(args.style, encoding="utf-8") as f:
-            style = styles.CaptionStyle(**json.load(f))
-    else:
-        style = styles.STYLE_PRESETS[args.preset]
+    # Robust style and preset loading with error handling
+    style = None
+    try:
+        if args.style:
+            try:
+                with open(args.style, encoding="utf-8") as f:
+                    style_data = json.load(f)
+            except FileNotFoundError:
+                print(f"Error: Style file not found: '{args.style}'", file=sys.stderr)
+                sys.exit(2)
+            except json.JSONDecodeError as e:
+                print(f"Error: Invalid JSON in style file '{args.style}': {e}", file=sys.stderr)
+                sys.exit(2)
+            
+            try:
+                style = styles.CaptionStyle(**style_data)
+            except ValidationError as e:
+                print(f"Error: Invalid style configuration in '{args.style}':", file=sys.stderr)
+                for error in e.errors():
+                    field = " -> ".join(str(x) for x in error["loc"])
+                    msg = error["msg"]
+                    print(f"  - {field}: {msg}", file=sys.stderr)
+                sys.exit(2)
+        else:
+            preset_name = args.preset or "default"
+            try:
+                style = styles.STYLE_PRESETS[preset_name]
+            except KeyError:
+                valid_presets = ", ".join(sorted(styles.STYLE_PRESETS.keys()))
+                print(f"Error: Unknown preset '{preset_name}'. Choose from: {valid_presets}", file=sys.stderr)
+                sys.exit(2)
+    except Exception as e:
+        print(f"Error: Failed to load style: {e}", file=sys.stderr)
+        sys.exit(2)
+
     text_key = "hinglish" if args.script == "hinglish" else "text"
 
     if args.export in ("edl", "fcpxml") and not (args.tighten or args.cut_retakes):
@@ -145,11 +176,6 @@ def main():
             print(f"  {found['skipped']} more repeated-looking groups were not "
                   f"checked (cap of {retakes.DEFAULT_MAX_GROUPS} per run)")
         if args.cut_retakes:
-            # Applied only on the explicit flag: the report above is the
-            # confirmation step, and a wrong retake cut removes a sentence.
-            # Appended rather than re-merged — these cuts already start and
-            # end at detected pauses, and running them back through _merge
-            # would pad every span a second time.
             for c in found["cuts"]:
                 c.auto = True
             cuts = sorted(cuts + found["cuts"], key=lambda c: c.start)
@@ -161,9 +187,6 @@ def main():
             print(f"--fit: {e}")
             return 2
         if not tightening:
-            # An empty cut list is not the same as never having analysed:
-            # Tighten can run and find nothing, and Fit still has something
-            # useful to say about whether the target is already met.
             print("--fit needs an analysis to choose from; add --tighten")
             return 2
         fitted = tighten.fit_to_length(cuts, info["duration"], target)
@@ -173,7 +196,6 @@ def main():
         print(f"Fit to {args.fit}: {int(mins)}:{secs:04.1f} "
               f"({len(fitted['added'])} extra cuts applied)")
         if not fitted["reachable"]:
-            # Never quietly deliver something longer than asked for.
             print(f"  could not reach it — {fitted['shortfall']}s over. "
                   "The rest is speech, and cutting it is your call.")
         if fitted["protected"]:
@@ -195,8 +217,6 @@ def main():
         transcript["words"] = result["words"]      # captions re-timed to the cut
 
         if args.export in ("edl", "fcpxml"):
-            # The point of a timeline export is that the media is never
-            # touched — the NLE relinks the original and applies these cuts.
             name = os.path.basename(args.video)
             if args.export == "edl":
                 out = timeline.export_edl(result["kept"], info["fps"], name,
@@ -208,21 +228,13 @@ def main():
                     args.output or f"{base}.fcpxml",
                     name=os.path.splitext(name)[0],
                     audio=render.probe_audio(args.video),
-                    # Cuts we flagged but did not make become markers, so the
-                    # editor can find them instead of rewatching for them.
                     markers=[c for c in cuts if not c.auto])
-            # These captions are timed to the cut timeline and mean nothing
-            # against the uncut source, so they ship with it.
             srt = render.export_srt(transcript["words"], f"{base}_tightened.srt",
                                     style.words_per_line, text_key=text_key)
             print(f"done: {out}")
             print(f"  captions for that timeline: {srt}")
             return
 
-        # Only a burned MP4 needs the media physically cut. `ass` and `srt`
-        # need nothing but the re-timed words, and `overlay` draws on a blank
-        # canvas — re-encoding for any of them produces a video file that is
-        # then thrown away.
         if args.export == "burned":
             print("Cutting video...")
             cut_video = f"{base}_tightened.mp4"
