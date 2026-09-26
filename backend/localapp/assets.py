@@ -533,7 +533,8 @@ def apply_environment():
         if env and value and not env_provided(provider):
             os.environ[env] = value
 
-    for provider in KEY_ENV:
-        if env_provided(provider):
-            os.environ[llm.PREFERRED_ENV] = provider
-            break
+    if not os.environ.get(llm.PREFERRED_ENV):
+        for provider in KEY_ENV:
+            if env_provided(provider):
+                os.environ[llm.PREFERRED_ENV] = provider
+                break

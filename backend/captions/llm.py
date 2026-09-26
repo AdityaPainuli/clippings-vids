@@ -71,7 +71,7 @@ def _local_available(requests) -> bool:
             timeout=5,
         )
         available = r.status_code == 200
-    except requests.RequestException:
+    except requests.exceptions.RequestException:
         available = False
 
     _LOCAL_AVAILABILITY_CACHE = available
