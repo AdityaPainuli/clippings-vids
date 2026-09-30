@@ -468,10 +468,17 @@ Constraints:
 
 def _seconds_to_ass_time(s: float) -> str:
     """Convert float seconds to ASS timestamp H:MM:SS.cc"""
-    h  = int(s // 3600)
-    m  = int((s % 3600) // 60)
-    sc = s % 60
-    return f"{h}:{m:02d}:{sc:05.2f}"
+    # Round to centiseconds first, so a value like 119.999s doesn't format
+    # as "0:01:60.00" (invalid). Carrying the rounded centiseconds into
+    # seconds/minutes/hours ensures a clean roll-over instead.
+    total_cs = round(s * 100)
+    cs  = total_cs % 100
+    total_s = total_cs // 100
+    sec = total_s % 60
+    total_m = total_s // 60
+    m = total_m % 60
+    h = total_m // 60
+    return f"{h}:{m:02d}:{sec:02d}.{cs:02d}"
 
 
 def _get_preset(preset_name: str) -> dict:
