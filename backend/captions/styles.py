@@ -7,7 +7,7 @@ Users edit colors as hex (#RRGGBB or #RRGGBBAA); conversion to ASS
 
 import re
 from typing import Literal, Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 HEX_RE = re.compile(r"^#?([0-9a-fA-F]{6})([0-9a-fA-F]{2})?$")
 
@@ -25,6 +25,7 @@ def hex_to_ass(hex_color: str) -> str:
 
 
 class Animation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     type: Literal["none", "pop", "fade", "karaoke"] = "none"
     # pop: word scales scale_start → scale_end → 100
     scale_start: int = Field(50, ge=10, le=100)
@@ -35,6 +36,7 @@ class Animation(BaseModel):
 
 class CaptionStyle(BaseModel):
     """Everything an editor can customize about how captions look."""
+    model_config = ConfigDict(extra="forbid")
     font: str = "Arial Black"
     font_size: int = Field(72, ge=24, le=200)
     highlight_scale: float = Field(1.12, ge=1.0, le=1.5)   # active-word size boost

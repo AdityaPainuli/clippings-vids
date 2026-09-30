@@ -75,11 +75,32 @@ def main():
 
     base = os.path.splitext(args.video)[0]
 
-    if args.style:
-        with open(args.style, encoding="utf-8") as f:
-            style = styles.CaptionStyle(**json.load(f))
-    else:
-        style = styles.STYLE_PRESETS[args.preset]
+    try:
+        if args.style:
+            try:
+                with open(args.style, encoding="utf-8") as f:
+                    style = styles.CaptionStyle(**json.load(f))
+            except FileNotFoundError:
+                print(f"--style: file not found: {args.style}")
+                return 2
+            except json.JSONDecodeError as e:
+                print(f"--style: invalid JSON in {args.style}: {e.msg}")
+                return 2
+            except ValueError as e:
+                print(f"--style: {e}")
+                return 2
+        else:
+            if args.preset not in styles.STYLE_PRESETS:
+                available = ", ".join(sorted(styles.STYLE_PRESETS.keys()))
+                print(f"--preset: unknown preset '{args.preset}' — choose from: {available}")
+                return 2
+            style = styles.STYLE_PRESETS[args.preset]
+    except Exception as e:
+        if "Extra inputs are not permitted" in str(e):
+            print(f"--style: unknown field in style JSON — check spelling")
+        else:
+            print(f"--style: {e}")
+        return 2
     text_key = "hinglish" if args.script == "hinglish" else "text"
 
     if args.export in ("edl", "fcpxml") and not (args.tighten or args.cut_retakes):
