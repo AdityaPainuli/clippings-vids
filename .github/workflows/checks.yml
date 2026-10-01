@@ -40,6 +40,9 @@ jobs:
       - name: Fit to length
         run: python scripts/check_fit.py
 
+      - name: Karaoke timing and colors
+        run: python scripts/check_karaoke.py
+
       # Contributor unit tests. The suites stub the heavy imports (yt_dlp,
       # whisper, moviepy) themselves, so this needs no dep beyond the runtime
       # ones already installed above, and no pytest. The guard keeps the job
@@ -52,3 +55,4 @@ jobs:
           else
             echo "No test modules under backend/tests, nothing to run."
           fi
+

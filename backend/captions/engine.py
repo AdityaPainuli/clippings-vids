@@ -43,11 +43,18 @@ def _header(style: CaptionStyle, play_w: int, play_h: int) -> str:
     tail = (f"-1,0,0,0,100,100,2,0,1,{style.outline_width},{style.shadow_width},"
             f"{style.alignment},40,40,{style.margin_v},1\n")
 
+    if style.animation.type == "karaoke":
+        caption_primary = style.ass_highlight_color
+        caption_secondary = style.ass_text_color
+    else:
+        caption_primary = style.ass_text_color
+        caption_secondary = style.ass_text_color
+
     caption = (f"Style: Caption,{style.font},{style.font_size},"
-               f"{style.ass_text_color},&H000000FF,"
+               f"{caption_primary},{caption_secondary},"
                f"{style.ass_outline_color},{style.ass_shadow_color},{tail}")
     highlight = (f"Style: Highlight,{style.font},{big_size},"
-                 f"{style.ass_highlight_color},&H000000FF,"
+                 f"{style.ass_highlight_color},{style.ass_text_color},"
                  f"{style.ass_outline_color},{style.ass_shadow_color},{tail}")
 
     return ("[Script Info]\n"
@@ -81,11 +88,21 @@ def _events(words: list, style: CaptionStyle) -> str:
         if anim.type == "karaoke":
             parts = []
             for w_idx, w in enumerate(chunk):
-                dur_cs = max(int((w["end"] - w["start"]) * 100), 10)
-                parts.append("{\\kf" + str(dur_cs) + "}" + texts[w_idx])
+                dur_cs = max(int(round((w["end"] - w["start"]) * 100)), 1)
+                if w_idx > 0:
+                    gap = w["start"] - chunk[w_idx - 1]["end"]
+                    if gap > 0:
+                        gap_cs = int(round(gap * 100))
+                        if gap_cs > 0:
+                            parts.append(f"{{\\k{gap_cs}}} ")
+                        else:
+                            parts.append(" ")
+                    else:
+                        parts.append(" ")
+                parts.append(f"{{\\kf{dur_cs}}}{texts[w_idx]}")
             lines.append(
                 f"Dialogue: 0,{_ass_time(chunk[0]['start'])},{_ass_time(chunk_end)}"
-                f",Caption,,0,0,0,," + " ".join(parts)
+                f",Caption,,0,0,0,," + "".join(parts)
             )
             continue
 

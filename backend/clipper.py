@@ -503,11 +503,18 @@ def _build_ass_header(preset_name: str = "default") -> str:
 
     tail = "-1,0,0,0,100,100,2,0,1," + outline_w + "," + shadow_w + ",2,40,40," + margin_v + ",1\n"
 
+    if p.get("anim_type") == "karaoke":
+        caption_primary = p["highlight"]
+        caption_secondary = p["color"]
+    else:
+        caption_primary = p["color"]
+        caption_secondary = p["color"]
+
     caption_style   = ("Style: Caption,"   + font + "," + size     + ","
-                       + p["color"]       + ",&H000000FF,"
+                       + caption_primary  + "," + caption_secondary + ","
                        + p["outline_clr"] + "," + p["shadow_clr"] + "," + tail)
     highlight_style = ("Style: Highlight," + font + "," + big_size + ","
-                       + p["highlight"]   + ",&H000000FF,"
+                       + p["highlight"]   + "," + p["color"]        + ","
                        + p["outline_clr"] + "," + p["shadow_clr"] + "," + tail)
 
     return ("[Script Info]\n"
@@ -616,10 +623,19 @@ def _words_to_ass_events(words: list, preset_name: str = "default") -> str:
             seg_start = chunk[0]["start"]
             parts = []
             for w_idx, w in enumerate(chunk):
-                dur_cs = int((w["end"] - w["start"]) * 100)  # centiseconds for \kf
-                dur_cs = max(dur_cs, 10)
-                parts.append("{\\kf" + str(dur_cs) + "}" + word_texts[w_idx])
-            line_text = " ".join(parts)
+                dur_cs = max(int(round((w["end"] - w["start"]) * 100)), 1)
+                if w_idx > 0:
+                    gap = w["start"] - chunk[w_idx - 1]["end"]
+                    if gap > 0:
+                        gap_cs = int(round(gap * 100))
+                        if gap_cs > 0:
+                            parts.append(f"{{\\k{gap_cs}}} ")
+                        else:
+                            parts.append(" ")
+                    else:
+                        parts.append(" ")
+                parts.append(f"{{\\kf{dur_cs}}}{word_texts[w_idx]}")
+            line_text = "".join(parts)
             event_lines.append(
                 "Dialogue: 0,"
                 + _seconds_to_ass_time(seg_start) + ","
