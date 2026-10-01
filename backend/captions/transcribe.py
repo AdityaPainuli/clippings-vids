@@ -119,7 +119,19 @@ def _transcribe_openai_whisper(audio: str, language: str | None) -> dict:
     if _cpu_model_cache is None or _cpu_model_cache[0] != name:
         _cpu_model_cache = (name, whisper.load_model(name))
     result = _cpu_model_cache[1].transcribe(
-        audio, word_timestamps=True, language=language, fp16=False, verbose=None,
+        audio,
+        word_timestamps=True,
+        language=language,
+        fp16=False,
+        verbose=None,
+        # Keep the legacy backend from feeding its own output back into the
+        # next decode window, which can amplify repeated-text hallucinations.
+        condition_on_previous_text=False,
+        # Keep Whisper's built-in silence / low-confidence / repetition
+        # rejection enabled explicitly instead of relying on library defaults.
+        no_speech_threshold=0.6,
+        logprob_threshold=-1.0,
+        compression_ratio_threshold=2.4,
     )
     return {"language": result.get("language"),
             "backend": f"whisper:{name}",
