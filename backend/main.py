@@ -1,18 +1,33 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import StreamingResponse
-from typing import Optional, Dict
-import os
-import json
-import uuid
 import asyncio
-import time
 import hashlib
-import clipper
-from supabase_client import supabase, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips
-from captions.api import router as captions_router
+import json
+import os
+import time
+import typing
+import uuid
 
+import clipper
+from captions.api import router as captions_router
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+)
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from supabase_client import (
+    delete_old_clips,
+    get_signed_url,
+    get_user_clips,
+    supabase,
+    upload_clip_to_storage,
+)
 
 app = FastAPI()
 app.include_router(captions_router)
@@ -36,21 +51,21 @@ for d in [UPLOAD_DIR, OUTPUT_DIR]:
 # ─────────────────────────────────────────────
 # In-memory stores
 # ─────────────────────────────────────────────
-jobs: Dict[str, dict] = {}
-_clip_cache: Dict[str, list] = {}
+jobs: typing.Dict[str, dict] = {}
+_clip_cache: typing.Dict[str, list] = {}
 _last_cleanup: float = time.time()
 
 # SSE subscribers: job_id → list of asyncio.Queue
-_sse_subscribers: Dict[str, list] = {}
+_sse_subscribers: typing.Dict[str, list] = {}
 
 # One-time stream tokens: token → {"user_id", "expires"}. The bearer JWT
 # never goes in a URL (query strings leak via logs/history); the client
 # exchanges it for a short-lived single-use token instead.
-_stream_tokens: Dict[str, dict] = {}
+_stream_tokens: typing.Dict[str, dict] = {}
 STREAM_TOKEN_TTL = 300
 
 
-def _consume_stream_token(token: str) -> Optional[str]:
+def _consume_stream_token(token: str) -> typing.Optional[str]:
     """Validate and burn a one-time stream token. Returns user_id or None."""
     now = time.time()
     # Drop expired tokens opportunistically
@@ -95,11 +110,11 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(b
 # Helpers
 # ─────────────────────────────────────────────
 
-def _video_cache_key(url: str, instructions: Optional[str], user_id: str,
+def _video_cache_key(url: str, instructions: typing.Optional[str], user_id: str,
                      clip_style: str = "auto", caption_style: str = "default",
-                     clip_count: Optional[int] = None,
-                     min_clip_length: Optional[int] = None,
-                     max_clip_length: Optional[int] = None) -> str:
+                     clip_count: typing.Optional[int] = None,
+                     min_clip_length: typing.Optional[int] = None,
+                     max_clip_length: typing.Optional[int] = None) -> str:
     """Cache key scoped per user so different users don't share clips."""
     raw = (f"{user_id}||{url}||{instructions or ''}||{clip_style}||{caption_style}"
            f"||{clip_count or ''}||{min_clip_length or ''}||{max_clip_length or ''}")
@@ -147,16 +162,16 @@ async def _maybe_cleanup():
 async def process_video_task(
     job_id: str,
     video_path: str,
-    instructions: Optional[str],
+    instructions: typing.Optional[str],
     user_id: str,
-    info: Optional[dict] = None,
+    info: typing.Optional[dict] = None,
     captions: bool = True,
-    cache_key: Optional[str] = None,
+    cache_key: typing.Optional[str] = None,
     clip_style: str = "auto",
     caption_style: str = "default",
-    clip_count: Optional[int] = None,
-    min_clip_length: Optional[int] = None,
-    max_clip_length: Optional[int] = None,
+    clip_count: typing.Optional[int] = None,
+    min_clip_length: typing.Optional[int] = None,
+    max_clip_length: typing.Optional[int] = None,
 ):
     loop = asyncio.get_event_loop()
     try:
@@ -271,15 +286,15 @@ async def process_video_task(
 async def download_and_process(
     job_id: str,
     url: str,
-    instructions: Optional[str],
+    instructions: typing.Optional[str],
     user_id: str,
     cache_key: str,
     captions: bool = True,
     clip_style: str = "auto",
     caption_style: str = "default",
-    clip_count: Optional[int] = None,
-    min_clip_length: Optional[int] = None,
-    max_clip_length: Optional[int] = None,
+    clip_count: typing.Optional[int] = None,
+    min_clip_length: typing.Optional[int] = None,
+    max_clip_length: typing.Optional[int] = None,
 ):
     loop = asyncio.get_event_loop()
     try:
@@ -355,13 +370,13 @@ async def refresh_token(refresh_token: str = Form(...)):
 async def process_url(
     background_tasks: BackgroundTasks,
     url: str = Form(...),
-    instructions: Optional[str] = Form(None),
+    instructions: typing.Optional[str] = Form(None),
     captions: bool = Form(True),
     clip_style: str = Form("auto"),
     caption_style: str = Form("default"),
-    clip_count: Optional[int] = Form(None),
-    min_clip_length: Optional[int] = Form(None),
-    max_clip_length: Optional[int] = Form(None),
+    clip_count: typing.Optional[int] = Form(None),
+    min_clip_length: typing.Optional[int] = Form(None),
+    max_clip_length: typing.Optional[int] = Form(None),
     user: dict = Depends(get_current_user),
 ):
     # Validate style params
@@ -419,51 +434,116 @@ async def process_url(
 async def upload_video(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    instructions: Optional[str] = Form(None),
+    instructions: typing.Optional[str] = Form(None),
     captions: bool = Form(True),
     clip_style: str = Form("auto"),
     caption_style: str = Form("default"),
-    clip_count: Optional[int] = Form(None),
-    min_clip_length: Optional[int] = Form(None),
-    max_clip_length: Optional[int] = Form(None),
+    clip_count: typing.Optional[int] = Form(None),
+    min_clip_length: typing.Optional[int] = Form(None),
+    max_clip_length: typing.Optional[int] = Form(None),
     user: dict = Depends(get_current_user),
-):
+    ):
     if clip_style not in clipper.CLIP_STYLES:
-        raise HTTPException(status_code=400, detail=f"Invalid clip_style. Choose from: {list(clipper.CLIP_STYLES.keys())}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid clip_style. Choose from: {list(clipper.CLIP_STYLES.keys())}",
+        )
+
     if caption_style not in clipper.CAPTION_PRESETS:
-        raise HTTPException(status_code=400, detail=f"Invalid caption_style. Choose from: {list(clipper.CAPTION_PRESETS.keys())}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid caption_style. Choose from: {list(clipper.CAPTION_PRESETS.keys())}",
+        )
+
     if clip_count is not None and not (1 <= clip_count <= 10):
-        raise HTTPException(status_code=400, detail="clip_count must be between 1 and 10")
+        raise HTTPException(
+            status_code=400,
+            detail="clip_count must be between 1 and 10",
+        )
+
     if min_clip_length is not None and not (5 <= min_clip_length <= 120):
-        raise HTTPException(status_code=400, detail="min_clip_length must be between 5 and 120 seconds")
+        raise HTTPException(
+            status_code=400,
+            detail="min_clip_length must be between 5 and 120 seconds",
+        )
+
     if max_clip_length is not None and not (10 <= max_clip_length <= 180):
-        raise HTTPException(status_code=400, detail="max_clip_length must be between 10 and 180 seconds")
-    if (min_clip_length is not None and max_clip_length is not None
-            and min_clip_length > max_clip_length):
-        raise HTTPException(status_code=400, detail="min_clip_length cannot exceed max_clip_length")
+        raise HTTPException(
+            status_code=400,
+            detail="max_clip_length must be between 10 and 180 seconds",
+        )
+
+    if (
+        min_clip_length is not None
+        and max_clip_length is not None
+        and min_clip_length > max_clip_length
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="min_clip_length cannot exceed max_clip_length",
+        )
 
     await _maybe_cleanup()
+
+    user_id = user["user_id"]
+    job_id = str(uuid.uuid4())
+
+    # Keep upload reads bounded so large videos are never loaded
+    # completely into memory at once.
+    upload_chunk_size = 1024 * 1024  # 1 MiB
+
+    filename = os.path.basename(file.filename or "uploaded_video") or "uploaded_video"
+    file_path = os.path.join(UPLOAD_DIR, f"{job_id}_{filename}")
+
     try:
-        user_id   = user["user_id"]
-        job_id    = str(uuid.uuid4())
-        file_path = os.path.join(UPLOAD_DIR, f"{job_id}_{file.filename}")
         with open(file_path, "wb") as buffer:
-            buffer.write(await file.read())
+            while chunk := await file.read(upload_chunk_size):
+                buffer.write(chunk)
 
         jobs[job_id] = {
-            "status":     "queued",
-            "results":    None,
-            "error":      None,
+            "status": "queued",
+            "results": None,
+            "error": None,
             "created_at": time.time(),
-            "user_id":    user_id,
+            "user_id": user_id,
         }
+
         background_tasks.add_task(
-            process_video_task, job_id, file_path, instructions, user_id, None,
-            captions, None, clip_style, caption_style, clip_count, min_clip_length, max_clip_length
+            process_video_task,
+            job_id,
+            file_path,
+            instructions,
+            user_id,
+            None,
+            captions,
+            None,
+            clip_style,
+            caption_style,
+            clip_count,
+            min_clip_length,
+            max_clip_length,
         )
-        return {"job_id": job_id, "status": "uploaded"}
+
+        return {
+            "job_id": job_id,
+            "status": "uploaded",
+        }
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Remove a partially written upload if something goes wrong.
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save uploaded file: {str(e)}",
+        )
+
+    finally:
+        await file.close()
+
 
 
 @app.get("/status/{job_id}")
