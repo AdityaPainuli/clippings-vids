@@ -151,15 +151,29 @@ def get_signed_url(storage_path: str) -> str:
 
 
 def _list_prefix(prefix: str = "") -> list:
-    """List objects in the bucket under a prefix via REST."""
-    resp = requests.post(
-        f"{_STORAGE_URL}/object/list/{BUCKET}",
-        headers={**_HEADERS, "Content-Type": "application/json"},
-        json={"prefix": prefix, "limit": 1000, "offset": 0},
-    )
-    if resp.status_code != 200:
-        return []
-    return resp.json() if isinstance(resp.json(), list) else []
+    """List all objects in the bucket under a prefix via paginated REST calls."""
+    page_size = 1000
+    offset = 0
+    items = []
+
+    while True:
+        resp = requests.post(
+            f"{_STORAGE_URL}/object/list/{BUCKET}",
+            headers={**_HEADERS, "Content-Type": "application/json"},
+            json={"prefix": prefix, "limit": page_size, "offset": offset},
+        )
+        if resp.status_code != 200:
+            return []
+
+        page = resp.json()
+        if not isinstance(page, list):
+            return []
+
+        items.extend(page)
+        if len(page) < page_size:
+            return items
+
+        offset += page_size
 
 
 def _delete_paths(paths: list) -> None:
