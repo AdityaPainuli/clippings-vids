@@ -90,6 +90,9 @@ def main():
                 print(f"Error: Invalid JSON in style file '{args.style}': {e}", file=sys.stderr)
                 sys.exit(2)
             
+            if not isinstance(style_data, dict):
+                print(f"Error: Style file '{args.style}' must contain a JSON object", file=sys.stderr)
+                sys.exit(2)
             try:
                 style = styles.CaptionStyle(**style_data)
             except ValidationError as e:
