@@ -40,6 +40,9 @@ jobs:
       - name: Fit to length
         run: python scripts/check_fit.py
 
+      - name: Transcribe async download
+        run: python scripts/check_transcribe_async.py
+
       # Contributor unit tests. The suites stub the heavy imports (yt_dlp,
       # whisper, moviepy) themselves, so this needs no dep beyond the runtime
       # ones already installed above, and no pytest. The guard keeps the job
