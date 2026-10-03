@@ -385,49 +385,48 @@ async def process_url(
                                  clip_count, min_clip_length, max_clip_length)
 
     # Cache hit — same user, same URL, same styles, clips still alive in storage
-    if cache_key in _clip_cache:
-        job_id = str(uuid.uuid4())
-        jobs[job_id] = {
-            "status":     "completed",
-            "url":        url,
-            "results":    _clip_cache[cache_key],
-            "error":      None,
-            "created_at": time.time(),
-            "user_id":    user_id,
-            "cached":     True,
-        }
-        return {"job_id": job_id, "status": "completed", "cached": True}
+   if cache_key in _clip_cache:
+    loop = asyncio.get_event_loop()
+    cached_results = []
+
+    for clip in _clip_cache[cache_key]:
+        clip_copy = dict(clip)
+        storage_path = clip_copy.get("storage_path")
+
+        if storage_path:
+            signed_url = await loop.run_in_executor(
+                None, get_signed_url, storage_path
+            )
+            clip_copy["url"] = signed_url
+            clip_copy["video_url"] = signed_url
+            clip_copy["src"] = signed_url
+
+        cached_results.append(clip_copy)
 
     job_id = str(uuid.uuid4())
     jobs[job_id] = {
-        "status":     "queued",
-        "url":        url,
-        "results":    None,
-        "error":      None,
+        "status": "completed",
+        "url": url,
+        "results": cached_results,
+        "error": None,
         "created_at": time.time(),
-        "user_id":    user_id,
-        "cached":     False,
+        "user_id": user_id,
+        "cached": True,
     }
-    background_tasks.add_task(
-        download_and_process, job_id, url, instructions, user_id, cache_key,
-        captions, clip_style, caption_style, clip_count, min_clip_length, max_clip_length
-    )
-    return {"job_id": job_id, "status": "queued"}
-
-
-@app.post("/upload")
-async def upload_video(
-    background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    instructions: Optional[str] = Form(None),
-    captions: bool = Form(True),
-    clip_style: str = Form("auto"),
-    caption_style: str = Form("default"),
-    clip_count: Optional[int] = Form(None),
-    min_clip_length: Optional[int] = Form(None),
-    max_clip_length: Optional[int] = Form(None),
-    user: dict = Depends(get_current_user),
-):
+    return {"job_id": job_id, "status": "completed", "cached": True}
+   @app.post("/upload")
+   async def upload_video(
+     background_tasks: BackgroundTasks,
+     file: UploadFile = File(...),
+     instructions: Optional[str] = Form(None),
+     captions: bool = Form(True),
+     clip_style: str = Form("auto"),
+     caption_style: str = Form("default"),
+     clip_count: Optional[int] = Form(None),
+     min_clip_length: Optional[int] = Form(None),
+     max_clip_length: Optional[int] = Form(None),
+     user: dict = Depends(get_current_user),
+  ):
     if clip_style not in clipper.CLIP_STYLES:
         raise HTTPException(status_code=400, detail=f"Invalid clip_style. Choose from: {list(clipper.CLIP_STYLES.keys())}")
     if caption_style not in clipper.CAPTION_PRESETS:
