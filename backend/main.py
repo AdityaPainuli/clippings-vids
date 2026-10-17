@@ -33,6 +33,47 @@ JOB_TTL     = int(os.getenv("JOB_TTL_SECONDS",  7200))   # forget job records af
 for d in [UPLOAD_DIR, OUTPUT_DIR]:
     os.makedirs(d, exist_ok=True)
 
+
+# ─────────────────────────────────────────────
+# Health & Readiness endpoints
+# ─────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    """Liveness probe: verifies process is running."""
+    return {"status": "ok"}
+
+
+@app.get("/ready")
+async def ready():
+    """Readiness probe: verifies storage paths and dependencies are ready."""
+    checks = {}
+
+    for name, path in [("upload_dir", UPLOAD_DIR), ("output_dir", OUTPUT_DIR)]:
+        if os.path.exists(path) and os.access(path, os.W_OK):
+            checks[name] = "ok"
+        else:
+            checks[name] = "unavailable"
+
+    try:
+        import supabase_client
+        if getattr(supabase_client, "SUPABASE_URL", None) and getattr(supabase_client, "SUPABASE_SERVICE_KEY", None):
+            checks["supabase"] = "ok"
+        else:
+            checks["supabase"] = "unavailable"
+    except Exception:
+        checks["supabase"] = "unavailable"
+
+    failed = [k for k, v in checks.items() if v != "ok"]
+    if failed:
+        raise HTTPException(
+            status_code=503,
+            detail={"status": "not_ready", "failed_checks": failed, "checks": checks},
+        )
+
+    return {"status": "ready", "checks": checks}
+
+
 # ─────────────────────────────────────────────
 # In-memory stores
 # ─────────────────────────────────────────────
