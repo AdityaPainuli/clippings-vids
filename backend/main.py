@@ -10,7 +10,7 @@ import asyncio
 import time
 import hashlib
 import clipper
-from supabase_client import supabase, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips
+from supabase_client import supabase, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips, CLIP_TTL_SECONDS
 from captions.api import router as captions_router
 
 
@@ -573,9 +573,10 @@ async def my_clips(user: dict = Depends(get_current_user)):
     loop    = asyncio.get_event_loop()
     user_id = user["user_id"]
     clips   = await loop.run_in_executor(None, get_user_clips, user_id)
+    ttl_hours = CLIP_TTL_SECONDS // 3600 if CLIP_TTL_SECONDS % 3600 == 0 else round(CLIP_TTL_SECONDS / 3600, 2)
     return {
         "total":           len(clips),
-        "ttl_hours":       6,
+        "ttl_hours":       ttl_hours,
         "clips":           clips,
     }
 

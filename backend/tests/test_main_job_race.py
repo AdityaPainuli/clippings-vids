@@ -73,6 +73,7 @@ def _install_main_import_stubs():
     supabase_client.delete_old_clips = lambda: 0
     supabase_client.get_signed_url = lambda path: "https://example.test/clip.mp4"
     supabase_client.get_user_clips = lambda user_id: []
+    supabase_client.CLIP_TTL_SECONDS = 21600
     sys.modules["supabase_client"] = supabase_client
 
     captions = types.ModuleType("captions")
@@ -116,6 +117,18 @@ class MainJobCleanupTTLTest(unittest.TestCase):
         # Assert stale terminal jobs were purged
         self.assertNotIn("completed-old", main.jobs)
         self.assertNotIn("failed-old", main.jobs)
+
+    def test_my_clips_reports_configured_ttl(self):
+        _install_main_import_stubs()
+        main = importlib.import_module("main")
+
+        main.CLIP_TTL_SECONDS = 43200
+        res = asyncio.run(main.my_clips(user={"user_id": "test-user"}))
+        self.assertEqual(res["ttl_hours"], 12)
+
+        main.CLIP_TTL_SECONDS = 21600
+        res = asyncio.run(main.my_clips(user={"user_id": "test-user"}))
+        self.assertEqual(res["ttl_hours"], 6)
 
 
 if __name__ == "__main__":
