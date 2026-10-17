@@ -158,8 +158,19 @@ def _list_prefix(prefix: str = "") -> list:
         json={"prefix": prefix, "limit": 1000, "offset": 0},
     )
     if resp.status_code != 200:
-        return []
-    return resp.json() if isinstance(resp.json(), list) else []
+        raise RuntimeError(f"Storage listing failed (status {resp.status_code}): {resp.text}")
+
+    try:
+        data = resp.json()
+    except Exception as e:
+        raise RuntimeError(f"Storage listing returned invalid JSON: {e}") from e
+
+    if not isinstance(data, list):
+        raise RuntimeError(
+            f"Storage listing returned unexpected response structure (expected list, got {type(data).__name__}): {data}"
+        )
+
+    return data
 
 
 def _delete_paths(paths: list) -> None:
