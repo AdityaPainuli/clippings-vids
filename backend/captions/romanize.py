@@ -30,22 +30,84 @@ _COMMON = {
     "hai": "hai", "haim": "hain", "nahim": "nahin", "kya": "kya",
 }
 
+_VIRAMA = "\u094d"
+_NUKTA = "\u093c"
+# Letters, vowel signs and nasals; stops at danda, digits and punctuation
+_DEVANAGARI_RUN = re.compile(r"[\u0900-\u0963\u0971-\u097f]+")
+# ड़ and ढ़ are typed "d" and "dh" in Hinglish (bada, padhna), but IAST
+# writes them r̤ and r̤h, which flatten to "bar" and "parh". Whisper can
+# emit either the precomposed letter or letter + nukta.
+_FLAPS = {"\u095c": "\u0921", "\u0921\u093c": "\u0921",
+          "\u095d": "\u0922", "\u0922\u093c": "\u0922"}
+# IAST 'c' is च and 'ch' is छ. Hinglish types both as "ch" (chalo, chota)
+# and the doubled च्छ as "chh" (achha).
+_CH = {"cch": "chh", "ch": "ch", "c": "ch"}
+
+
+def _is_consonant(ch: str) -> bool:
+    return "\u0915" <= ch <= "\u0939" or "\u0958" <= ch <= "\u095f"
+
+
+def _drop_schwas(run: str) -> str:
+    """
+    Add a virama wherever Hindi doesn't pronounce the inherent vowel.
+
+    This has to happen on the Devanagari. After transliteration IAST ā is
+    flattened to a, and then the inherent schwa of "kamara" and the written
+    ा of "choṭā" look the same, so a rule on the Latin side ends up deleting
+    real vowels.
+
+    Final schwa goes ("taraha" → "tarah") unless it is the word's only vowel
+    ("na"). Medial schwa goes between a vowel-consonant and a consonant-vowel
+    ("kamarā" → "kamra"), scanning right to left so one deletion blocks the
+    one before it and no three-consonant cluster appears ("samajhna").
+    Anusvara and visarga close a syllable like a consonant would, so the
+    schwa after them stays ("zindagi", not "zindgi").
+    """
+    # [text, vowel]: vowel is "a" for the inherent schwa, "v" for an open
+    # written vowel, "n" for a syllable closed by anusvara/visarga, "" after
+    # a virama
+    syl = []
+    for ch in run:
+        if _is_consonant(ch):
+            syl.append([ch, "a"])
+        elif not syl or "\u0904" <= ch <= "\u0914":
+            syl.append([ch, "v"])
+        else:
+            syl[-1][0] += ch
+            if ch == _VIRAMA:
+                syl[-1][1] = ""
+            elif ch in "\u0902\u0903":
+                syl[-1][1] = "n"
+            elif ch != _NUKTA and syl[-1][1] == "a":
+                syl[-1][1] = "v"   # matra or chandrabindu
+
+    def drop(i):
+        syl[i][0] += _VIRAMA
+        syl[i][1] = ""
+
+    if syl and syl[-1][1] == "a" and any(s[1] for s in syl[:-1]):
+        drop(-1)
+    for i in range(len(syl) - 2, 0, -1):
+        if (syl[i][1] == "a" and syl[i - 1][1] in ("a", "v") and syl[i + 1][1]
+                and _is_consonant(syl[i + 1][0][0])):
+            drop(i)
+    return "".join(s[0] for s in syl)
+
 
 def _rule_romanize(text: str) -> str:
     from indic_transliteration import sanscript
     from indic_transliteration.sanscript import transliterate
 
+    for flap, plain in _FLAPS.items():
+        text = text.replace(flap, plain)
+    text = _DEVANAGARI_RUN.sub(lambda m: _drop_schwas(m.group()), text)
     latin = transliterate(text, sanscript.DEVANAGARI, sanscript.IAST)
     latin = latin.replace("ṃ", "n").replace("m̐", "n")
     latin = "".join(
         c for c in unicodedata.normalize("NFD", latin) if not unicodedata.combining(c)
     )
-    # IAST 'c' is the "ch" sound; 'ch' is aspirated "chh"
-    latin = latin.replace("ch", "chh").replace("c", "ch").replace("chhh", "chh")
-    # Final schwa deletion: "taraha" → "tarah" (skip short particles like "ka", "na")
-    stripped = latin.rstrip(".,!?")
-    if len(stripped) > 3 and stripped.endswith("a") and stripped[-2] not in "aeiou":
-        latin = stripped[:-1] + latin[len(stripped):]
+    latin = re.sub(r"cch|ch|c", lambda m: _CH[m.group()], latin)
     return _COMMON.get(latin, latin)
 
 
