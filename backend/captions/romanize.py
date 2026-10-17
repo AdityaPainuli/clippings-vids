@@ -1,15 +1,9 @@
 """
 Hinglish romanization - Devanagari words → natural Latin spellings.
 
-<<<<<<< HEAD
 Primary path: the configured LLM provider rewrites the word list the way people
 actually type Hinglish ("chunautiyan", not IAST "cunatiyam"), preserving 1:1
 word alignment so timings survive. Fallback path: rule-based transliteration
-=======
-Primary path: the configured LLM provider rewrites the word list the way people actually type
-Hinglish ("chunautiyan", not IAST "cunatiyam"), preserving 1:1 word
-alignment so timing survives. Fallback path: rule-based transliteration
->>>>>>> 1a12d60 (fix: cache local provider checks and clarify UI status)
 (indic-transliteration + cleanup) when no LLM is configured or available.
 
 Lang-tag aware: if a word carries a ``lang`` tag from lang_detect, only words
@@ -26,11 +20,13 @@ from difflib import SequenceMatcher
 from . import llm
 
 DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
+
 CHUNK = 80  # words per LLM call — small enough to keep alignment reliable
 MIN_LLM_SIMILARITY = 0.45
 MIN_LLM_LENGTH_RATIO = 0.6
 MAX_LLM_LENGTH_RATIO = 1.8
 
+# IAST → colloquial fixes applied after transliteration (fallback path)
 _COMMON = {
     "maim": "main", "mem": "mein", "aura": "aur", "hama": "hum",
     "hai": "hai", "haim": "hain", "nahim": "nahin", "kya": "kya",
@@ -47,9 +43,11 @@ def _rule_romanize(text: str) -> str:
         c for c in unicodedata.normalize("NFD", latin)
         if not unicodedata.combining(c)
     )
-
+    # IAST c represents a different sound from colloquial Hinglish ch.
+    # Convert it while preserving the aspirated "chh" spelling.
     latin = latin.replace("ch", "chh").replace("c", "ch").replace("chhh", "chh")
-
+    # Remove the final inherent vowel (schwa) when it is not pronounced,
+    # while preserving trailing punctuation.
     stripped = latin.rstrip(".,!?")
     if len(stripped) > 3 and stripped.endswith("a") and stripped[-2] not in "aeiou":
         latin = stripped[:-1] + latin[len(stripped):]
