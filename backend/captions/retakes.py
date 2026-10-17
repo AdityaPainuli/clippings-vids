@@ -53,7 +53,7 @@ MIN_WORDS = 6           # shorter phrases match each other by accident
 # A re-recorded line is a line. Anything this long is a transcription artifact
 # — the punctuation fallback can run 150 words together when Whisper emits no
 # punctuation — and comparing it to a short phrase scores high for free.
-MAX_WORDS = 40
+MAX_WORDS = 80
 MIN_SIMILARITY = 0.35   # loose on purpose — stage 2 is the precision stage
 
 # Overlap over the smaller set rewards short phrases: two shared words out of
@@ -175,7 +175,8 @@ def similarity(a: Phrase, b: Phrase) -> float:
 
 def find_candidates(phrases: list, window: float = WINDOW,
                     min_similarity: float = MIN_SIMILARITY,
-                    min_words: int = MIN_WORDS) -> list:
+                    min_words: int = MIN_WORDS,
+                    max_words: int = MAX_WORDS) -> list:
     """
     Group phrases that look like attempts at the same line.
 
@@ -184,7 +185,7 @@ def find_candidates(phrases: list, window: float = WINDOW,
     goes up as one question instead of six.
     """
     usable = [p for p in phrases
-              if min_words <= len(p.tokens) <= MAX_WORDS]
+              if min_words <= len(p.tokens) <= max_words]
     group_of: dict = {}
     groups: list = []
 
