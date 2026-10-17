@@ -76,9 +76,29 @@ def main():
     base = os.path.splitext(args.video)[0]
 
     if args.style:
-        with open(args.style, encoding="utf-8") as f:
-            style = styles.CaptionStyle(**json.load(f))
+        if not os.path.exists(args.style):
+            print(f"style file not found: {args.style}")
+            return 2
+        try:
+            with open(args.style, encoding="utf-8") as f:
+                style_data = json.load(f)
+        except json.JSONDecodeError as e:
+            print(f"invalid JSON in style file {args.style}: {e}")
+            return 2
+        except Exception as e:
+            print(f"failed to read style file {args.style}: {e}")
+            return 2
+
+        try:
+            style = styles.CaptionStyle(**style_data)
+        except Exception as e:
+            print(f"invalid style configuration in {args.style}: {e}")
+            return 2
     else:
+        if args.preset not in styles.STYLE_PRESETS:
+            valid_presets = ", ".join(sorted(styles.STYLE_PRESETS.keys()))
+            print(f"unknown preset '{args.preset}' — choose from: {valid_presets}")
+            return 2
         style = styles.STYLE_PRESETS[args.preset]
     text_key = "hinglish" if args.script == "hinglish" else "text"
 
