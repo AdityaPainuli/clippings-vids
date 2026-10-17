@@ -146,12 +146,17 @@ def _delete_storage_paths(paths: list):
     if not paths:
         return
     for i in range(0, len(paths), 100):
-        requests.delete(
+        chunk = paths[i : i + 100]
+        resp = requests.delete(
             f"{_STORAGE_URL}/object/{BUCKET}",
             headers={**_HEADERS, "Content-Type": "application/json"},
-            json={"prefixes": paths[i : i + 100]},
+            json={"prefixes": chunk},
             timeout=_CTRL_TIMEOUT,
         )
+        if resp.status_code not in (200, 204):
+            raise RuntimeError(
+                f"Storage deletion failed with status {resp.status_code}: {resp.text}"
+            )
 
 
 # ── Retention cleanup ────────────────────────────────────────────────────────
