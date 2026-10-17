@@ -11,11 +11,62 @@ All backends return the same shape:
 {"language": str, "backend": str, "words": [{"start", "end", "text"}, ...]}
 """
 
+import math
 import os
 import subprocess
 import tempfile
 
 MLX_MODEL = os.getenv("CAPTIONS_MLX_MODEL", "mlx-community/whisper-large-v3-turbo")
+
+
+def validate_word_timestamps(words: list) -> list:
+    """
+    Validate that normalized ASR words form a chronologically consistent timeline.
+    Enforces non-negative, finite, start <= end, and non-decreasing start and end values.
+    Raises ValueError on invalid timestamps.
+    """
+    prev_start = None
+    prev_end = None
+
+    for i, w in enumerate(words):
+        if not isinstance(w, dict):
+            raise ValueError(f"Word at index {i} is not a dict: {w}")
+
+        start = w.get("start")
+        end = w.get("end")
+
+        if start is None or end is None:
+            raise ValueError(f"Word at index {i} is missing 'start' or 'end' timestamp: {w}")
+
+        try:
+            start_f = float(start)
+            end_f = float(end)
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"Word at index {i} has non-numeric timestamps: {w}") from e
+
+        if not math.isfinite(start_f) or not math.isfinite(end_f):
+            raise ValueError(f"Word at index {i} has non-finite timestamps (start={start}, end={end}): {w}")
+
+        if start_f < 0.0 or end_f < 0.0:
+            raise ValueError(f"Word at index {i} has negative timestamps (start={start}, end={end}): {w}")
+
+        if start_f > end_f:
+            raise ValueError(f"Word at index {i} has reversed timestamps (start={start} > end={end}): {w}")
+
+        if prev_start is not None and start_f < prev_start:
+            raise ValueError(
+                f"Word at index {i} has non-monotonic start timestamp ({start_f} < previous start {prev_start}): {w}"
+            )
+
+        if prev_end is not None and end_f < prev_end:
+            raise ValueError(
+                f"Word at index {i} has non-monotonic end timestamp ({end_f} < previous end {prev_end}): {w}"
+            )
+
+        prev_start = start_f
+        prev_end = end_f
+
+    return words
 
 
 def _cpu_model_name() -> str:
@@ -50,7 +101,7 @@ def _words_from_result(result: dict) -> list:
             text = seg["text"].strip()
             if text:
                 words.append({"start": float(seg["start"]), "end": float(seg["end"]), "text": text})
-    return words
+    return validate_word_timestamps(words)
 
 
 # ── Backends ─────────────────────────────────────────────────────────────────
@@ -107,9 +158,10 @@ def _transcribe_faster_whisper(audio: str, language: str | None) -> dict | None:
             text = w.word.strip()
             if text:
                 words.append({"start": float(w.start), "end": float(w.end), "text": text})
+    selected = words or [s for s in sentence_fallback if s["text"]]
     return {"language": info.language,
             "backend": f"faster-whisper:{_cpu_model_name()}",
-            "words": words or [s for s in sentence_fallback if s["text"]]}
+            "words": validate_word_timestamps(selected)}
 
 
 def _transcribe_openai_whisper(audio: str, language: str | None) -> dict:
@@ -153,6 +205,7 @@ def transcribe_video(video_path: str, language: str | None = None) -> dict:
         if result is None:
             result = _transcribe_openai_whisper(audio, language)
         if result and "words" in result:
+            result["words"] = validate_word_timestamps(result["words"])
             from .lang_detect import tag_words
             result["words"] = tag_words(result["words"], result.get("language"))
         return result
