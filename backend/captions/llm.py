@@ -1,17 +1,21 @@
 """
-Small provider-backed model calls over plain HTTP.
+One small cloud-model call, over plain HTTP.
 
-Bolcap ships without cloud SDKs on purpose. This talks to the APIs directly
-with `requests`, which is already a dependency.
+Bolcap ships without cloud SDKs on purpose (DECISIONS.md: the desktop binary
+stays small, no torch, no vendor clients), so this talks to the APIs directly
+with `requests`, which is already a dependency. Adding `anthropic` or
+`google-generativeai` would put tens of megabytes into every platform build to
+save a dozen lines here.
 
 Cloud providers use their configured API keys. The OpenAI-compatible provider
 is intended for local endpoints such as Ollama, so it does not require an API
 key.
 
-A call that fails raises LLMError rather than returning None. A bad key, a
-quota wall, and a model that simply says "no" are three different outcomes.
+A call that *fails* raises LLMError rather than returning None. A bad key, a
+quota wall, and a model that simply says "no" are three different outcomes, and
+collapsing them made an outage read to the user as "nothing found".
 
-Only transcript text is ever sent. Audio and video never leave the machine.
+Only transcript *text* is ever sent. Audio and video never leave the machine.
 """
 
 import json
@@ -48,6 +52,7 @@ TIMEOUT = 60
 
 class LLMError(RuntimeError):
     """The call did not complete. Distinct from the model answering 'no'."""
+
 
 _LOCAL_AVAILABILITY_CACHE = None
 _LOCAL_AVAILABILITY_CHECKED_AT = 0.0
@@ -116,9 +121,10 @@ def provider() -> str | None:
 def available() -> bool:
     return provider() is not None
 
+
 def complete(prompt: str, system: str = "", max_tokens: int = 1024) -> str | None:
     """
-    Prompt in, text out. Returns None when no provider is configured or available.
+    Prompt in, text out. None only when no provider is configured or available.
 
     Raises LLMError when the call itself fails, so the caller can tell an
     outage from an answer.
@@ -147,7 +153,7 @@ def complete(prompt: str, system: str = "", max_tokens: int = 1024) -> str | Non
 
     except LLMError:
         raise
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:                                  # noqa: BLE001
         raise LLMError(f"{type(e).__name__}: {e}") from e
 
 
@@ -241,7 +247,7 @@ def _http_reason(name: str, r) -> str:
         return f"{name} rate limit or quota reached (HTTP 429)"
     if r.status_code >= 500:
         return f"{name} is having trouble (HTTP {r.status_code})"
-    detail = (r.text or "").strip().replace("\n", " ")[:160]
+    detail = (r.text or "").strip().replace("\\n", " ")[:160]
     return f"{name} returned HTTP {r.status_code}: {detail}"
 
 
