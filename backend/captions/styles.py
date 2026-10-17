@@ -35,7 +35,11 @@ class Animation(BaseModel):
 
 class CaptionStyle(BaseModel):
     """Everything an editor can customize about how captions look."""
-    font: str = "Arial Black"
+    font: str = Field(
+        "Arial Black",
+        max_length=64,
+        description="Font family name for captions. Must not contain commas, newlines, or control characters.",
+    )
     font_size: int = Field(72, ge=24, le=200)
     highlight_scale: float = Field(1.12, ge=1.0, le=1.5)   # active-word size boost
     uppercase: bool = True
@@ -54,6 +58,20 @@ class CaptionStyle(BaseModel):
     margin_v: int = Field(320, ge=0, le=1920)
 
     animation: Animation = Animation()
+
+    @field_validator("font")
+    @classmethod
+    def _valid_font(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("Font name cannot be empty")
+        if any(ch in s for ch in (",", "\n", "\r", "\t", "\0")):
+            raise ValueError(
+                "Font name contains invalid characters: commas, newlines, and control characters are not permitted in ASS styles"
+            )
+        if len(s) > 64:
+            raise ValueError("Font name must not exceed 64 characters")
+        return s
 
     @field_validator("text_color", "highlight_color", "outline_color", "shadow_color")
     @classmethod
