@@ -37,6 +37,14 @@ UNCHANGED = {
     "ज़िंदगी": "zindagi", "नमस्ते": "namaste", "नहीं": "nahin", "क्या": "kya",
 }
 
+# Pronounced schwa: before a word-final short ि (a Sanskrit word) and at a
+# prefix boundary (अ + समान)
+RETAINED_SCHWA = {
+    "प्रगति": "pragati", "अनुमति": "anumati", "सेनापति": "senapati",
+    "असमान": "asaman", "असमर्थ": "asamarth", "असहाय": "asahay",
+    "नासमझ": "nasamajh",
+}
+
 
 class RuleRomanizeTest(unittest.TestCase):
     def assertRomanizes(self, cases):
@@ -55,6 +63,18 @@ class RuleRomanizeTest(unittest.TestCase):
 
     def test_existing_output_unchanged(self):
         self.assertRomanizes(UNCHANGED)
+
+    def test_pronounced_schwa_is_kept(self):
+        self.assertRomanizes(RETAINED_SCHWA)
+
+    def test_kept_schwa_does_not_block_other_deletions(self):
+        self.assertRomanizes({"लखपति": "lakhpati", "असमानता": "asamanta"})
+
+    def test_join_controls_do_not_split_a_word(self):
+        # वक्त plain, then with ZWJ (U+200D) and ZWNJ (U+200C) after the virama
+        self.assertRomanizes({"\u0935\u0915\u094d\u0924": "vakt",
+                              "\u0935\u0915\u094d\u200d\u0924": "vakt",
+                              "\u0935\u0915\u094d\u200c\u0924": "vakt"})
 
     def test_trailing_punctuation_survives(self):
         self.assertRomanizes({"सच?": "sach?", "छोटा,": "chota,"})

@@ -32,8 +32,14 @@ _COMMON = {
 
 _VIRAMA = "\u094d"
 _NUKTA = "\u093c"
-# Letters, vowel signs and nasals; stops at danda, digits and punctuation
-_DEVANAGARI_RUN = re.compile(r"[\u0900-\u0963\u0971-\u097f]+")
+_SHORT_I = "\u093f"
+# ZWJ and ZWNJ only choose how a conjunct is drawn, so वक्त is the same word
+# with or without one
+_JOINERS = "\u200c\u200d"
+# Letters, vowel signs and nasals; stops at danda, digits and punctuation.
+# Join controls stay inside the run so they don't cut a word in two
+_DEVANAGARI_RUN = re.compile(
+    r"[\u0900-\u0963\u0971-\u097f]+(?:[\u200c\u200d]+[\u0900-\u0963\u0971-\u097f]+)*")
 # ड़ and ढ़ are typed "d" and "dh" in Hinglish (bada, padhna), but IAST
 # writes them r̤ and r̤h, which flatten to "bar" and "parh". Whisper can
 # emit either the precomposed letter or letter + nukta.
@@ -42,6 +48,10 @@ _FLAPS = {"\u095c": "\u0921", "\u0921\u093c": "\u0921",
 # IAST 'c' is च and 'ch' is छ. Hinglish types both as "ch" (chalo, chota)
 # and the doubled च्छ as "chh" (achha).
 _CH = {"cch": "chh", "ch": "ch", "c": "ch"}
+# Schwa deletion stops at a prefix boundary, which the syllable rule can't
+# see: अ + समान is "asaman", not "asman". (prefix, stem)
+_PREFIXED = (("अ", "समान"), ("अ", "समर्थ"), ("अ", "समय"), ("अ", "सहाय"),
+             ("अ", "सहज"), ("ना", "समझ"))
 
 
 def _is_consonant(ch: str) -> bool:
@@ -62,13 +72,20 @@ def _drop_schwas(run: str) -> str:
     ("kamarā" → "kamra"), scanning right to left so one deletion blocks the
     one before it and no three-consonant cluster appears ("samajhna").
     Anusvara and visarga close a syllable like a consonant would, so the
-    schwa after them stays ("zindagi", not "zindgi").
+    schwa after them stays ("zindagi", not "zindgi"). A word-final short ि
+    marks a Sanskrit word, which keeps the schwa before it ("pragati",
+    "senapati").
     """
+    for prefix, stem in _PREFIXED:
+        if run.startswith(prefix + stem):
+            return _drop_schwas(prefix) + _drop_schwas(run[len(prefix):])
     # [text, vowel]: vowel is "a" for the inherent schwa, "v" for an open
     # written vowel, "n" for a syllable closed by anusvara/visarga, "" after
     # a virama
     syl = []
     for ch in run:
+        if ch in _JOINERS:
+            continue   # no sound and no meaning in Latin script
         if _is_consonant(ch):
             syl.append([ch, "a"])
         elif not syl or "\u0904" <= ch <= "\u0914":
@@ -90,7 +107,8 @@ def _drop_schwas(run: str) -> str:
         drop(-1)
     for i in range(len(syl) - 2, 0, -1):
         if (syl[i][1] == "a" and syl[i - 1][1] in ("a", "v") and syl[i + 1][1]
-                and _is_consonant(syl[i + 1][0][0])):
+                and _is_consonant(syl[i + 1][0][0])
+                and not (i == len(syl) - 2 and syl[-1][0].endswith(_SHORT_I))):
             drop(i)
     return "".join(s[0] for s in syl)
 
