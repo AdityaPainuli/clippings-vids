@@ -42,9 +42,16 @@ def _header(style: CaptionStyle, play_w: int, play_h: int) -> str:
            "Alignment, MarginL, MarginR, MarginV, Encoding\n")
     tail = (f"-1,0,0,0,100,100,2,0,1,{style.outline_width},{style.shadow_width},"
             f"{style.alignment},40,40,{style.margin_v},1\n")
+        
+    if style.animation.type == "karaoke":
+        primary = style.ass_highlight_color
+        secondary = style.ass_text_color
+    else:
+        primary = style.ass_text_color
+        secondary = style.ass_highlight_color
 
     caption = (f"Style: Caption,{style.font},{style.font_size},"
-               f"{style.ass_text_color},&H000000FF,"
+               f"{primary},{secondary},"
                f"{style.ass_outline_color},{style.ass_shadow_color},{tail}")
     highlight = (f"Style: Highlight,{style.font},{big_size},"
                  f"{style.ass_highlight_color},&H000000FF,"
@@ -80,12 +87,31 @@ def _events(words: list, style: CaptionStyle) -> str:
 
         if anim.type == "karaoke":
             parts = []
+            line_start = chunk[0]["start"]
+            anim_time_cs = 0
+
             for w_idx, w in enumerate(chunk):
-                dur_cs = max(int((w["end"] - w["start"]) * 100), 10)
-                parts.append("{\\kf" + str(dur_cs) + "}" + texts[w_idx])
+                dur_cs = max(int(round((w["end"] - w["start"]) * 100)), 10)
+
+                if w_idx == 0:
+                    parts.append(f"{{\\kf{dur_cs}}}{texts[w_idx]}")
+                    anim_time_cs = dur_cs
+
+                else:
+                    word_start_cs = int(round((w["start"] - line_start)* 100))
+                    gap_cs = max(0, word_start_cs - anim_time_cs)
+
+                    if gap_cs > 0:
+                        parts.append(f"{{\\kf{gap_cs}}} {{\\kf{dur_cs}}}{texts[w_idx]}")
+                        anim_time_cs += gap_cs + dur_cs
+                    
+                    else:
+                        parts.append(f" {{\\kf{dur_cs}}}{texts[w_idx]}")
+                        anim_time_cs += dur_cs
+            
             lines.append(
                 f"Dialogue: 0,{_ass_time(chunk[0]['start'])},{_ass_time(chunk_end)}"
-                f",Caption,,0,0,0,," + " ".join(parts)
+                f",Caption,,0,0,0,," + "".join(parts)
             )
             continue
 
