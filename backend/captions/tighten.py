@@ -35,7 +35,35 @@ NONLEXICAL_FILLERS = {
     "um", "umm", "ummm", "uh", "uhh", "uhm", "erm", "er", "hmm", "hmmm",
     "mmm", "mm", "ahh", "uhhh", "eh",
 }
+# backend/captions/tighten.py (Excerpt)
 
+REGIONAL_FILLERS = {
+    "en": {"you know", "like", "sort of", "um", "uh", "basically"},
+    "hi": {"matlab", "yani", "aise hi", "matlab ki", "toh"},
+    "ta": {"appadi", "theriyuma", "naan solluren", "paarthaa"},
+    "te": {"ante", "kada", "asalu"}
+}
+
+def _filler_score(words: list[str], language: str = "en") -> float:
+    """
+    Evaluates n-grams (1 to 3 words) against language-specific filler dictionaries.
+    """
+    fillers = REGIONAL_FILLERS.get(language, REGIONAL_FILLERS["en"])
+    n = len(words)
+    max_score = 0.0
+
+    # Check 3-grams, 2-grams, and 1-grams
+    for window_size in range(3, 0, -1):
+        if n < window_size:
+            continue
+        for i in range(n - window_size + 1):
+            ngram_phrase = " ".join(words[i:i + window_size]).lower()
+            if ngram_phrase in fillers:
+                # Assign higher weight to longer matching n-grams
+                score = window_size / 3.0
+                max_score = max(max_score, score)
+
+    return max_score
 # Devanagari spellings of the same non-lexical sounds, for transcripts kept
 # in the original script.
 # Only sounds with no lexical meaning. Deliberately excludes "आ" (the
