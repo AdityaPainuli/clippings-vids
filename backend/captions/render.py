@@ -66,10 +66,13 @@ def probe_audio(video_path: str) -> dict:
 
 
 def _ass_time_srt(s: float) -> str:
-    h = int(s // 3600)
-    m = int((s % 3600) // 60)
-    sec = int(s % 60)
-    ms = int((s % 1) * 1000)
+    # Round the total first: truncating each field lets float error drop a
+    # millisecond, and rounding here also carries 59.9996 into the next minute.
+    total_ms = round(s * 1000)
+    h = total_ms // 3600000
+    m = (total_ms % 3600000) // 60000
+    sec = (total_ms % 60000) // 1000
+    ms = total_ms % 1000
     return f"{h:02d}:{m:02d}:{sec:02d},{ms:03d}"
 
 
