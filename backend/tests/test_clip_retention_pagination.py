@@ -31,8 +31,13 @@ class ClipRetentionPaginationTests(unittest.TestCase):
         dotenv_module.load_dotenv = lambda: None
         sys.modules.setdefault("dotenv", dotenv_module)
 
+        # Other suites stub supabase_client at import time, some with a
+        # MagicMock, which passes any hasattr check. Only keep a real module.
         existing = sys.modules.get("supabase_client")
-        if existing is not None and not hasattr(existing, "requests"):
+        if existing is not None and (
+            not isinstance(existing, types.ModuleType)
+            or not hasattr(existing, "requests")
+        ):
             sys.modules.pop("supabase_client", None)
         cls.supabase_client = importlib.import_module("supabase_client")
 
