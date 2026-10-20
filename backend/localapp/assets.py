@@ -11,6 +11,7 @@ sha256 hashes verified at packaging time — a missing or wrong hash fails
 closed, nothing unverified is ever installed.
 """
 
+import gzip
 import hashlib
 import json
 import os
@@ -53,6 +54,9 @@ _HIDDEN_MODELS = {"tiny"}
 _BTBN = ("https://github.com/BtbN/FFmpeg-Builds/releases/download/"
          "autobuild-2026-09-30-13-08")
 
+# Release tags here are permanent; ffmpeg 6.0 with libass, libx264, qtrle.
+_FFSTATIC = "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1"
+
 # platform.system()-machine → list of pinned artifacts, each providing
 # one or more binaries. sha256 values computed from the artifacts at
 # pin time; _stream_download refuses to install without a matching hash.
@@ -67,18 +71,26 @@ FFMPEG_SOURCES = {
         "binaries": ["ffmpeg", "ffprobe"],
         "sha256": "97ce978979194b5cf7e06a5e68020dbdaa7a4f3294c5452b6a1bc347100dbb79",
     }],
-    # evermeet ships x86_64; Apple Silicon runs it under Rosetta. Fine as a
-    # fallback — most Macs have brew ffmpeg on PATH anyway.
+    # Native builds per architecture, served from GitHub release assets.
+    # evermeet (the previous source) redirects to a mirror that allows one
+    # download per minute and kept answering 429 even after Retry-After.
     "Darwin-arm64": [
-        {"url": "https://evermeet.cx/ffmpeg/ffmpeg-9.0.1.zip",
+        {"url": f"{_FFSTATIC}/ffmpeg-darwin-arm64.gz",
          "binaries": ["ffmpeg"],
-         "sha256": "8a8c9e549983409fe6604b9aa665648b7a5def9407fe814c39c8b2ea7f64a48f"},
-        {"url": "https://evermeet.cx/ffmpeg/ffprobe-9.0.1.zip",
+         "sha256": "8923876afa8db5585022d7860ec7e589af192f441c56793971276d450ed3bbfa"},
+        {"url": f"{_FFSTATIC}/ffprobe-darwin-arm64.gz",
          "binaries": ["ffprobe"],
-         "sha256": "d13f35db03456b7f65b7edb6437c86e23810fbfe91795e571f5b77211343b4f1"},
+         "sha256": "d986a8ec7b030899fe66a8a288ed809a3543338705a3ce178cfb85869c5d80be"},
+    ],
+    "Darwin-x86_64": [
+        {"url": f"{_FFSTATIC}/ffmpeg-darwin-x64.gz",
+         "binaries": ["ffmpeg"],
+         "sha256": "929b375c1182d956c51f7ac25e0b2b0411fb01f6f407aa15c9758efeb4242106"},
+        {"url": f"{_FFSTATIC}/ffprobe-darwin-x64.gz",
+         "binaries": ["ffprobe"],
+         "sha256": "d4da574d6e2e197bd259b47d69cf262df9e312af24ad960444f6d806d3d4c186"},
     ],
 }
-FFMPEG_SOURCES["Darwin-x86_64"] = FFMPEG_SOURCES["Darwin-arm64"]
 
 
 def _platform_key() -> str:
@@ -334,9 +346,9 @@ def setup_status() -> dict:
 
 # ── Downloads ────────────────────────────────────────────────────────────────
 
-# evermeet's mirror allows one download per minute and answers the second
-# with 429 + Retry-After: 60, and setup fetches ffmpeg then ffprobe back to
-# back. Waiting it out beats failing first-run setup on every Mac.
+# Download hosts rate-limit with 429/503 + Retry-After, and setup fetches
+# several files back to back. Waiting a short limit out beats failing
+# first-run setup.
 _RETRY_STATUSES = (429, 503)
 _MAX_RETRIES = 3
 _MAX_RETRY_WAIT = 120
@@ -401,8 +413,12 @@ def _stream_download(url: str, dest: Path, progress: dict, sha256: str):
 
 
 def _extract_binary(archive: Path, member_name: str, dest: Path):
-    """Pull one binary out of a zip/tar archive, whatever the layout."""
-    if zipfile.is_zipfile(archive):
+    """Pull one binary out of a zip/tar archive, whatever the layout. A bare
+    `.gz` (not `.tar.gz`) is a single gzipped binary."""
+    if archive.name.endswith(".gz") and not archive.name.endswith(".tar.gz"):
+        with gzip.open(archive) as src, open(dest, "wb") as out:
+            shutil.copyfileobj(src, out)
+    elif zipfile.is_zipfile(archive):
         with zipfile.ZipFile(archive) as z:
             member = next((m for m in z.namelist()
                            if m.split("/")[-1] == member_name), None)

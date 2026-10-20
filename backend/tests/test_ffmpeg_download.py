@@ -73,5 +73,20 @@ class RetryAfterTests(unittest.TestCase):
         self.assertEqual(assets._retry_wait(FakeResponse(429)), 30)
 
 
+class GzipBinaryTests(unittest.TestCase):
+    """macOS builds ship as a single gzipped binary, not an archive."""
+
+    def test_bare_gz_is_decompressed_and_made_executable(self):
+        import gzip
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp) / "ffprobe-darwin-arm64.gz"
+            with gzip.open(archive, "wb") as f:
+                f.write(b"\x7fELF-ish binary")
+            dest = Path(tmp) / "ffprobe"
+            assets._extract_binary(archive, "ffprobe", dest)
+            self.assertEqual(dest.read_bytes(), b"\x7fELF-ish binary")
+            self.assertTrue(os.access(dest, os.X_OK))
+
+
 if __name__ == "__main__":
     unittest.main()
