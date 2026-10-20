@@ -23,7 +23,7 @@ rewrite and it will not get merged.
 
 ```bash
 cd backend
-pip install -r requirements-bolcap.txt
+pip install -r requirements-bolcap.txt -c constraints-bolcap.txt
 python -m localapp            # Bolcap desktop app from source
 ```
 
