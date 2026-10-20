@@ -28,7 +28,40 @@ SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
 BUCKET               = "clips"
 CLIP_TTL_SECONDS     = int(os.getenv("CLIP_TTL_SECONDS", 21600))
 SIGNED_URL_SECONDS   = CLIP_TTL_SECONDS
+# backend/supabase_client.py (Excerpt)
 
+def _list_prefix(prefix: str, page_size: int = 1000) -> list:
+    """
+    Retrieves all storage objects under a given prefix by paginating through
+    Supabase Storage API results until all pages are fetched.
+    """
+    all_objects = []
+    offset = 0
+
+    while True:
+        # Existing request payload structure with dynamic offset
+        payload = {
+            "prefix": prefix,
+            "limit": page_size,
+            "offset": offset
+        }
+
+        # Make request to Supabase Storage REST endpoint
+        page_items = _execute_storage_list_request(payload)
+
+        if not page_items:
+            break
+
+        all_objects.extend(page_items)
+
+        # Stop pagination if response page contains fewer items than page_size
+        if len(page_items) < page_size:
+            break
+
+        # Advance offset by page_size for the next page request
+        offset += page_size
+
+    return all_objects
 # Used only for auth operations (login/signup/verify JWT)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
