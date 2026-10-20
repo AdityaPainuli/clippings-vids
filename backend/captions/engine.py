@@ -8,7 +8,34 @@ hex-color styles, and all four animation modes (none/pop/fade/karaoke).
 from .styles import CaptionStyle
 
 FULL_ALPHA = "&H00"
+# backend/captions/engine.py (Excerpt)
 
+def _hex_to_ass_color(hex_str: str) -> str:
+    """Converts a standard #RRGGBB or #RRGGBBAA hex color to ASS &HAABBGGRR format."""
+    hex_clean = hex_str.lstrip('#')
+    if len(hex_clean) == 6:
+        r, g, b = hex_clean[0:2], hex_clean[2:4], hex_clean[4:6]
+        alpha = "00"
+    elif len(hex_clean) == 8:
+        r, g, b, alpha = hex_clean[0:2], hex_clean[2:4], hex_clean[4:6], hex_clean[6:8]
+    else:
+        return "&H000000FF" # Fallback red
+    
+    return f"&H{alpha}{b}{g}{r}".upper()
+
+def _header(style) -> str:
+    primary_color = _hex_to_ass_color(style.text_color)
+    # FIX: Replace hardcoded &H000000FF with configured highlight color
+    secondary_color = _hex_to_ass_color(style.highlight_color)
+    outline_color = _hex_to_ass_color(style.outline_color)
+    shadow_color = _hex_to_ass_color(style.shadow_color)
+
+    caption_style = (
+        f"Style: Caption,{style.font},{style.font_size},"
+        f"{primary_color},{secondary_color},"
+        f"{outline_color},{shadow_color},{tail}"
+    )
+    return caption_style
 
 def _ass_time(s: float) -> str:
     h = int(s // 3600)
