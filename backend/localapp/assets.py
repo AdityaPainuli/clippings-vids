@@ -47,22 +47,25 @@ MODEL_CHOICES = {
 # Allowed for CI/testing but not shown in the UI
 _HIDDEN_MODELS = {"tiny"}
 
+# Pin a month-end autobuild. BtbN deletes daily builds after about two weeks
+# but keeps the last build of each month for about two years; a daily pin
+# (2026-08-18) 404'd within two months and broke first-run setup.
 _BTBN = ("https://github.com/BtbN/FFmpeg-Builds/releases/download/"
-         "autobuild-2026-08-18-15-03")
+         "autobuild-2026-09-30-13-08")
 
 # platform.system()-machine → list of pinned artifacts, each providing
 # one or more binaries. sha256 values computed from the artifacts at
 # pin time; _stream_download refuses to install without a matching hash.
 FFMPEG_SOURCES = {
     "Windows-AMD64": [{
-        "url": f"{_BTBN}/ffmpeg-n8.1.2-44-g7c533d0f86-win64-gpl-8.1.zip",
+        "url": f"{_BTBN}/ffmpeg-n8.1.3-9-g29e619e767-win64-gpl-8.1.zip",
         "binaries": ["ffmpeg.exe", "ffprobe.exe"],
-        "sha256": "66e3797adad33063ae3f55c7eacb9f1bff604322a4e50225039626230fd0c0d1",
+        "sha256": "7b801cdd3a1a0bb54ae6f572187e68b4ed54f52086cfee133fab2180bfb429fa",
     }],
     "Linux-x86_64": [{
-        "url": f"{_BTBN}/ffmpeg-n8.1.2-44-g7c533d0f86-linux64-gpl-8.1.tar.xz",
+        "url": f"{_BTBN}/ffmpeg-n8.1.3-9-g29e619e767-linux64-gpl-8.1.tar.xz",
         "binaries": ["ffmpeg", "ffprobe"],
-        "sha256": "03ccc8a1cb534b97c2bc43f322ddb1b7c23bd325abb7e4c31aa37f4b4c0e648f",
+        "sha256": "97ce978979194b5cf7e06a5e68020dbdaa7a4f3294c5452b6a1bc347100dbb79",
     }],
     # evermeet ships x86_64; Apple Silicon runs it under Rosetta. Fine as a
     # fallback — most Macs have brew ffmpeg on PATH anyway.
