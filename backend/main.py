@@ -12,7 +12,56 @@ import hashlib
 import clipper
 from supabase_client import supabase, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips
 from captions.api import router as captions_router
+# backend/main.py (Excerpt)
 
+import os
+import shutil
+from fastapi import status
+from fastapi.responses import JSONResponse
+
+@app.get("/health", tags=["Monitoring"])
+async def health_check():
+    """
+    Liveness probe confirming the API process is running.
+    Fast and dependency-free.
+    """
+    return {"status": "ok"}
+
+
+@app.get("/ready", tags=["Monitoring"])
+async def readiness_check():
+    """
+    Readiness probe verifying critical backend dependencies:
+    - ffprobe availability in system PATH
+    - Upload directory writability
+    """
+    failures = {}
+
+    # 1. Verify ffprobe availability
+    if not shutil.which("ffprobe"):
+        failures["ffprobe"] = "Required media inspection binary 'ffprobe' not found in PATH."
+
+    # 2. Verify upload directory storage writability
+    upload_dir = os.getenv("UPLOAD_DIR", "/tmp/bolcap_uploads")
+    try:
+        os.makedirs(upload_dir, exist_ok=True)
+        test_file = os.path.join(upload_dir, ".readiness_probe")
+        with open(test_file, "w") as f:
+            f.write("test")
+        os.remove(test_file)
+    except Exception as err:
+        failures["storage"] = f"Upload directory is not writable: {str(err)}"
+
+    if failures:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "not_ready",
+                "failures": failures
+            }
+        )
+
+    return {"status": "ready"}
 
 app = FastAPI()
 app.include_router(captions_router)
