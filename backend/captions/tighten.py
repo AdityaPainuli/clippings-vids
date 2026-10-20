@@ -106,6 +106,7 @@ CLAUSE_PUNCT = ".,!?;:।"
 REDUPLICATED = {
     "alag", "dheere", "baar", "jaldi", "thoda", "kabhi", "saath", "door",
     "paas", "kuch", "bahut", "acha", "achha", "chhota", "bada", "garam",
+    "chota",   # how the rule romanizer spells छोटा
 }
 # Devanagari forms of the same words. detect_repeats checks the original
 # script as well, because the romanized spelling varies by path: with no

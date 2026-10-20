@@ -58,6 +58,11 @@ class ReduplicationGuardTest(unittest.TestCase):
         self.assertEqual(detect_repeats(_words([("alag", None), ("alag", None)])), [])
         self.assertEqual(len(detect_repeats(_words([("main", None), ("main", None)]))), 1)
 
+    def test_latin_chota_is_not_cut(self):
+        # The rule romanizer writes छोटा as "chota"; a Latin-only transcript
+        # with that spelling has no Devanagari text to fall back on
+        self.assertEqual(detect_repeats(_words([("chota", None), ("chota", None)])), [])
+
 
 if __name__ == "__main__":
     unittest.main()
