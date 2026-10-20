@@ -17,7 +17,34 @@ import os
 import re
 import unicodedata
 from difflib import SequenceMatcher
+# backend/captions/romanize.py (Excerpt)
 
+SCRIPT_CLEANUP_RULES = {
+    'devanagari': {
+        'schwa_deletion': True,
+        'replacements': {r'ch': 'c', r'shh': 'sh'},
+    },
+    'tamil': {
+        'schwa_deletion': False,
+        'replacements': {r'zh': 'zh', r'nn': 'n'},
+    },
+    'telugu': {
+        'schwa_deletion': True,
+        'replacements': {r'ee': 'i', r'oo': 'u'},
+    },
+    # Add Kannada, Bengali, Malayalam rules accordingly
+}
+
+def _rule_romanize(word: str, script: str) -> str:
+    source_scheme = SANSCRIPT_SCHEMES.get(script, sanscript.DEVANAGARI)
+    transliterated = sanscript.transliterate(word, source_scheme, sanscript.IAST)
+    
+    # Apply script-specific cleanup
+    rules = SCRIPT_CLEANUP_RULES.get(script, {})
+    for pattern, replacement in rules.get('replacements', {}).items():
+        transliterated = re.sub(pattern, replacement, transliterated)
+        
+    return transliterated
 DEVANAGARI_RE = re.compile(r"[ऀ-ॿ]")
 CHUNK = 80  # words per LLM call — small enough to keep alignment reliable
 MIN_LLM_SIMILARITY = 0.45
