@@ -13,7 +13,7 @@ open stuff. Every item has an issue. Claim it there before starting, see
 |---|---|
 | Caption engine + CLI | Works end to end. All four CI checks and the unit tests pass. |
 | Bolcap desktop app | Works from source. Last release `bolcap-v0.3.1` (2026-08-30) is 15 commits behind `main`, and its first-run ffmpeg download is broken on Windows and Linux (#208). |
-| Hosted backend | Runs, but needs Supabase objects nothing in the repo creates yet (PR #174). |
+| Hosted backend | Runs. `backend/captions/schema.sql` creates every Supabase table and bucket it uses. |
 | Web frontend | Clipper only. No captions UI. Backend URL hardcoded to `localhost:8000`. Builds, but `npm run lint` fails. |
 
 ## Now: broken or risky
@@ -26,7 +26,6 @@ Things that stop a new user, or that put data at risk.
 - #104 User media URLs can reach internal hosts (PR #207)
 - #177 Signed caption uploads that never become a job are never deleted (PR #206)
 - #92 ffmpeg audio extraction can hang forever (PR #175). #178 covers the other ffmpeg calls
-- `clips` bucket and `clip_metadata` table are created by nothing in the repo (PR #174)
 - #46 / #41 Uploads are read fully into memory and not validated (PR #110 for #46)
 
 ## Next: correctness
