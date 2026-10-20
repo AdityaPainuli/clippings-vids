@@ -24,10 +24,17 @@ rewrite and it will not get merged.
 ```bash
 cd backend
 pip install -r requirements-bolcap.txt
-uvicorn main:app --reload
+python -m localapp            # Bolcap desktop app from source
 ```
 
+That covers the caption engine, the desktop app, the CLI, and everything CI
+runs. The hosted backend (`uvicorn main:app`) needs more packages and a
+Supabase project; the README's "Hosted stack" section has the full list.
+
 You need `ffmpeg` and `ffprobe` on your PATH for anything that renders.
+
+Known bugs and gaps that are not yet issues are listed in
+[ROADMAP.md](ROADMAP.md). Open an issue before picking one up.
 
 ## Tests
 
@@ -44,8 +51,9 @@ Bare pytest functions contribute zero tests under that runner. They will pass
 on your machine and run nothing in CI.
 
 **Stub heavy imports.** `requirements-bolcap.txt` is deliberately small. It has
-fastapi, uvicorn, python-multipart, pydantic, requests, faster-whisper and
-indic-transliteration. That is the whole list, and it is the list CI installs.
+fastapi, uvicorn, python-multipart, pydantic, requests, faster-whisper, av
+(pinned below 19 for faster-whisper) and indic-transliteration. That is the
+whole list, and it is the list CI installs.
 
 These are **not** in that file, so they do not exist in CI even if you have
 them locally: `yt_dlp`, `supabase`, `pytest`, `moviepy`, `whisper`, `cv2`,

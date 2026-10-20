@@ -5,4 +5,7 @@ python-multipart
 pydantic
 requests
 faster-whisper
+# PyAV 19 dropped the open(metadata_errors=) argument faster-whisper 1.2.1
+# still passes, so every transcription fails with a TypeError.
+av<19
 indic-transliteration
