@@ -13,6 +13,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from dotenv import load_dotenv
 
+from url_policy import check_media_url
+
 load_dotenv()
 
 
@@ -112,6 +114,8 @@ CAPTION_MARGIN_V     = CAPTION_PRESETS["default"]["margin_v"]
 # ---------------------------------------------------------------------------
 
 def download_video(url, output_path="downloads"):
+    # Fail before yt-dlp opens any connection to a non-public host.
+    url = check_media_url(url)
     os.makedirs(output_path, exist_ok=True)
     ydl_opts = {
         'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best',
@@ -120,6 +124,9 @@ def download_video(url, output_path="downloads"):
         'subtitlesformat': 'vtt',
         'quiet': True,
         'no_warnings': True,
+        # Platform extractors only. The generic one fetches any page and
+        # follows whatever media links it finds, which is an open proxy.
+        'allowed_extractors': ['default', '-generic'],
     }
     print(f"Downloading video from {url} (max 720p)...")
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
