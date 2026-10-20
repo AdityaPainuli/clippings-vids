@@ -69,6 +69,7 @@ def _install_main_import_stubs():
 
     supabase_client = types.ModuleType("supabase_client")
     supabase_client.supabase = object()
+    supabase_client.new_auth_client = lambda: object()
     supabase_client.upload_clip_to_storage = lambda *args, **kwargs: "storage/path.mp4"
     supabase_client.delete_old_clips = lambda: 0
     supabase_client.get_signed_url = lambda path: "https://example.test/clip.mp4"
