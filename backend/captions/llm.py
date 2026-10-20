@@ -34,7 +34,84 @@ ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_MODEL = os.getenv("BOLCAP_ANTHROPIC_MODEL", "claude-sonnet-5")
 GEMINI_MODEL = os.getenv("BOLCAP_GEMINI_MODEL", "gemini-2.5-flash")
 TIMEOUT = 60
+# backend/captions/llm.py (Excerpt)
 
+import os
+import requests
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Extend PROVIDER_ENV to include openai/local endpoint (no API key required)
+PROVIDER_ENV = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "gemini": "GOOGLE_API_KEY",
+    "openai": None  # Local / OpenAI-compatible endpoint requires no key
+}
+
+DEFAULT_OPENAI_BASE_URL = os.getenv("BOLCAP_OPENAI_BASE_URL", "http://localhost:11434/v1")
+DEFAULT_OPENAI_MODEL = os.getenv("BOLCAP_OPENAI_MODEL", "llama3")
+
+class LLMError(Exception):
+    """Raised when LLM request fails or returns invalid structured output."""
+    pass
+
+def is_provider_available(provider_name: str) -> bool:
+    if provider_name == "openai":
+        base_url = os.getenv("BOLCAP_OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL)
+        try:
+            # Lightweight health or model check to confirm endpoint is reachable
+            response = requests.get(f"{base_url.rstrip('/')}/models", timeout=2)
+            return response.status_code == 200
+        except Exception:
+            return False
+            
+    env_var = PROVIDER_ENV.get(provider_name)
+    return bool(env_var and os.getenv(env_var))
+
+def chat_completion(prompt: str, system_prompt: str = None) -> str:
+    provider = os.getenv("BOLCAP_LLM_PROVIDER") or _auto_detect_provider()
+    
+    if provider == "openai":
+        return _call_openai_compatible(prompt, system_prompt)
+    elif provider == "anthropic":
+        return _call_anthropic(prompt, system_prompt)
+    elif provider == "gemini":
+        return _call_gemini(prompt, system_prompt)
+    else:
+        raise LLMError("No valid LLM provider available or configured.")
+
+def _call_openai_compatible(prompt: str, system_prompt: str = None) -> str:
+    base_url = os.getenv("BOLCAP_OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL)
+    model = os.getenv("BOLCAP_OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
+    
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+    
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.1
+    }
+    
+    try:
+        response = requests.post(
+            f"{base_url.rstrip('/')}/chat/completions",
+            json=payload,
+            timeout=30
+        )
+        if response.status_code != 200:
+            raise LLMError(f"OpenAI-compatible endpoint returned status {response.status_code}: {response.text}")
+            
+        data = response.json()
+        return data["choices"][0]["message"]["content"].strip()
+    except requests.exceptions.ConnectionError as conn_err:
+        logger.warning(f"[llm] Connection refused to local endpoint {base_url}. Falling back to rules.")
+        raise LLMError(f"Connection refused: {conn_err}")
+    except Exception as err:
+        raise LLMError(f"OpenAI-compatible LLM request failed: {str(err)}")
 
 class LLMError(RuntimeError):
     """The call did not complete. Distinct from the model answering 'no'."""
