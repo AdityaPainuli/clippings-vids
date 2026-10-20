@@ -25,8 +25,8 @@ NOT bundled — downloaded at runtime by the user
 -----------------------------------------------
 ffmpeg and ffprobe are NOT distributed with this project. On first run,
 Bolcap downloads official prebuilt binaries from third parties (BtbN's
-FFmpeg-Builds on Windows and Linux, evermeet.cx on macOS) into the user's
-own ~/.bolcap directory, verified against pinned checksums.
+FFmpeg-Builds on Windows and Linux, eugeneware/ffmpeg-static on macOS) into
+the user's own ~/.bolcap directory, verified against pinned checksums.
 
 Those builds are licensed under the GPL by their respective authors.
 Bolcap invokes them as separate programs via subprocess and never links
