@@ -8,7 +8,39 @@ Users edit colors as hex (#RRGGBB or #RRGGBBAA); conversion to ASS
 import re
 from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator
+# backend/captions/styles.py (Excerpt)
 
+import re
+from pydantic import BaseModel, Field, field_validator
+
+class CaptionStyle(BaseModel):
+    font: str = Field(
+        default="Arial Black",
+        max_length=100,
+        description="Font family name. Must not contain commas, newlines, carriage returns, or leading/trailing whitespace to prevent ASS injection and column shifting."
+    )
+    font_size: int = Field(72, ge=24, le=200)
+    words_per_line: int = Field(3, ge=1, le=8)
+    outline_width: int = Field(4, ge=0, le=10)
+    # ... other style fields
+
+    @field_validator('font')
+    @classmethod
+    def validate_font_name(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("Font name cannot be empty or whitespace-only.")
+        
+        # Check for leading or trailing whitespace
+        if value != value.strip():
+            raise ValueError("Font name cannot have leading or trailing whitespace.")
+            
+        # Check for structural ASS characters (comma, newline, carriage return)
+        forbidden_chars = [',', '\n', '\r']
+        for char in forbidden_chars:
+            if char in value:
+                raise ValueError(f"Font name contains forbidden structural character: {repr(char)}")
+                
+        return value
 HEX_RE = re.compile(r"^#?([0-9a-fA-F]{6})([0-9a-fA-F]{2})?$")
 
 
