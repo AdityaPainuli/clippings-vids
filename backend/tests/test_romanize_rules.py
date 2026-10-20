@@ -42,7 +42,7 @@ UNCHANGED = {
 RETAINED_SCHWA = {
     "प्रगति": "pragati", "अनुमति": "anumati", "सेनापति": "senapati",
     "असमान": "asaman", "असमर्थ": "asamarth", "असहाय": "asahay",
-    "नासमझ": "nasamajh",
+    "असफल": "asaphal", "नासमझ": "nasamajh",
 }
 
 

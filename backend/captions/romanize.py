@@ -51,7 +51,7 @@ _CH = {"cch": "chh", "ch": "ch", "c": "ch"}
 # Schwa deletion stops at a prefix boundary, which the syllable rule can't
 # see: अ + समान is "asaman", not "asman". (prefix, stem)
 _PREFIXED = (("अ", "समान"), ("अ", "समर्थ"), ("अ", "समय"), ("अ", "सहाय"),
-             ("अ", "सहज"), ("ना", "समझ"))
+             ("अ", "सहज"), ("अ", "सफल"), ("ना", "समझ"))
 
 
 def _is_consonant(ch: str) -> bool:
