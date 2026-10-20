@@ -13,7 +13,57 @@ import clipper
 from supabase_client import supabase, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips
 from captions.api import router as captions_router
 
+# backend/main.py (Excerpt)
 
+import os
+from fastapi import UploadFile, HTTPException, status
+from backend.config import MAX_UPLOAD_SIZE_BYTES
+
+CHUNK_SIZE = 1024 * 1024  # 1 MB chunks
+
+@app.post("/upload")
+async def upload_video(file: UploadFile, job_id: str):
+    file_path = os.path.join(UPLOAD_DIR, f"{job_id}_{file.filename}")
+    total_written = 0
+
+    try:
+        with open(file_path, "wb") as buffer:
+            while True:
+                chunk = await file.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                
+                total_written += len(chunk)
+                if total_written > MAX_UPLOAD_SIZE_BYTES:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=f"Upload exceeds maximum allowed size of {MAX_UPLOAD_SIZE_BYTES / (1024*1024)}MB."
+                    )
+                
+                buffer.write(chunk)
+
+    except HTTPException as http_err:
+        # Clean up partial file on size limit or client error
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+        raise http_err
+
+    except Exception as err:
+        # Clean up partial file on unexpected write failure
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process file upload: {str(err)}"
+        )
+
+    return {"success": True, "job_id": job_id, "file_path": file_path, "size": total_written}
 app = FastAPI()
 app.include_router(captions_router)
 
