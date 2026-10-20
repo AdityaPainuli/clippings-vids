@@ -13,7 +13,7 @@ yet. Open one before picking it up, see [CONTRIBUTING.md](CONTRIBUTING.md).
 |---|---|
 | Caption engine + CLI | Works end to end. All four CI checks and the unit tests pass. |
 | Bolcap desktop app | Works from source. Last release `bolcap-v0.3.1` (2026-08-30) is 14 commits behind `main`, so no shipped build has the `neon` preset or the fixes since. |
-| Hosted backend | Runs, but needs Supabase objects nothing in the repo creates, and has an auth bug that breaks DB writes after the first login (#170, below). |
+| Hosted backend | Runs, but has an auth bug that breaks DB writes after the first login (#170, below). |
 | Web frontend | Clipper only. No captions UI. Backend URL hardcoded to `localhost:8000`. Builds, but `npm run lint` fails with 9 errors. |
 
 ## Now: broken or risky
@@ -32,9 +32,6 @@ Things that stop a new user, or that put data at risk.
   every later `supabase.table(...)` call. Under RLS that breaks `create_job`
   (caption transcribe/render 500) and makes `update_job` / cleanup silently
   match nothing. Fix: a throwaway client for auth calls.
-- **(new) Missing Supabase setup.** The `clips` bucket and `clip_metadata` table
-  are used but never created. Without them every clip job ends
-  "All N clips failed". Add them to `schema.sql` and make it re-runnable.
 - **#104** SSRF via user media URLs. **#46 / #41** unbounded, unvalidated uploads.
 - **(new) Upload URLs never expire their files.** `/captions/upload-url` signs
   uploads to `{uid}/sources/...`, but retention only deletes paths referenced by
