@@ -23,7 +23,47 @@ def _cpu_model_name() -> str:
     active model after setup without restarting the process."""
     return os.getenv("CAPTIONS_CPU_MODEL", "small")
 
+# backend/captions/transcribe.py (Excerpt)
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+def transcribe_audio(audio, language: str = None):
+    """
+    Transcribes audio by attempting backends in priority order:
+    mlx-whisper -> faster-whisper -> openai-whisper.
+    Gracefully handles both None returns and runtime exceptions by falling back.
+    """
+    backends = [
+        ("mlx-whisper", _transcribe_mlx),
+        ("faster-whisper", _transcribe_faster_whisper),
+        ("openai-whisper", _transcribe_openai_whisper),
+    ]
+
+    failure_reasons = []
+
+    for name, backend_fn in backends:
+        try:
+            logger.info(f"[transcribe] Attempting transcription with backend: {name}")
+            result = backend_fn(audio, language)
+            
+            if result is not None:
+                logger.info(f"[transcribe] Successfully transcribed using {name}")
+                return result
+            else:
+                logger.warning(f"[transcribe] Backend {name} returned None, skipping...")
+                failure_reasons.append(f"{name}: returned None")
+                
+        except Exception as err:
+            logger.warning(f"[transcribe] Backend {name} failed with runtime exception: {err}", exc_info=True)
+            failure_reasons.append(f"{name}: exception -> {str(err)}")
+
+    # If all backends fail or return None, raise a descriptive error
+    error_summary = ", ".join(failure_reasons)
+    raise RuntimeError(
+        f"All transcription backends failed or were unavailable. Details: [{error_summary}]"
+    )
 _fw_model_cache = None      # (name, model)
 _cpu_model_cache = None     # (name, model)
 
