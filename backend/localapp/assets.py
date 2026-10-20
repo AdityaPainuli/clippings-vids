@@ -334,6 +334,32 @@ def setup_status() -> dict:
 
 # ── Downloads ────────────────────────────────────────────────────────────────
 
+# evermeet's mirror allows one download per minute and answers the second
+# with 429 + Retry-After: 60, and setup fetches ffmpeg then ffprobe back to
+# back. Waiting it out beats failing first-run setup on every Mac.
+_RETRY_STATUSES = (429, 503)
+_MAX_RETRIES = 3
+_MAX_RETRY_WAIT = 120
+
+
+def _retry_wait(r) -> float:
+    try:
+        return min(max(float(r.headers.get("Retry-After", "")), 1), _MAX_RETRY_WAIT)
+    except ValueError:
+        return 30
+
+
+def _get_honoring_retry_after(url: str, headers: dict):
+    for attempt in range(_MAX_RETRIES + 1):
+        r = requests.get(url, stream=True, timeout=(10, 60),
+                         allow_redirects=True, headers=headers)
+        if r.status_code not in _RETRY_STATUSES or attempt == _MAX_RETRIES:
+            return r
+        wait = _retry_wait(r)
+        r.close()
+        time.sleep(wait)
+
+
 def _stream_download(url: str, dest: Path, progress: dict, sha256: str):
     """
     Resumable, checksummed download. Bytes accumulate in dest.part and
@@ -348,8 +374,7 @@ def _stream_download(url: str, dest: Path, progress: dict, sha256: str):
     offset = part.stat().st_size if part.exists() else 0
 
     headers = {"Range": f"bytes={offset}-"} if offset else {}
-    with requests.get(url, stream=True, timeout=(10, 60),
-                      allow_redirects=True, headers=headers) as r:
+    with _get_honoring_retry_after(url, headers) as r:
         if offset and r.status_code != 206:
             # Server ignored the Range — start over
             offset = 0
