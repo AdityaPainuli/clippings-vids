@@ -35,7 +35,7 @@ class ReleasePinsTest(unittest.TestCase):
     def test_release_workflow_installs_pinned(self):
         with open(os.path.join(REPO_DIR, ".github", "workflows", "bolcap-release.yml")) as f:
             wf = f.read()
-        self.assertRegex(wf, r"pip install pip==\S+")
+        self.assertRegex(wf, r"pip install pip==[0-9][0-9.]*(\s|$)")
         for line in wf.splitlines():
             if re.search(r"\bpip install\b", line) and "pip==" not in line:
                 self.assertIn("-c constraints-bolcap.txt", line)
