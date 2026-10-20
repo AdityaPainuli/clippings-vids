@@ -180,7 +180,7 @@ and `ffmpeg`/`ffprobe` on PATH:
 ```bash
 cd backend
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install -r requirements-bolcap.txt
+pip install -r requirements-bolcap.txt -c constraints-bolcap.txt
 python -m localapp                       # opens http://127.0.0.1:8756
 python -m captions.cli video.mp4         # or skip the UI
 ```
