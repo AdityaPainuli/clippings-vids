@@ -10,6 +10,71 @@ import asyncio
 import time
 import hashlib
 import clipper
+# backend/main.py (Excerpt)
+
+import time
+from collections import OrderedDict
+from backend.config import CLIP_TTL_SECONDS
+
+MAX_CLIP_CACHE_SIZE = 500  # Bound memory usage
+_clip_cache = OrderedDict()  # Stores key -> {"timestamp": float, "results": list, "storage_paths": list}
+
+
+def _get_cache_entry(cache_key: str):
+    """
+    Retrieves cache entry if non-expired and storage files still exist.
+    """
+    if cache_key not in _clip_cache:
+        return None
+
+    entry = _clip_cache[cache_key]
+    now = time.time()
+
+    # 1. Verify TTL expiration
+    if now - entry["timestamp"] >= CLIP_TTL_SECONDS:
+        _clip_cache.pop(cache_key, None)
+        return None
+
+    # 2. Verify underlying storage objects still exist
+    for storage_path in entry.get("storage_paths", []):
+        if not check_storage_object_exists(storage_path):
+            _clip_cache.pop(cache_key, None)
+            return None
+
+    # Move to end (LRU touch)
+    _clip_cache.move_to_end(cache_key)
+    return entry["results"]
+
+
+def _set_cache_entry(cache_key: str, results: list, storage_paths: list):
+    """
+    Stores cache entry and enforces capacity bounds.
+    """
+    _clip_cache[cache_key] = {
+        "timestamp": time.time(),
+        "results": results,
+        "storage_paths": storage_paths
+    }
+    _clip_cache.move_to_end(cache_key)
+
+    # Evict oldest entry if capacity limit exceeded
+    while len(_clip_cache) > MAX_CLIP_CACHE_SIZE:
+        _clip_cache.popitem(last=False)
+
+
+def _maybe_cleanup():
+    """
+    Periodic cleanup purging expired jobs and clip cache entries.
+    """
+    # ... existing job cleanup ...
+
+    now = time.time()
+    expired_keys = [
+        k for k, v in _clip_cache.items()
+        if now - v["timestamp"] >= CLIP_TTL_SECONDS
+    ]
+    for k in expired_keys:
+        _clip_cache.pop(k, None)
 from supabase_client import supabase, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips
 from captions.api import router as captions_router
 
