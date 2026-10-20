@@ -25,6 +25,7 @@ class ClipRetentionPaginationTests(unittest.TestCase):
         supabase_module = types.ModuleType("supabase")
         supabase_module.Client = object
         supabase_module.create_client = lambda *args, **kwargs: object()
+        supabase_module.ClientOptions = lambda **kwargs: kwargs
         sys.modules.setdefault("supabase", supabase_module)
 
         dotenv_module = types.ModuleType("dotenv")

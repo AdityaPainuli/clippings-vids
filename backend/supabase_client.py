@@ -18,7 +18,7 @@ import os
 import time
 import requests
 from datetime import datetime, timezone
-from supabase import create_client, Client
+from supabase import create_client, Client, ClientOptions
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -29,8 +29,21 @@ BUCKET               = "clips"
 CLIP_TTL_SECONDS     = int(os.getenv("CLIP_TTL_SECONDS", 21600))
 SIGNED_URL_SECONDS   = CLIP_TTL_SECONDS
 
-# Used only for auth operations (login/signup/verify JWT)
+# Service-role client for table access and JWT verification (get_user(token)
+# is read-only). Never sign in, sign up or refresh on it: supabase-py swaps the
+# PostgREST Authorization header to the user's JWT on SIGNED_IN/TOKEN_REFRESHED,
+# after which every table write runs under RLS as that user.
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+
+def new_auth_client() -> Client:
+    """Throwaway client for session-creating auth calls (login/signup/refresh).
+    No auto-refresh: a background refresh would rotate the user's refresh token."""
+    return create_client(
+        SUPABASE_URL,
+        SUPABASE_SERVICE_KEY,
+        options=ClientOptions(auto_refresh_token=False, persist_session=False),
+    )
 
 # Direct REST headers — bypasses supabase-py storage client and RLS entirely
 _HEADERS = {
