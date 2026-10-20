@@ -29,7 +29,25 @@ import re
 import subprocess
 from dataclasses import dataclass, asdict
 from statistics import median
+# backend/captions/tighten.py (Excerpt)
 
+import unicodedata
+
+# Combine Latin and Devanagari forms with NFC normalization
+REDUPLICATED = {
+    unicodedata.normalize('NFC', word) for word in {
+        # Latin / Hinglish variants
+        "bar", "dhire", "pas", "sath", "dur", "chhota", "bada", "alag",
+        # Devanagari variants
+        "बार", "धीरे", "पास", "साथ", "दूर", "छोटा", "बड़ा", "अलग",
+        "धीरे धीरे", "बार बार", "पास पास", "साथ साथ", "दूर दूर", "छोटा छोटा", "बड़ा बड़ा", "अलग अलग"
+    }
+}
+
+def _normalize_text(text: str) -> str:
+    if not text:
+        return ""
+    return unicodedata.normalize('NFC', text.strip().lower())
 # Never real words — safe to cut wherever they appear.
 NONLEXICAL_FILLERS = {
     "um", "umm", "ummm", "uh", "uhh", "uhm", "erm", "er", "hmm", "hmmm",
