@@ -10,6 +10,7 @@ import asyncio
 import time
 import hashlib
 import clipper
+from url_policy import check_media_url, UnsafeURLError
 from supabase_client import supabase, new_auth_client, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips
 from captions.api import router as captions_router
 
@@ -378,6 +379,13 @@ async def process_url(
     if (min_clip_length is not None and max_clip_length is not None
             and min_clip_length > max_clip_length):
         raise HTTPException(status_code=400, detail="min_clip_length cannot exceed max_clip_length")
+
+    # Reject internal/non-http URLs up front so the caller gets a 400, not a
+    # queued job that fails later. The DNS lookup blocks, so run it off-loop.
+    try:
+        url = await asyncio.get_running_loop().run_in_executor(None, check_media_url, url)
+    except UnsafeURLError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     await _maybe_cleanup()
     user_id   = user["user_id"]

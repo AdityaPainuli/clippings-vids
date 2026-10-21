@@ -13,6 +13,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from dotenv import load_dotenv
 
+from url_policy import check_media_url
+
 load_dotenv()
 
 
@@ -112,6 +114,8 @@ CAPTION_MARGIN_V     = CAPTION_PRESETS["default"]["margin_v"]
 # ---------------------------------------------------------------------------
 
 def download_video(url, output_path="downloads"):
+    # Fail before yt-dlp opens any connection to a non-public host.
+    url = check_media_url(url)
     os.makedirs(output_path, exist_ok=True)
     ydl_opts = {
         'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best',
@@ -120,6 +124,12 @@ def download_video(url, output_path="downloads"):
         'subtitlesformat': 'vtt',
         'quiet': True,
         'no_warnings': True,
+        # An allowlist, not "default minus generic": several platform
+        # extractors match any host (Mediasite's /Mediasite/Play/<id>), so an
+        # attacker's public host could pass check_media_url and then redirect
+        # yt-dlp inward. With only these, yt-dlp talks to YouTube, Twitch and
+        # Instagram.
+        'allowed_extractors': ['youtube.*', 'twitch.*', 'instagram.*'],
     }
     print(f"Downloading video from {url} (max 720p)...")
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
