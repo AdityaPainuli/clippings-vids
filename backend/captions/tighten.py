@@ -27,6 +27,7 @@ broken sentence the user has to hunt for; a missed filler is one click.
 import math
 import re
 import subprocess
+import unicodedata
 from dataclasses import dataclass, asdict
 from statistics import median
 
@@ -105,7 +106,17 @@ CLAUSE_PUNCT = ".,!?;:।"
 REDUPLICATED = {
     "alag", "dheere", "baar", "jaldi", "thoda", "kabhi", "saath", "door",
     "paas", "kuch", "bahut", "acha", "achha", "chhota", "bada", "garam",
+    "chota",   # how the rule romanizer spells छोटा
 }
+# Devanagari forms of the same words. detect_repeats checks the original
+# script as well, because the romanized spelling varies by path: with no
+# API key बार comes out "bar" and धीरे "dhire", which miss the Latin
+# entries above and get cut as stutters. NFC so ड़ matches in either
+# encoding Whisper emits.
+REDUPLICATED |= {unicodedata.normalize("NFC", w) for w in (
+    "अलग", "धीरे", "बार", "जल्दी", "थोड़ा", "कभी", "साथ", "दूर",
+    "पास", "कुछ", "बहुत", "अच्छा", "छोटा", "बड़ा", "गरम",
+)}
 
 
 
@@ -263,7 +274,8 @@ def detect_repeats(words: list) -> list:
         # "alag -alag" — a hyphen on either side marks reduplication.
         if "-" in raw_prev or "-" in raw_cur:
             continue
-        if prev in REDUPLICATED:
+        source = unicodedata.normalize("NFC", _clean(words[i - 1].get("text")))
+        if prev in REDUPLICATED or source in REDUPLICATED:
             continue
         # A repeat spoken with a pause between is usually deliberate emphasis
         # ("bahut bahut shukriya"), not a stutter.
