@@ -7,8 +7,9 @@ with `requests`, which is already a dependency. Adding `anthropic` or
 `google-generativeai` would put tens of megabytes into every platform build to
 save a dozen lines here.
 
-Nothing here runs unless the user sets a key. No key means the caller gets
-None and the feature that wanted it simply stays off.
+Cloud providers use their configured API keys. The OpenAI-compatible provider
+is intended for local endpoints such as Ollama, so it does not require an API
+key.
 
 A call that *fails* raises LLMError rather than returning None. A bad key, a
 quota wall, and a model that simply says "no" are three different outcomes, and
@@ -19,11 +20,16 @@ Only transcript *text* is ever sent. Audio and video never leave the machine.
 
 import json
 import os
+import time
 
 # Canonical provider → environment variable map. The desktop app's config
 # layer reads this rather than keeping its own copy, so the two can never
 # disagree about where a key lives.
-PROVIDER_ENV = {"anthropic": "ANTHROPIC_API_KEY", "gemini": "GOOGLE_API_KEY"}
+PROVIDER_ENV = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "gemini": "GOOGLE_API_KEY",
+    "openai-compatible": None,
+}
 
 # Set by the app when a key came from the launch environment. That choice is
 # deliberate and has to win: injecting a saved Anthropic key would otherwise
@@ -33,6 +39,14 @@ PREFERRED_ENV = "BOLCAP_LLM_PROVIDER"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_MODEL = os.getenv("BOLCAP_ANTHROPIC_MODEL", "claude-sonnet-5")
 GEMINI_MODEL = os.getenv("BOLCAP_GEMINI_MODEL", "gemini-2.5-flash")
+OPENAI_COMPATIBLE_BASE_URL = os.getenv(
+    "BOLCAP_LLM_BASE_URL",
+    "http://localhost:11434/v1",
+)
+OPENAI_COMPATIBLE_MODEL = os.getenv(
+    "BOLCAP_LLM_MODEL",
+    "llama3.2",
+)
 TIMEOUT = 60
 
 
@@ -40,14 +54,67 @@ class LLMError(RuntimeError):
     """The call did not complete. Distinct from the model answering 'no'."""
 
 
+_LOCAL_AVAILABILITY_CACHE = None
+_LOCAL_AVAILABILITY_CHECKED_AT = 0.0
+_LOCAL_AVAILABILITY_TTL = 10.0
+
+
+def _local_available(requests) -> bool:
+    global _LOCAL_AVAILABILITY_CACHE, _LOCAL_AVAILABILITY_CHECKED_AT
+
+    now = time.monotonic()
+
+    if (
+        _LOCAL_AVAILABILITY_CACHE is not None
+        and now - _LOCAL_AVAILABILITY_CHECKED_AT < _LOCAL_AVAILABILITY_TTL
+    ):
+        return _LOCAL_AVAILABILITY_CACHE
+
+    try:
+        r = requests.get(
+            f"{OPENAI_COMPATIBLE_BASE_URL.rstrip('/')}/models",
+            timeout=5,
+        )
+        available = r.status_code == 200
+    except requests.exceptions.RequestException:
+        available = False
+
+    _LOCAL_AVAILABILITY_CACHE = available
+    _LOCAL_AVAILABILITY_CHECKED_AT = now
+
+    return available
+
+
 def provider() -> str | None:
-    """Which cloud model is configured, if any."""
+    """Which model provider is configured and available."""
     preferred = os.getenv(PREFERRED_ENV)
-    if preferred in PROVIDER_ENV and os.getenv(PROVIDER_ENV[preferred]):
-        return preferred
+
+    if preferred == "openai-compatible":
+        try:
+            import requests
+        except ImportError:
+            return None
+        return preferred if _local_available(requests) else None
+
+    if preferred in PROVIDER_ENV:
+        env = PROVIDER_ENV[preferred]
+        if env and os.getenv(env):
+            return preferred
+        if preferred in ("anthropic", "gemini"):
+            return None
+
     for name, env in PROVIDER_ENV.items():
-        if os.getenv(env):
+        if env and os.getenv(env):
             return name
+
+    try:
+        import requests
+    except ImportError:
+        return None
+
+    if _local_available(requests):
+        return "openai-compatible"
+
     return None
 
 
@@ -57,22 +124,33 @@ def available() -> bool:
 
 def complete(prompt: str, system: str = "", max_tokens: int = 1024) -> str | None:
     """
-    Prompt in, text out. None only when no key is configured.
+    Prompt in, text out. None only when no provider is configured or available.
 
     Raises LLMError when the call itself fails, so the caller can tell an
     outage from an answer.
     """
     which = provider()
+
     if which is None:
         return None
+
     try:
         import requests
     except ImportError as e:
         raise LLMError(f"requests is not installed ({e})") from e
+
     try:
         if which == "anthropic":
             return _anthropic(requests, prompt, system, max_tokens)
-        return _gemini(requests, prompt, system, max_tokens)
+
+        if which == "gemini":
+            return _gemini(requests, prompt, system, max_tokens)
+
+        if which == "openai-compatible":
+            return _openai_compatible(requests, prompt, system, max_tokens)
+
+        raise LLMError(f"Unknown LLM provider: {which}")
+
     except LLMError:
         raise
     except Exception as e:                                  # noqa: BLE001
@@ -124,6 +202,43 @@ def _gemini(requests, prompt: str, system: str, max_tokens: int) -> str | None:
     return "".join(p.get("text", "") for p in parts) or None
 
 
+def _openai_compatible(
+    requests,
+    prompt: str,
+    system: str,
+    max_tokens: int,
+) -> str | None:
+    messages = []
+
+    if system:
+        messages.append({"role": "system", "content": system})
+
+    messages.append({"role": "user", "content": prompt})
+
+    body = {
+        "model": OPENAI_COMPATIBLE_MODEL,
+        "messages": messages,
+        "max_tokens": max_tokens,
+    }
+
+    url = f"{OPENAI_COMPATIBLE_BASE_URL.rstrip('/')}/chat/completions"
+
+    r = requests.post(
+        url,
+        timeout=TIMEOUT,
+        headers={"content-type": "application/json"},
+        data=json.dumps(body),
+    )
+
+    if r.status_code != 200:
+        raise LLMError(_http_reason("OpenAI-compatible", r))
+
+    try:
+        return r.json()["choices"][0]["message"]["content"] or None
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
 def _http_reason(name: str, r) -> str:
     """A message the user can act on, not a status code to look up."""
     if r.status_code in (401, 403):
@@ -132,7 +247,7 @@ def _http_reason(name: str, r) -> str:
         return f"{name} rate limit or quota reached (HTTP 429)"
     if r.status_code >= 500:
         return f"{name} is having trouble (HTTP {r.status_code})"
-    detail = (r.text or "").strip().replace("\n", " ")[:160]
+    detail = (r.text or "").strip().replace("\\n", " ")[:160]
     return f"{name} returned HTTP {r.status_code}: {detail}"
 
 
