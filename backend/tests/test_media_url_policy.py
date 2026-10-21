@@ -137,7 +137,7 @@ class DownloadVideoGateTest(unittest.TestCase):
         opts = ytdl.YoutubeDL.call_args.args[0]
         # Allowlist only: "default" would pull in any-host extractors like
         # Mediasite, which an attacker's server can satisfy.
-        self.assertEqual(opts["allowed_extractors"], ["youtube.*", "twitch.*"])
+        self.assertEqual(opts["allowed_extractors"], ["youtube.*", "twitch.*", "instagram.*"])
         ydl.extract_info.assert_called_once_with("https://youtu.be/dQw4w9WgXcQ", download=True)
 
 

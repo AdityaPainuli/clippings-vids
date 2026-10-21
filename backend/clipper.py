@@ -127,8 +127,9 @@ def download_video(url, output_path="downloads"):
         # An allowlist, not "default minus generic": several platform
         # extractors match any host (Mediasite's /Mediasite/Play/<id>), so an
         # attacker's public host could pass check_media_url and then redirect
-        # yt-dlp inward. With only these, yt-dlp talks to YouTube and Twitch.
-        'allowed_extractors': ['youtube.*', 'twitch.*'],
+        # yt-dlp inward. With only these, yt-dlp talks to YouTube, Twitch and
+        # Instagram.
+        'allowed_extractors': ['youtube.*', 'twitch.*', 'instagram.*'],
     }
     print(f"Downloading video from {url} (max 720p)...")
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:

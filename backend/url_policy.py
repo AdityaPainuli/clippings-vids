@@ -10,8 +10,8 @@ public.
 Known limit: the check resolves the host once and yt-dlp resolves it again when
 it fetches, so a DNS record that flips in between (rebinding) or a redirect to
 an internal host is not caught here. clipper.download_video also limits yt-dlp
-to the YouTube and Twitch extractors, so the hosts actually fetched are theirs,
-not the attacker's.
+to the YouTube, Twitch and Instagram extractors, so the hosts actually fetched
+are theirs, not the attacker's.
 """
 
 import ipaddress
