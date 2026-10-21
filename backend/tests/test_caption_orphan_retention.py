@@ -89,8 +89,11 @@ class OrphanedUploadRetentionTests(unittest.TestCase):
     def setUpClass(cls):
         cls.storage = _load_storage()
 
-    def _run(self, listing, db, delete_status=200):
+    def _run(self, listing, db, delete_status=200, local_dir="/nonexistent-captions-dir",
+             list_error=None):
         def post(url, **kwargs):
+            if list_error:
+                raise list_error
             self.assertIn("timeout", kwargs)
             payload = kwargs["json"]
             key = (payload["prefix"], payload["offset"])
@@ -104,7 +107,7 @@ class OrphanedUploadRetentionTests(unittest.TestCase):
              patch.object(self.storage.requests, "post", side_effect=post), \
              patch.object(self.storage.requests, "delete", delete_mock), \
              redirect_stdout(out):
-            self.storage.delete_expired(local_dir="/nonexistent-captions-dir")
+            self.result = self.storage.delete_expired(local_dir=local_dir)
         deleted = [p for c in delete_mock.call_args_list for p in c.kwargs["json"]["prefixes"]]
         return deleted, out.getvalue()
 
@@ -145,6 +148,23 @@ class OrphanedUploadRetentionTests(unittest.TestCase):
         self.assertEqual(deleted, ["u/sources/j/a.mp4"])
         self.assertIn("Storage delete failed 500", out)
         self.assertEqual(db.deleted_ids, [])
+        self.assertEqual(self.result, 0)
+        self.assertNotIn("storage object(s) removed", out)
+
+    def test_listing_timeout_still_cleans_local_files(self):
+        import tempfile
+        import time
+        with tempfile.TemporaryDirectory() as local:
+            old = os.path.join(local, "old.ass")
+            open(old, "w").close()
+            past = time.time() - self.storage.RETENTION_SECONDS - 60
+            os.utime(old, (past, past))
+
+            _, out = self._run({}, FakeDB(), local_dir=local,
+                               list_error=self.storage.requests.ReadTimeout("slow"))
+
+            self.assertFalse(os.path.exists(old))
+        self.assertIn("orphaned upload sweep failed", out)
 
 
 if __name__ == "__main__":

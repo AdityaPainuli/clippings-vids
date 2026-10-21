@@ -208,10 +208,10 @@ def delete_expired(local_dir: str = "captions_output") -> int:
     paths = [p for r in rows for p in (r.get("source_path"), r.get("output_path")) if p]
     # Keep the rows if storage delete failed so the next run retries; once a
     # row is gone nothing points at its output any more.
+    deleted = 0
     if rows and _delete_storage_paths(paths):
         supabase.table("caption_jobs").delete().in_("id", [r["id"] for r in rows]).execute()
-
-    orphans = _delete_orphaned_sources()
+        deleted = len(rows)
 
     # Local temp/render files past retention
     if os.path.isdir(local_dir):
@@ -224,11 +224,19 @@ def delete_expired(local_dir: str = "captions_output") -> int:
             except OSError:
                 pass
 
-    if rows:
-        print(f"[captions cleanup] {len(rows)} expired job(s), {len(paths)} storage object(s) removed")
+    # Last, and contained: a slow or failing storage listing must not stop
+    # the local cleanup above or abort the caller's cleanup loop.
+    try:
+        orphans = _delete_orphaned_sources()
+    except requests.RequestException as e:
+        print(f"[captions cleanup] orphaned upload sweep failed: {e}")
+        orphans = 0
+
+    if deleted:
+        print(f"[captions cleanup] {deleted} expired job(s), {len(paths)} storage object(s) removed")
     if orphans:
         print(f"[captions cleanup] {orphans} orphaned upload(s) removed")
-    return len(rows)
+    return deleted
 
 
 def _delete_orphaned_sources() -> int:
