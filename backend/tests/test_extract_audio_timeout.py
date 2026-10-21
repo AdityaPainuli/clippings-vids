@@ -46,6 +46,13 @@ class ExtractAudioTimeoutTests(unittest.TestCase):
                 transcribe._extract_audio("in.mp4", "out.wav")
         self.assertEqual(fake.ffmpeg_timeout, transcribe._EXTRACT_MIN_TIMEOUT + 600.0)
 
+    def test_bogus_huge_duration_is_capped(self):
+        fake = FakeRun(duration="95443.7")    # MPEG-TS timestamp wraparound
+        with patch.object(transcribe.subprocess, "run", fake):
+            with self.assertRaises(RuntimeError):
+                transcribe._extract_audio("in.ts", "out.wav")
+        self.assertEqual(fake.ffmpeg_timeout, transcribe._EXTRACT_MAX_TIMEOUT)
+
     def test_unknown_duration_uses_fixed_cap(self):
         for fake in (FakeRun(duration="N/A"), FakeRun(probe_returncode=1)):
             with patch.object(transcribe.subprocess, "run", fake):

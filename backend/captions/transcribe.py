@@ -30,10 +30,13 @@ _cpu_model_cache = None     # (name, model)
 
 # Extracting 16 kHz mono runs far faster than realtime, so one second of
 # budget per second of media plus a floor is generous. The fixed cap covers
-# files ffprobe cannot read a duration from.
+# files ffprobe cannot read a duration from. The ceiling exists because the
+# duration is least trustworthy on exactly the broken files this guards
+# against (MPEG-TS timestamp wraparound reports ~95443s, about 26h).
 _PROBE_TIMEOUT = 30
 _EXTRACT_MIN_TIMEOUT = 120
 _EXTRACT_FALLBACK_TIMEOUT = 1800
+_EXTRACT_MAX_TIMEOUT = 4 * 3600
 
 
 def _media_duration(path: str) -> float | None:
@@ -52,7 +55,7 @@ def _extract_timeout(video_path: str) -> float:
     duration = _media_duration(video_path)
     if duration is None or duration <= 0:
         return _EXTRACT_FALLBACK_TIMEOUT
-    return _EXTRACT_MIN_TIMEOUT + duration
+    return min(_EXTRACT_MIN_TIMEOUT + duration, _EXTRACT_MAX_TIMEOUT)
 
 
 def _extract_audio(video_path: str, out_path: str):
