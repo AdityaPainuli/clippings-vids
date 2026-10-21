@@ -39,7 +39,7 @@ backend/            FastAPI service
     notify.py       completion notifications (in-app feed + Resend email)
     api.py          /captions/* routes
     cli.py          local end-to-end runs, no server needed
-    schema.sql      caption_jobs table + captions bucket (run once in Supabase)
+    schema.sql      Supabase tables + buckets (caption_jobs, clip_metadata, captions, clips)
   supabase_client.py  auth + clip storage (signed URLs, TTL cleanup)
 frontend/           Next.js app for the clipper (login via backend /auth/*, clip dashboard)
 ```
@@ -180,7 +180,7 @@ and `ffmpeg`/`ffprobe` on PATH:
 ```bash
 cd backend
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install -r requirements-bolcap.txt
+pip install -r requirements-bolcap.txt -c constraints-bolcap.txt
 python -m localapp                       # opens http://127.0.0.1:8756
 python -m captions.cli video.mp4         # or skip the UI
 ```
@@ -215,14 +215,9 @@ there is no captions UI in the web app yet.
 Supabase, one time:
 
 1. Run `backend/captions/schema.sql` in the SQL editor. It creates the
-   `caption_jobs` table and the `captions` bucket. It is not re-runnable (the
-   policy has no `if not exists`).
-2. Create a private `clips` storage bucket and a `clip_metadata` table by
-   hand. Nothing in the repo creates them yet. Columns the code writes:
-   `user_id`, `job_id`, `filename`, `storage_path`, `description`,
-   `source_url`, `start_time`, `end_time`, `created_at` (default `now()`),
-   plus optional `hook`, `virality_score`, `clip_type`.
-3. Enable the email/password auth provider.
+   `caption_jobs` and `clip_metadata` tables and the private `captions` and
+   `clips` buckets. It is safe to re-run.
+2. Enable the email/password auth provider.
 
 Environment (backend reads `backend/.env`):
 
