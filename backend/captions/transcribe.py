@@ -28,11 +28,45 @@ _fw_model_cache = None      # (name, model)
 _cpu_model_cache = None     # (name, model)
 
 
+# Extracting 16 kHz mono runs far faster than realtime, so one second of
+# budget per second of media plus a floor is generous. The fixed cap covers
+# files ffprobe cannot read a duration from. The ceiling exists because the
+# duration is least trustworthy on exactly the broken files this guards
+# against (MPEG-TS timestamp wraparound reports ~95443s, about 26h).
+_PROBE_TIMEOUT = 30
+_EXTRACT_MIN_TIMEOUT = 120
+_EXTRACT_FALLBACK_TIMEOUT = 1800
+_EXTRACT_MAX_TIMEOUT = 4 * 3600
+
+
+def _media_duration(path: str) -> float | None:
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", path],
+            capture_output=True, text=True, timeout=_PROBE_TIMEOUT,
+        )
+        return float(r.stdout.strip()) if r.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+
+
+def _extract_timeout(video_path: str) -> float:
+    duration = _media_duration(video_path)
+    if duration is None or duration <= 0:
+        return _EXTRACT_FALLBACK_TIMEOUT
+    return min(_EXTRACT_MIN_TIMEOUT + duration, _EXTRACT_MAX_TIMEOUT)
+
+
 def _extract_audio(video_path: str, out_path: str):
-    r = subprocess.run(
-        ["ffmpeg", "-y", "-i", video_path, "-ac", "1", "-ar", "16000", "-vn", out_path],
-        capture_output=True, text=True,
-    )
+    timeout = _extract_timeout(video_path)
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-i", video_path, "-ac", "1", "-ar", "16000", "-vn", out_path],
+            capture_output=True, text=True, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"Audio extraction timed out after {timeout:.0f}s") from None
     if r.returncode != 0:
         raise RuntimeError(f"Audio extraction failed: {r.stderr[-300:]}")
 
