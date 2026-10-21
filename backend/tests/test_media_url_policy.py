@@ -124,7 +124,7 @@ class DownloadVideoGateTest(unittest.TestCase):
                 self.clipper.download_video("http://169.254.169.254/latest/meta-data/", "unused")
         ytdl.YoutubeDL.assert_not_called()
 
-    def test_allowed_url_disables_generic_extractor(self):
+    def test_allowed_url_limits_extractors_to_platforms(self):
         ytdl = mock.MagicMock()
         ydl = ytdl.YoutubeDL.return_value.__enter__.return_value
         ydl.extract_info.return_value = {"id": "abc"}
@@ -135,8 +135,9 @@ class DownloadVideoGateTest(unittest.TestCase):
             self.clipper.download_video("https://youtu.be/dQw4w9WgXcQ", "unused")
 
         opts = ytdl.YoutubeDL.call_args.args[0]
-        self.assertIn("default", opts["allowed_extractors"])
-        self.assertIn("-generic", opts["allowed_extractors"])
+        # Allowlist only: "default" would pull in any-host extractors like
+        # Mediasite, which an attacker's server can satisfy.
+        self.assertEqual(opts["allowed_extractors"], ["youtube.*", "twitch.*"])
         ydl.extract_info.assert_called_once_with("https://youtu.be/dQw4w9WgXcQ", download=True)
 
 
