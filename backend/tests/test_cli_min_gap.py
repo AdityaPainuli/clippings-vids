@@ -13,7 +13,7 @@ class TestMinGapValidation(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertGreater(cli.parse_min_gap(value), 0)
 
-    def test_accepts_zero_string_as_invalid(self):
+    def test_rejects_zero(self):
         with self.assertRaises(argparse.ArgumentTypeError):
             cli.parse_min_gap("0")
 
