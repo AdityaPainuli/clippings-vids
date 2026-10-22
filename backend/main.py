@@ -474,6 +474,17 @@ async def upload_video(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# The only job fields a client may see. The job dict also holds server-side state
+# (video_path, user_id) that must not leave the process.
+_PUBLIC_JOB_FIELDS = (
+    "status", "url", "results", "error", "warnings", "failed_clips", "created_at", "cached",
+)
+
+
+def _public_job(job: dict) -> dict:
+    return {key: job[key] for key in _PUBLIC_JOB_FIELDS if key in job}
+
+
 @app.get("/status/{job_id}")
 async def get_status(job_id: str, user: dict = Depends(get_current_user)):
     if job_id not in jobs:
@@ -482,7 +493,7 @@ async def get_status(job_id: str, user: dict = Depends(get_current_user)):
     # Users can only see their own jobs
     if job.get("user_id") != user["user_id"]:
         raise HTTPException(status_code=403, detail="Not your job")
-    return job
+    return _public_job(job)
 
 
 @app.post("/stream-token")
