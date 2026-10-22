@@ -136,12 +136,9 @@ Python 3.12 and `ffmpeg`/`ffprobe` on PATH:
 ```bash
 cd backend
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install -r requirements-bolcap.txt
+pip install -r requirements-bolcap.txt -c constraints-bolcap.txt
 python -m localapp
 ```
-
-Releases lag `main`. The `neon` preset and the fixes since `bolcap-v0.3.1`
-(2026-08-30) are only in a source run until the next release.
 
 Or skip the interface entirely:
 

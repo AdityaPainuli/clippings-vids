@@ -1,7 +1,7 @@
 # Roadmap
 
 Where the project stands, what's broken, and what comes next.
-Last updated: 2026-10-20, against `main` at `b4af64e`.
+Last updated: 2026-10-22, against `main` at `6bceb0c`.
 
 Settled decisions live in [DECISIONS.md](DECISIONS.md). This file is for the
 open stuff. Every item has an issue. Claim it there before starting, see
@@ -12,7 +12,7 @@ open stuff. Every item has an issue. Claim it there before starting, see
 | Piece | State |
 |---|---|
 | Caption engine + CLI | Works end to end. All four CI checks and the unit tests pass. |
-| Bolcap desktop app | Works from source. Last release `bolcap-v0.3.1` (2026-08-30) is 15 commits behind `main`, and its first-run ffmpeg download is broken on Windows and Linux (#208). |
+| Bolcap desktop app | `bolcap-v0.4.0` (2026-10-22) is current with `main`. Release builds are pinned and smoke-tested on all 4 platforms, first-run download included. |
 | Hosted backend | Runs. `backend/captions/schema.sql` creates every Supabase table and bucket it uses. |
 | Web frontend | Clipper only. No captions UI. Backend URL hardcoded to `localhost:8000`. Builds, but `npm run lint` fails. |
 
@@ -20,12 +20,9 @@ open stuff. Every item has an issue. Claim it there before starting, see
 
 Things that stop a new user, or that put data at risk.
 
-- #208 Desktop first-run ffmpeg download 404s on Windows and Linux (PR #209)
-- #108 Release builds use unpinned dependencies (PR #205). PyAV 19 already broke every transcription once
 - #176 Upload filename path traversal writes outside `uploads/` (PR #110)
-- #104 User media URLs can reach internal hosts (PR #207)
-- #177 Signed caption uploads that never become a job are never deleted (PR #206)
-- #92 ffmpeg audio extraction can hang forever (PR #175). #178 covers the other ffmpeg calls
+- #178 ffmpeg/ffprobe calls in render and tighten have no timeout
+- #214 Caption retention deletes a source that a newer live job still uses
 - #46 / #41 Uploads are read fully into memory and not validated (PR #110 for #46)
 
 ## Next: correctness
@@ -75,7 +72,7 @@ Things that stop a new user, or that put data at risk.
   no frontend.
 - **One full `requirements.txt`** for the hosted backend; move off the
   deprecated `google-generativeai` SDK.
-- **Release v0.4.0** once #208 and #108 land. Add tighten / fit / timeline
+- **Release smoke coverage.** Add tighten / fit / timeline
   export to `smoke_bolcap.sh`.
 - **Health endpoints** #40 (PR #135). **Offline LLM** #36 (PR #51).
 - **Pan-Indic** #32, #33, #34.
