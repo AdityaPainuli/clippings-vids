@@ -270,7 +270,8 @@ def main():
     else:
         print("Burning captions...")
         out = render.burn_video(source_video, ass_path,
-                                args.output or f"{base}_subtitled.mp4")
+                                args.output or f"{base}_subtitled.mp4",
+                                duration=info["duration"])
     print(f"done: {out}")
 
 

@@ -101,6 +101,22 @@ def _filler_sets_for_lang(lang: str | None) -> tuple[set, set]:
 
 CLAUSE_PUNCT = ".,!?;:।"
 
+# Decoding one audio stream is much cheaper than encoding video, but a file on
+# a dead network mount can still stall. Scale with the media, with a fallback
+# for callers that do not have a duration yet.
+_SILENCE_FLOOR = 300
+_SILENCE_MAX = 3600
+
+
+def _silence_timeout(duration: float | None) -> float:
+    try:
+        seconds = float(duration or 0)
+    except (TypeError, ValueError):
+        return _SILENCE_MAX
+    if seconds <= 0 or seconds != seconds:
+        return _SILENCE_MAX
+    return min(max(_SILENCE_FLOOR, seconds), _SILENCE_MAX)
+
 # Hindi reduplicates for emphasis or plurality — "alag-alag" (various),
 # "dheere-dheere" (gradually). Saying it twice IS the word.
 REDUPLICATED = {
@@ -189,7 +205,8 @@ def _gap_after(words: list, i: int) -> float:
 
 # ── Detection ────────────────────────────────────────────────────────────────
 
-def detect_silences_from_audio(media_path: str, cfg: TightenConfig) -> list:
+def detect_silences_from_audio(media_path: str, cfg: TightenConfig,
+                               duration: float | None = None) -> list:
     """
     True silence, measured from the audio with ffmpeg's silencedetect.
 
@@ -202,7 +219,13 @@ def detect_silences_from_audio(media_path: str, cfg: TightenConfig) -> list:
     cmd = ["ffmpeg", "-i", media_path, "-af",
            f"silencedetect=noise={cfg.silence_db}dB:d={cfg.min_gap:.3f}",
            "-f", "null", "-"]
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           timeout=_silence_timeout(duration))
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            f"silencedetect timed out after {_silence_timeout(duration):.0f}s"
+        ) from None
     if r.returncode != 0:
         # Otherwise an unreadable file parses as "no silence found" and
         # dead-air detection is skipped without anyone noticing.
@@ -409,8 +432,8 @@ def detect(words: list, cfg: TightenConfig | None = None,
         return []
     cuts = []
     if cfg.silence:
-        cuts += (detect_silences_from_audio(media_path, cfg) if media_path
-                 else detect_silences(words, cfg))
+        cuts += (detect_silences_from_audio(media_path, cfg, duration=duration)
+                 if media_path else detect_silences(words, cfg))
     if cfg.fillers:
         cuts += detect_fillers(words, cfg)
     if cfg.repeats:
