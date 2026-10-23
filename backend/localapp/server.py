@@ -225,6 +225,11 @@ async def transcribe_endpoint(
     if not assets.ffmpeg_ready():
         raise HTTPException(status_code=409,
                             detail="ffmpeg/ffprobe not set up yet — run first-run setup")
+    if not assets.transcription_ready():
+        raise HTTPException(
+            status_code=409,
+            detail=f"Whisper model '{assets.active_model()}' is not installed "
+                   f"yet — finish first-run setup before uploading")
     job_id = uuid.uuid4().hex[:12]
     video_path = WORK_DIR / f"{job_id}_{os.path.basename(file.filename or 'video.mp4')}"
     with open(video_path, "wb") as f:
