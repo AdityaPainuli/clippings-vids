@@ -15,6 +15,7 @@ The GIF is real output: word-by-word Hinglish captions with the spoken word
 highlighted, burned by the engine in this repo.
 
 All technical choices and their rationale live in [DECISIONS.md](DECISIONS.md).
+Known bugs, gaps, and what comes next live in [ROADMAP.md](ROADMAP.md).
 
 <br clear="right">
 
@@ -38,9 +39,9 @@ backend/            FastAPI service
     notify.py       completion notifications (in-app feed + Resend email)
     api.py          /captions/* routes
     cli.py          local end-to-end runs, no server needed
-    schema.sql      caption_jobs table + captions bucket (run once in Supabase)
+    schema.sql      Supabase tables + buckets (caption_jobs, clip_metadata, captions, clips)
   supabase_client.py  auth + clip storage (signed URLs, TTL cleanup)
-frontend/           Next.js app (Supabase auth, clip dashboard)
+frontend/           Next.js app for the clipper (login via backend /auth/*, clip dashboard)
 ```
 
 ## Bolcap caption engine
@@ -123,7 +124,7 @@ waits for you.
 2. **Romanize** — Devanagari → natural Hinglish, alignment preserved.
 3. **Tighten** (optional) — find dead air, fillers, and stutters, and cut them.
    Retake detection lives here too, behind an API key.
-4. **Style** — a `CaptionStyle` JSON or a preset (`default`, `bold_impact`, `subtle`, `karaoke`).
+4. **Style** — a `CaptionStyle` JSON or a preset (`default`, `bold_impact`, `subtle`, `karaoke`, `neon`).
 5. **Export** — `burned` MP4, `overlay` alpha .mov, `ass`, `srt`, or an `edl` / `fcpxml` timeline.
 
 ### CLI
@@ -139,6 +140,7 @@ python -m captions.cli video.mp4 --tighten-report          # what would be cut, 
 python -m captions.cli video.mp4 --tighten                 # cut it, captions re-timed to match
 python -m captions.cli video.mp4 --tighten --export fcpxml # cuts to your NLE, no re-encode
 python -m captions.cli video.mp4 --tighten --fit 1:00      # trim to a target length
+python -m captions.cli video.mp4 --tighten --aggressive-fillers  # also cut context-scored fillers
 python -m captions.cli video.mp4 --retakes                 # report repeated lines
 python -m captions.cli video.mp4 --tighten --cut-retakes   # and remove them
 ```
@@ -168,34 +170,71 @@ All `/captions/*` routes require a Supabase bearer token (same auth as the clipp
 
 ## Setup
 
+There are two ways to run this. Most people want the first one.
+
+### Bolcap only (desktop app or CLI, no accounts, no cloud)
+
+Prebuilt zips: see [BOLCAP.md](BOLCAP.md#install). From source, with Python 3.12
+and `ffmpeg`/`ffprobe` on PATH:
+
 ```bash
-# backend
 cd backend
-pip install fastapi uvicorn supabase yt-dlp google-generativeai moviepy \
-            faster-whisper indic-transliteration pydantic python-multipart requests
-pip install mlx-whisper     # Apple Silicon only, much faster transcription
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements-bolcap.txt -c constraints-bolcap.txt
+python -m localapp                       # opens http://127.0.0.1:8756
+python -m captions.cli video.mp4         # or skip the UI
+```
+
+The first run downloads a Whisper model (`medium` by default, ~1.5 GB). Set
+`BOLCAP_MODEL=small` for a quicker first try on English footage. On Apple
+Silicon, `pip install mlx-whisper` makes transcription much faster.
+
+### Hosted stack (clipper + `/captions/*` API + Next.js frontend)
+
+Needs a Supabase project, a Gemini key, Python 3.12, Node 20.9+, and `ffmpeg`.
+There is no full requirements file yet; `requirements-bolcap.txt` alone is not
+enough to import `main.py`.
+
+```bash
+# backend (run from backend/, it writes uploads/ output/ captions_output/ here)
+cd backend
+pip install -r requirements-bolcap.txt
+pip install supabase python-dotenv yt-dlp google-generativeai "moviepy>=2" opencv-python
 pip install openai-whisper  # optional legacy fallback, pulls PyTorch
-uvicorn main:app --reload
+uvicorn main:app --reload   # http://localhost:8000
 
 # frontend
 cd frontend
-npm install && npm run dev
+npm install && npm run dev  # http://localhost:3000
 ```
 
-One-time: run `backend/captions/schema.sql` in the Supabase SQL editor (creates the `caption_jobs` table and `captions` bucket).
+The frontend has the backend URL hardcoded as `http://localhost:8000`, so a
+deployment anywhere else needs a code change. It only covers the clipper;
+there is no captions UI in the web app yet.
 
-Requires `ffmpeg` on PATH.
+Supabase, one time:
 
-Environment:
+1. Run `backend/captions/schema.sql` in the SQL editor. It creates the
+   `caption_jobs` and `clip_metadata` tables and the private `captions` and
+   `clips` buckets. It is safe to re-run.
+2. Enable the email/password auth provider.
+
+Environment (backend reads `backend/.env`):
 
 | Variable | Purpose |
 |---|---|
-| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | auth, storage, job rows |
-| `GOOGLE_API_KEY` | Gemini (clip analysis + Hinglish romanization) |
-| `CAPTION_RETENTION_SECONDS` | file/job lifetime, default 172800 (48h) |
-| `RESEND_API_KEY`, `CAPTION_FROM_EMAIL` | completion emails (optional — skipped if unset) |
-| `APP_URL` | link target in notification emails |
-| `CAPTION_STALE_SECONDS` | orphaned-job timeout, default 1800 |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | **required**, the app will not import without them |
+| `GOOGLE_API_KEY` | Gemini clip analysis and LLM romanization. Without it the clipper returns a placeholder 0-10s clip |
+| `CLIP_TTL_SECONDS` | clip lifetime and signed URL expiry, default 21600 (6h) |
+| `CLEANUP_INTERVAL`, `JOB_TTL_SECONDS` | cleanup loop period (1800) and in-memory job lifetime (7200) |
+| `CAPTION_RETENTION_SECONDS` | caption file/job lifetime, default 172800 (48h) |
+| `CAPTION_STALE_SECONDS` | orphaned caption job timeout, default 1800 |
+| `RESEND_API_KEY`, `CAPTION_FROM_EMAIL`, `APP_URL` | completion emails (optional, skipped if unset) |
+| `CAPTION_FONT`, `CAPTION_FONTSIZE`, `CAPTION_COLOR`, `CAPTION_HIGHLIGHT`, `CAPTION_WORDS`, `CAPTION_MARGIN_V`, ... | clipper caption defaults (see `clipper.py`) |
+| `CAPTIONS_CPU_MODEL`, `CAPTIONS_MLX_MODEL`, `CAPTIONS_FONTS_DIR` | Whisper model names and font dir for the caption engine |
+| `ANTHROPIC_API_KEY`, `BOLCAP_ANTHROPIC_MODEL`, `BOLCAP_GEMINI_MODEL` | retake detection model (CLI and desktop app) |
+
+Known gaps in the hosted stack are tracked in [ROADMAP.md](ROADMAP.md).
 
 ## License
 

@@ -12,5 +12,6 @@ future NLE plugin.
 from .styles import CaptionStyle, STYLE_PRESETS
 from .transcribe import transcribe_video
 from .romanize import romanize_words
+from .lang_detect import tag_words
 from .engine import build_ass
 from .render import export_srt, burn_video, render_overlay, probe_video

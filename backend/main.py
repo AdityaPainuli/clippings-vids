@@ -10,7 +10,8 @@ import asyncio
 import time
 import hashlib
 import clipper
-from supabase_client import supabase, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips
+from url_policy import check_media_url, UnsafeURLError
+from supabase_client import supabase, new_auth_client, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips
 from captions.api import router as captions_router
 
 
@@ -126,9 +127,13 @@ async def _maybe_cleanup():
         except Exception as e:
             print(f"[cleanup] Caption cleanup failed: {e}")
 
-        # Also purge stale in-memory job records
+        # Also purge stale in-memory job records (only in terminal states)
         now = time.time()
-        stale = [jid for jid, j in jobs.items() if j.get("created_at", now) < now - JOB_TTL]
+        stale = [
+            jid for jid, j in list(jobs.items())
+            if j.get("created_at", now) < now - JOB_TTL
+            and j.get("status") in ("completed", "failed")
+        ]
         for jid in stale:
             jobs.pop(jid, None)
 
@@ -309,7 +314,7 @@ async def root():
 async def signup(email: str = Form(...), password: str = Form(...)):
     """Create a new Supabase user account."""
     try:
-        res = supabase.auth.sign_up({"email": email, "password": password})
+        res = new_auth_client().auth.sign_up({"email": email, "password": password})
         return {"message": "Signup successful — check your email to confirm", "user_id": res.user.id}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -319,7 +324,7 @@ async def signup(email: str = Form(...), password: str = Form(...)):
 async def login(email: str = Form(...), password: str = Form(...)):
     """Login and return access + refresh tokens."""
     try:
-        res = supabase.auth.sign_in_with_password({"email": email, "password": password})
+        res = new_auth_client().auth.sign_in_with_password({"email": email, "password": password})
         return {
             "access_token":  res.session.access_token,
             "refresh_token": res.session.refresh_token,
@@ -334,7 +339,7 @@ async def login(email: str = Form(...), password: str = Form(...)):
 async def refresh_token(refresh_token: str = Form(...)):
     """Exchange a refresh token for a new access token."""
     try:
-        res = supabase.auth.refresh_session(refresh_token)
+        res = new_auth_client().auth.refresh_session(refresh_token)
         return {
             "access_token":  res.session.access_token,
             "refresh_token": res.session.refresh_token,
@@ -374,6 +379,13 @@ async def process_url(
     if (min_clip_length is not None and max_clip_length is not None
             and min_clip_length > max_clip_length):
         raise HTTPException(status_code=400, detail="min_clip_length cannot exceed max_clip_length")
+
+    # Reject internal/non-http URLs up front so the caller gets a 400, not a
+    # queued job that fails later. The DNS lookup blocks, so run it off-loop.
+    try:
+        url = await asyncio.get_running_loop().run_in_executor(None, check_media_url, url)
+    except UnsafeURLError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     await _maybe_cleanup()
     user_id   = user["user_id"]

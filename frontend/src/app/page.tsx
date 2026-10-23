@@ -570,7 +570,7 @@ export default function Home() {
           <form onSubmit={handleSubmit} className="input-container">
             <input
               type="text"
-              placeholder="Paste YouTube, Twitch, or video URL..."
+              placeholder="Paste a YouTube, Twitch or Instagram URL..."
               className="url-input"
               value={url}
               onChange={(e) => setUrl(e.target.value)}

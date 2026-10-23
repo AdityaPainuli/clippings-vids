@@ -13,6 +13,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from dotenv import load_dotenv
 
+from url_policy import check_media_url
+
 load_dotenv()
 
 
@@ -112,6 +114,8 @@ CAPTION_MARGIN_V     = CAPTION_PRESETS["default"]["margin_v"]
 # ---------------------------------------------------------------------------
 
 def download_video(url, output_path="downloads"):
+    # Fail before yt-dlp opens any connection to a non-public host.
+    url = check_media_url(url)
     os.makedirs(output_path, exist_ok=True)
     ydl_opts = {
         'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best',
@@ -120,6 +124,12 @@ def download_video(url, output_path="downloads"):
         'subtitlesformat': 'vtt',
         'quiet': True,
         'no_warnings': True,
+        # An allowlist, not "default minus generic": several platform
+        # extractors match any host (Mediasite's /Mediasite/Play/<id>), so an
+        # attacker's public host could pass check_media_url and then redirect
+        # yt-dlp inward. With only these, yt-dlp talks to YouTube, Twitch and
+        # Instagram.
+        'allowed_extractors': ['youtube.*', 'twitch.*', 'instagram.*'],
     }
     print(f"Downloading video from {url} (max 720p)...")
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -164,6 +174,9 @@ def _extract_keyframes(video_path, n_frames=8):
     return frames_b64, duration
 
 
+_VTT_TIMECODE_RE = re.compile(r"^(?:(?:\d{2,}:)?\d{2}:\d{2}(?:\.\d{3})?)\s+-->\s+")
+
+
 def _parse_vtt_to_text(vtt_path):
     if not vtt_path or not os.path.exists(vtt_path):
         return None
@@ -171,15 +184,25 @@ def _parse_vtt_to_text(vtt_path):
     with open(vtt_path, encoding="utf-8") as f:
         raw = f.readlines()
     current_time = None
+    cue_lines = []
     for line in raw:
         line = line.strip()
-        if "-->" in line:
+        if _VTT_TIMECODE_RE.match(line):
+            if current_time is not None and cue_lines:
+                lines.append(f"[{current_time}] {' '.join(cue_lines)}")
             current_time = line.split("-->")[0].strip()[:8]
-        elif line and current_time and not line.startswith("WEBVTT") and not line[0].isdigit():
+            cue_lines = []
+        elif not line:
+            if current_time is not None and cue_lines:
+                lines.append(f"[{current_time}] {' '.join(cue_lines)}")
+            current_time = None
+            cue_lines = []
+        elif current_time and not line.startswith("WEBVTT"):
             clean = re.sub(r"<[^>]+>", "", line).strip()
             if clean:
-                lines.append(f"[{current_time}] {clean}")
-                current_time = None
+                cue_lines.append(clean)
+    if current_time is not None and cue_lines:
+        lines.append(f"[{current_time}] {' '.join(cue_lines)}")
     return "\n".join(lines) if lines else None
 
 
@@ -490,11 +513,18 @@ def _build_ass_header(preset_name: str = "default") -> str:
 
     tail = "-1,0,0,0,100,100,2,0,1," + outline_w + "," + shadow_w + ",2,40,40," + margin_v + ",1\n"
 
+    if p.get("anim_type") == "karaoke":
+        caption_primary = p["highlight"]
+        caption_secondary = p["color"]
+    else:
+        caption_primary = p["color"]
+        caption_secondary = p["color"]
+
     caption_style   = ("Style: Caption,"   + font + "," + size     + ","
-                       + p["color"]       + ",&H000000FF,"
+                       + caption_primary  + "," + caption_secondary + ","
                        + p["outline_clr"] + "," + p["shadow_clr"] + "," + tail)
     highlight_style = ("Style: Highlight," + font + "," + big_size + ","
-                       + p["highlight"]   + ",&H000000FF,"
+                       + p["highlight"]   + "," + p["color"]        + ","
                        + p["outline_clr"] + "," + p["shadow_clr"] + "," + tail)
 
     return ("[Script Info]\n"
@@ -603,10 +633,19 @@ def _words_to_ass_events(words: list, preset_name: str = "default") -> str:
             seg_start = chunk[0]["start"]
             parts = []
             for w_idx, w in enumerate(chunk):
-                dur_cs = int((w["end"] - w["start"]) * 100)  # centiseconds for \kf
-                dur_cs = max(dur_cs, 10)
-                parts.append("{\\kf" + str(dur_cs) + "}" + word_texts[w_idx])
-            line_text = " ".join(parts)
+                dur_cs = max(int(round((w["end"] - w["start"]) * 100)), 1)
+                if w_idx > 0:
+                    gap = w["start"] - chunk[w_idx - 1]["end"]
+                    if gap > 0:
+                        gap_cs = int(round(gap * 100))
+                        if gap_cs > 0:
+                            parts.append(f"{{\\k{gap_cs}}} ")
+                        else:
+                            parts.append(" ")
+                    else:
+                        parts.append(" ")
+                parts.append(f"{{\\kf{dur_cs}}}{word_texts[w_idx]}")
+            line_text = "".join(parts)
             event_lines.append(
                 "Dialogue: 0,"
                 + _seconds_to_ass_time(seg_start) + ","

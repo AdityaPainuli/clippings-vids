@@ -32,6 +32,23 @@ def parse_length(text: str) -> float:
     return seconds
 
 
+def parse_min_gap(value: str) -> float:
+    """Validate the minimum silence gap in seconds."""
+    try:
+        gap = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "min-gap must be a number"
+        )
+
+    if not math.isfinite(gap) or gap <= 0:
+        raise argparse.ArgumentTypeError(
+            "min-gap must be a positive finite number"
+        )
+
+    return gap
+
+
 def main():
     ap = argparse.ArgumentParser(description="Hinglish caption engine")
     ap.add_argument("video")
@@ -51,7 +68,7 @@ def main():
                     help="apply auto-confidence cuts before captioning")
     tg.add_argument("--tighten-report", action="store_true",
                     help="report what would be cut, change nothing")
-    tg.add_argument("--min-gap", type=float, default=0.40,
+    tg.add_argument("--min-gap", type=parse_min_gap, default=0.40,
                     help="silence longer than this is cut (seconds)")
     tg.add_argument("--no-fillers", action="store_true",
                     help="leave filler words alone")

@@ -10,7 +10,8 @@ Bucket layout:
 
 Retention: everything expires CAPTION_RETENTION_SECONDS (default 48h)
 after job creation. delete_expired() removes storage objects, local
-files, and job rows — wired into the main cleanup cadence.
+files, and job rows — wired into the main cleanup cadence. Uploads that
+never got a job expire the same window after upload.
 """
 
 import os
@@ -142,16 +143,53 @@ def signed_download_url(storage_path: str, expires_in: int | None = None) -> str
     return f"{_STORAGE_URL}{token}" if token.startswith("/") else token
 
 
-def _delete_storage_paths(paths: list):
+def _delete_storage_paths(paths: list) -> bool:
+    """Batch delete storage paths. Logs failed batches; False if any failed."""
     if not paths:
-        return
+        return True
+    ok = True
     for i in range(0, len(paths), 100):
-        requests.delete(
+        batch = paths[i : i + 100]
+        resp = requests.delete(
             f"{_STORAGE_URL}/object/{BUCKET}",
             headers={**_HEADERS, "Content-Type": "application/json"},
-            json={"prefixes": paths[i : i + 100]},
+            json={"prefixes": batch},
             timeout=_CTRL_TIMEOUT,
         )
+        if resp.status_code != 200:
+            ok = False
+            print(f"[captions cleanup] Storage delete failed {resp.status_code} "
+                  f"for {len(batch)} object(s): {resp.text[:200]}")
+    return ok
+
+
+def _list_prefix(prefix: str = "") -> list:
+    """List all objects in the bucket under a prefix via paginated REST calls."""
+    page_size = 1000
+    offset = 0
+    items = []
+
+    while True:
+        resp = requests.post(
+            f"{_STORAGE_URL}/object/list/{BUCKET}",
+            headers={**_HEADERS, "Content-Type": "application/json"},
+            json={"prefix": prefix, "limit": page_size, "offset": offset},
+            timeout=_CTRL_TIMEOUT,
+        )
+        if resp.status_code != 200:
+            print(f"[captions cleanup] Storage list failed {resp.status_code} "
+                  f"for {prefix!r}: {resp.text[:200]}")
+            return []
+
+        page = resp.json()
+        if not isinstance(page, list):
+            return []
+
+        items.extend(page)
+        if len(page) < page_size:
+            return items
+
+        offset += page_size
 
 
 # ── Retention cleanup ────────────────────────────────────────────────────────
@@ -161,7 +199,7 @@ def delete_expired(local_dir: str = "captions_output") -> int:
     """
     Remove expired job rows and their storage objects, preserving source
     files still referenced by non-expired jobs. Also removes old local
-    files. Returns the number of expired rows deleted.
+    files and orphaned uploads. Returns the number of expired rows deleted.
     """
     now = datetime.now(timezone.utc).isoformat()
 
@@ -172,9 +210,11 @@ def delete_expired(local_dir: str = "captions_output") -> int:
         .execute()
     )
     rows = res.data or []
+    paths = set()
+    deleted = 0
 
     if rows:
-        # Find sources still needed by jobs that have not expired.
+        # Sources referenced by non-expired jobs must be preserved.
         active_res = (
             supabase.table("caption_jobs")
             .select("source_path")
@@ -187,7 +227,7 @@ def delete_expired(local_dir: str = "captions_output") -> int:
             if row.get("source_path")
         }
 
-        # Expired outputs can be removed, but shared sources must survive.
+        # Outputs belong to expired jobs; sources may be shared by live jobs.
         paths = {
             row["output_path"]
             for row in rows
@@ -200,13 +240,15 @@ def delete_expired(local_dir: str = "captions_output") -> int:
             and row["source_path"] not in active_sources
         )
 
-        _delete_storage_paths(list(paths))
-
-        supabase.table("caption_jobs").delete().in_(
-            "id", [row["id"] for row in rows]
-        ).execute()
-    else:
-        paths = set()
+        # Keep expired rows if storage deletion fails so cleanup can retry.
+        if _delete_storage_paths(list(paths)):
+            (
+                supabase.table("caption_jobs")
+                .delete()
+                .in_("id", [row["id"] for row in rows])
+                .execute()
+            )
+            deleted = len(rows)
 
     # Local temp/render files past retention.
     if os.path.isdir(local_dir):
@@ -219,10 +261,68 @@ def delete_expired(local_dir: str = "captions_output") -> int:
             except OSError:
                 pass
 
-    if rows:
+    # Clean up old uploaded sources that were never attached to a job.
+    try:
+        orphans = _delete_orphaned_sources()
+    except requests.RequestException as e:
+        print(f"[captions cleanup] orphaned upload sweep failed: {e}")
+        orphans = 0
+
+    if deleted:
         print(
-            f"[captions cleanup] {len(rows)} expired job(s), "
+            f"[captions cleanup] {deleted} expired job(s), "
             f"{len(paths)} storage object(s) removed"
         )
+    if orphans:
+        print(f"[captions cleanup] {orphans} orphaned upload(s) removed")
 
-    return len(rows)
+    return deleted
+
+
+def _delete_orphaned_sources() -> int:
+    """
+    Delete old uploaded sources that have no remaining caption job reference.
+    Returns the number of orphaned objects deleted.
+    """
+    cutoff = time.time() - RETENTION_SECONDS
+    candidates = []
+
+    for user_folder in _list_prefix(""):
+        user_id = user_folder.get("name", "")
+        if not user_id:
+            continue
+
+        for job_folder in _list_prefix(f"{user_id}/sources"):
+            prefix = f"{user_id}/sources/{job_folder.get('name', '')}"
+            for item in _list_prefix(prefix):
+                raw_ts = item.get("created_at") or item.get("updated_at", "")
+                try:
+                    dt = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+                except (ValueError, AttributeError):
+                    continue
+
+                if dt.timestamp() < cutoff:
+                    candidates.append(f"{prefix}/{item['name']}")
+
+    if not candidates:
+        return 0
+
+    referenced = set()
+    for i in range(0, len(candidates), 100):
+        res = (
+            supabase.table("caption_jobs")
+            .select("source_path")
+            .in_("source_path", candidates[i : i + 100])
+            .execute()
+        )
+        referenced.update(
+            row["source_path"]
+            for row in (res.data or [])
+            if row.get("source_path")
+        )
+
+    orphans = [path for path in candidates if path not in referenced]
+    if not orphans or not _delete_storage_paths(orphans):
+        return 0
+
+    return len(orphans)

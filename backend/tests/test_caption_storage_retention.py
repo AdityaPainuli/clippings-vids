@@ -9,6 +9,9 @@ import pytest
 @pytest.fixture
 def storage_module(monkeypatch):
     """Import caption storage without requiring real Supabase credentials."""
+    import importlib.util
+    from pathlib import Path
+
     client_module = types.ModuleType("supabase_client")
     client_module.supabase = Mock()
     client_module.SUPABASE_URL = "https://example.invalid"
@@ -16,15 +19,28 @@ def storage_module(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "supabase_client", client_module)
 
-    # Import after installing the stub, so no real client is initialized.
+    import captions
+
     sys.modules.pop("captions.storage", None)
-    from captions import storage
+    if hasattr(captions, "storage"):
+        delattr(captions, "storage")
+
+    storage_path = Path(__file__).resolve().parents[1] / "captions" / "storage.py"
+    spec = importlib.util.spec_from_file_location("captions.storage", storage_path)
+    assert spec is not None and spec.loader is not None
+
+    storage = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, "captions.storage", storage)
+    spec.loader.exec_module(storage)
+    captions.storage = storage
 
     monkeypatch.setattr(storage, "_delete_storage_paths", Mock())
     yield storage
+
     sys.modules.pop("captions.storage", None)
-
-
+    if hasattr(captions, "storage"):
+        delattr(captions, "storage")
+        
 def test_expired_transcribe_preserves_source_used_by_live_render(
     storage_module, monkeypatch, tmp_path
 ):

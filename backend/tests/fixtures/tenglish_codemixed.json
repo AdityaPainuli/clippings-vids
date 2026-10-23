@@ -1,0 +1,46 @@
+{
+  "name": "tenglish-mid-utterance-switches",
+  "source": "Hand-built fixture: Telugu-English code-mixed speech (Tenglish) with mid-utterance language switches.",
+  "note": "Words tagged lang='te' are Telugu/Tenglish; lang='en' are English. The Telugu lexical words 'ante', 'emo', 'mari' are fillers only when surrounded by dead air. 'chala' here is a real modifier ('chala bagundi' = 'very good'), not a filler. None of the 'en' technical words should be cut. This tests the Telugu-specific filler table routing.",
+  "duration": 28.0,
+  "words": [
+    {"start": 0.10, "end": 0.60, "text": "mana", "lang": "te"},
+    {"start": 0.62, "end": 1.10, "text": "team", "lang": "en"},
+    {"start": 1.12, "end": 1.60, "text": "oka", "lang": "te"},
+    {"start": 1.62, "end": 2.10, "text": "new", "lang": "en"},
+    {"start": 2.12, "end": 2.60, "text": "feature", "lang": "en"},
+    {"start": 2.62, "end": 3.10, "text": "build", "lang": "en"},
+    {"start": 3.12, "end": 3.60, "text": "chestundi", "lang": "te"},
+
+    {"start": 4.50, "end": 5.40, "text": "ante", "lang": "te"},
+    {"start": 6.00, "end": 6.50, "text": "idi", "lang": "te"},
+    {"start": 6.52, "end": 7.00, "text": "real", "lang": "en"},
+    {"start": 7.02, "end": 7.50, "text": "time", "lang": "en"},
+    {"start": 7.52, "end": 8.00, "text": "processing", "lang": "en"},
+    {"start": 8.02, "end": 8.50, "text": "chestundi", "lang": "te"},
+
+    {"start": 9.20, "end": 9.65, "text": "um", "lang": "te"},
+    {"start": 10.10, "end": 10.60, "text": "data", "lang": "en"},
+    {"start": 10.62, "end": 11.10, "text": "pipeline", "lang": "en"},
+
+    {"start": 11.80, "end": 12.80, "text": "emo", "lang": "te"},
+    {"start": 13.40, "end": 13.90, "text": "koncham", "lang": "te"},
+    {"start": 13.92, "end": 14.40, "text": "complex", "lang": "en"},
+    {"start": 14.42, "end": 14.90, "text": "ga", "lang": "te"},
+    {"start": 14.92, "end": 15.40, "text": "undi", "lang": "te"},
+
+    {"start": 16.10, "end": 16.60, "text": "chala", "lang": "te"},
+    {"start": 16.62, "end": 17.10, "text": "bagundi", "lang": "te"},
+    {"start": 17.12, "end": 17.60, "text": "progress", "lang": "en"},
+
+    {"start": 18.30, "end": 19.20, "text": "mari", "lang": "te"},
+    {"start": 19.85, "end": 20.35, "text": "next", "lang": "en"},
+    {"start": 20.37, "end": 20.85, "text": "step", "lang": "en"},
+    {"start": 20.87, "end": 21.35, "text": "enti", "lang": "te"},
+
+    {"start": 22.00, "end": 22.50, "text": "okay", "lang": "en"},
+    {"start": 22.52, "end": 23.00, "text": "chestaam", "lang": "te"}
+  ],
+  "filler_indices": [7, 13, 16, 24],
+  "known_real_words": [21, 22]
+}

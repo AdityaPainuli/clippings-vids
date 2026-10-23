@@ -16,9 +16,16 @@ never touch a server.
 - **Style it your way.** Font, size, colors, position, words per line, and four
   animations (static highlight, pop-in, fade, karaoke fill) — with a live
   preview over your own footage.
+- **Tighten the take.** Finds dead air, "umm"s, and stutters, and lets you
+  bring back any cut with a click. **Fit to length** trims to a target like
+  1:00 using the least doubtful cuts.
+- **Catch retakes.** Groups lines you delivered more than once and suggests
+  the keeper. Optional, needs your own Anthropic or Gemini key, and sends
+  transcript text (never audio or video) to that provider.
 - **Export how you edit.** Burned-in MP4 for social, or a transparent overlay
   `.mov` you drop straight onto a Premiere / Final Cut / Resolve timeline
-  without re-encoding your footage. Plus `.srt` and `.ass`.
+  without re-encoding your footage. Plus `.srt`, `.ass`, and an EDL / FCPXML
+  timeline that carries your cuts into the editor.
 
 <br clear="right">
 
@@ -75,7 +82,8 @@ and you can read every line of what runs.
 
 Bolcap downloads what it needs the first time you run it — a Whisper model and,
 if you don't already have them, `ffmpeg` and `ffprobe`. Everything lands in
-`~/.bolcap` and is verified against a pinned checksum. Interrupted downloads
+`~/.bolcap`. ffmpeg is verified against a pinned checksum; the Whisper model
+comes from Hugging Face without a pinned revision yet. Interrupted downloads
 resume where they left off.
 
 Pick your model with your hardware in mind:
@@ -107,8 +115,12 @@ up automatically.
 
 ## Notes
 
-- Nothing is uploaded. The app binds to `127.0.0.1` and has no accounts.
-- Working files live in `~/.bolcap/work` and are cleaned up after three days.
+- Your video and audio are never uploaded. The app binds to `127.0.0.1` and
+  has no accounts. The one exception is optional retake detection, which sends
+  transcript text to the AI provider whose key you entered.
+- Working files live in `~/.bolcap/work`. Files older than three days are
+  removed the next time the app starts. An FCPXML export points at the copy in
+  that folder, so relink to your original if the project goes offline.
 - Bolcap is Apache-2.0 licensed — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 - Bundled fonts (Archivo Black, Inter, Noto Sans Devanagari) are OFL-licensed;
   see [`backend/localapp/fonts/LICENSE.md`](backend/localapp/fonts/LICENSE.md).
@@ -119,9 +131,12 @@ up automatically.
 
 ## Running from source
 
+Python 3.12 and `ffmpeg`/`ffprobe` on PATH:
+
 ```bash
 cd backend
-pip install -r requirements-bolcap.txt
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements-bolcap.txt -c constraints-bolcap.txt
 python -m localapp
 ```
 
