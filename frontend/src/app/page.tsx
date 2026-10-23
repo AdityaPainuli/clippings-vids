@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { API_BASE_URL } from "@/lib/api";
 import "./globals.css";
 
 interface Clip {
@@ -114,7 +115,7 @@ export default function Home() {
       formData.append("email", authEmail);
       formData.append("password", authPassword);
 
-      const response = await fetch(`http://localhost:8000${endpoint}`, {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: "POST",
         body: formData,
       });
@@ -157,7 +158,7 @@ export default function Home() {
     stopPolling();
     const interval = setInterval(async () => {
       try {
-        const response = await fetch(`http://localhost:8000/status/${jobId}`, {
+        const response = await fetch(`${API_BASE_URL}/status/${jobId}`, {
           headers: { "Authorization": `Bearer ${authToken}` }
         });
         const data = await response.json();
@@ -208,7 +209,7 @@ export default function Home() {
 
     let streamToken: string;
     try {
-      const tokenRes = await fetch("http://localhost:8000/stream-token", {
+      const tokenRes = await fetch(`${API_BASE_URL}/stream-token`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${authToken}` },
       });
@@ -221,7 +222,7 @@ export default function Home() {
     }
 
     const es = new EventSource(
-      `http://localhost:8000/stream/${jobId}?token=${encodeURIComponent(streamToken)}`
+      `${API_BASE_URL}/stream/${jobId}?token=${encodeURIComponent(streamToken)}`
     );
     eventSourceRef.current = es;
 
@@ -281,7 +282,7 @@ export default function Home() {
       formData.append("min_clip_length", String(minLength));
       formData.append("max_clip_length", String(maxLength));
 
-      const response = await fetch("http://localhost:8000/process-url", {
+      const response = await fetch(`${API_BASE_URL}/process-url`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`
@@ -303,7 +304,7 @@ export default function Home() {
       // If cached, results are already in the response
       if (data.status === "completed") {
         // Fetch full status to get results
-        const statusRes = await fetch(`http://localhost:8000/status/${data.job_id}`, {
+        const statusRes = await fetch(`${API_BASE_URL}/status/${data.job_id}`, {
           headers: { "Authorization": `Bearer ${token}` }
         });
         const statusData = await statusRes.json();
@@ -381,7 +382,7 @@ export default function Home() {
   };
 
   const getClipUrl = (clip: Clip) =>
-    clip.url || clip.src || (clip.path ? (clip.path.startsWith("http") ? clip.path : `http://localhost:8000${clip.path}`) : "");
+    clip.url || clip.src || (clip.path ? (clip.path.startsWith("http") ? clip.path : `${API_BASE_URL}${clip.path}`) : "");
 
   return (
     <main>
