@@ -33,9 +33,11 @@ export default function MyClips() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+
   useEffect(() => {
     const fetchClips = async () => {
       const token = localStorage.getItem("clipwave_access_token");
+
       if (!token) {
         setError("You must be logged in to view your clips.");
         setLoading(false);
@@ -45,25 +47,30 @@ export default function MyClips() {
       try {
         const response = await fetch("http://localhost:8000/my-clips", {
           headers: {
-            "Authorization": `Bearer ${token}`
-          }
+            Authorization: `Bearer ${token}`,
+          },
         });
 
         if (!response.ok) {
           if (response.status === 401 || response.status === 403) {
             localStorage.removeItem("clipwave_access_token");
             localStorage.removeItem("clipwave_user_email");
-            setError("Session expired. Please return to the homepage to log in.");
+            setError(
+              "Session expired. Please return to the homepage to log in."
+            );
           } else {
             throw new Error("Failed to fetch past clips.");
           }
           return;
         }
 
+
         const data: MyClipsResponse = await response.json();
         setClipsData(data);
-      } catch (err: any) {
-        setError(err.message);
+      } catch (err: unknown) {
+        setError(
+          err instanceof Error ? err.message : "Failed to fetch past clips."
+        );
       } finally {
         setLoading(false);
       }
@@ -71,6 +78,7 @@ export default function MyClips() {
 
     fetchClips();
   }, []);
+
 
   return (
     <main>
@@ -89,9 +97,9 @@ export default function MyClips() {
 
       <div style={{ padding: '6rem 2rem 2rem 2rem', maxWidth: '1200px', margin: '0 auto' }}>
         <h1 style={{ marginBottom: '1rem' }}>My Library</h1>
-        
+
         {loading && <p style={{ color: 'var(--text-secondary)' }}>Loading your clips...</p>}
-        
+
         {error && (
           <div style={{ padding: '2rem', background: 'rgba(255, 75, 75, 0.1)', border: '1px solid #ff4b4b', borderRadius: '12px', color: '#ff4b4b' }}>
             {error}
@@ -108,7 +116,7 @@ export default function MyClips() {
               <div style={{ textAlign: 'center', padding: '4rem', background: 'var(--glass-bg)', borderRadius: '16px', border: '1px solid var(--glass-border)' }}>
                 <h2>No clips found</h2>
                 <p style={{ color: 'var(--text-secondary)', marginTop: '1rem', marginBottom: '2rem' }}>
-                  You don't have any clips or they have expired.
+                  You don&apos;t have any clips or they have expired.
                 </p>
                 <Link href="/">
                   <button className="btn btn-primary">Create Clips</button>
@@ -138,16 +146,16 @@ export default function MyClips() {
                         style={{ width: '100%', height: '100%' }}
                       />
                     </div>
-                    
+
                     <div style={{ flexGrow: 1 }}>
                       <p style={{ fontSize: '0.9rem', marginBottom: '0.3rem', fontWeight: 'bold', wordBreak: 'break-all' }}>
                         {clip.filename}
                       </p>
-                      {clip.description && (
-                        <p style={{ fontSize: '0.85rem', color: '#ddd', marginBottom: '0.8rem', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                          "{clip.description}"
-                        </p>
-                      )}
+                     {clip.description && (
+                      <p style={{ fontSize: '0.85rem', color: '#ddd', marginBottom: '0.8rem', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        &quot;{clip.description}&quot;
+                      </p>
+                    )}
                       {clip.source_url && (
                         <div style={{ fontSize: '0.8rem', marginBottom: '0.8rem', wordBreak: 'break-all' }}>
                           <a href={clip.source_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)' }}>Source Video</a>
