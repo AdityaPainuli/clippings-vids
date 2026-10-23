@@ -1,130 +1,138 @@
 
+import importlib.util
 import sys
+import tempfile
 import types
-from unittest.mock import Mock
-
-import pytest
-
-
-@pytest.fixture
-def storage_module(monkeypatch):
-    """Import caption storage without requiring real Supabase credentials."""
-    import importlib.util
-    from pathlib import Path
-
-    client_module = types.ModuleType("supabase_client")
-    client_module.supabase = Mock()
-    client_module.SUPABASE_URL = "https://example.invalid"
-    client_module.SUPABASE_SERVICE_KEY = "test-key"
-
-    monkeypatch.setitem(sys.modules, "supabase_client", client_module)
-
-    import captions
-
-    sys.modules.pop("captions.storage", None)
-    if hasattr(captions, "storage"):
-        delattr(captions, "storage")
-
-    storage_path = Path(__file__).resolve().parents[1] / "captions" / "storage.py"
-    spec = importlib.util.spec_from_file_location("captions.storage", storage_path)
-    assert spec is not None and spec.loader is not None
-
-    storage = importlib.util.module_from_spec(spec)
-    monkeypatch.setitem(sys.modules, "captions.storage", storage)
-    spec.loader.exec_module(storage)
-    captions.storage = storage
-
-    monkeypatch.setattr(storage, "_delete_storage_paths", Mock())
-    yield storage
-
-    sys.modules.pop("captions.storage", None)
-    if hasattr(captions, "storage"):
-        delattr(captions, "storage")
-        
-def test_expired_transcribe_preserves_source_used_by_live_render(
-    storage_module, monkeypatch, tmp_path
-):
-    storage = storage_module
-    shared_source = "user-1/sources/upload-1/video.mp4"
-    expired_output = "user-1/outputs/transcribe-1/transcript.srt"
-
-    expired_jobs = [
-        {
-            "id": "transcribe-1",
-            "source_path": shared_source,
-            "output_path": expired_output,
-        }
-    ]
-    live_jobs = [{"source_path": shared_source}]
-
-    expired_query = Mock()
-    expired_query.select.return_value = expired_query
-    expired_query.lt.return_value = expired_query
-    expired_query.execute.return_value = Mock(data=expired_jobs)
-
-    active_query = Mock()
-    active_query.select.return_value = active_query
-    active_query.gte.return_value = active_query
-    active_query.execute.return_value = Mock(data=live_jobs)
-
-    delete_query = Mock()
-    delete_query.in_.return_value = delete_query
-    delete_query.execute.return_value = Mock(data=[])
-
-    delete_builder = Mock()
-    delete_builder.delete.return_value = delete_query
-
-    table = Mock()
-    table.side_effect = [expired_query, active_query, delete_builder]
-    storage.supabase.table = table
-
-    monkeypatch.setattr(storage.os.path, "isdir", lambda _: False)
-
-    deleted_count = storage.delete_expired(local_dir=str(tmp_path))
-
-    assert deleted_count == 1
-    storage._delete_storage_paths.assert_called_once_with([expired_output])
-    delete_query.in_.assert_called_once_with("id", ["transcribe-1"])
+import unittest
+from pathlib import Path
+from unittest.mock import Mock, patch
 
 
-def test_expired_source_is_deleted_when_no_live_job_references_it(
-    storage_module, monkeypatch, tmp_path
-):
-    storage = storage_module
-    expired_source = "user-1/sources/upload-2/video.mp4"
+class CaptionStorageRetentionTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
 
-    expired_jobs = [
-        {
-            "id": "transcribe-2",
-            "source_path": expired_source,
-            "output_path": None,
-        }
-    ]
+        client_module = types.ModuleType("supabase_client")
+        client_module.supabase = Mock()
+        client_module.SUPABASE_URL = "https://example.invalid"
+        client_module.SUPABASE_SERVICE_KEY = "test-key"
 
-    expired_query = Mock()
-    expired_query.select.return_value = expired_query
-    expired_query.lt.return_value = expired_query
-    expired_query.execute.return_value = Mock(data=expired_jobs)
+        self.client_patch = patch.dict(
+            sys.modules, {"supabase_client": client_module}
+        )
+        self.client_patch.start()
+        self.addCleanup(self.client_patch.stop)
 
-    active_query = Mock()
-    active_query.select.return_value = active_query
-    active_query.gte.return_value = active_query
-    active_query.execute.return_value = Mock(data=[])
+        import captions
 
-    delete_query = Mock()
-    delete_query.in_.return_value = delete_query
-    delete_query.execute.return_value = Mock(data=[])
+        self.captions = captions
+        sys.modules.pop("captions.storage", None)
+        if hasattr(captions, "storage"):
+            delattr(captions, "storage")
 
-    delete_builder = Mock()
-    delete_builder.delete.return_value = delete_query
+        storage_path = (
+            Path(__file__).resolve().parents[1]
+            / "captions"
+            / "storage.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "captions.storage", storage_path
+        )
+        assert spec is not None and spec.loader is not None
 
-    table = Mock()
-    table.side_effect = [expired_query, active_query, delete_builder]
-    storage.supabase.table = table
+        self.storage = importlib.util.module_from_spec(spec)
+        sys.modules["captions.storage"] = self.storage
+        spec.loader.exec_module(self.storage)
+        captions.storage = self.storage
 
-    monkeypatch.setattr(storage.os.path, "isdir", lambda _: False)
+        self.addCleanup(self._cleanup_storage_module)
+        self.storage._delete_storage_paths = Mock()
+        self.storage._delete_orphaned_sources = Mock(return_value=0)
 
-    deleted_count = storage.delete_expired(local_dir=str(tmp_path))
+    def _cleanup_storage_module(self):
+        sys.modules.pop("captions.storage", None)
+        if hasattr(self.captions, "storage"):
+            delattr(self.captions, "storage")
 
-    assert deleted_count == 1
-    storage._delete_storage_paths.assert_called_once_with([expired_source])
+    def _configure_queries(self, expired_jobs, live_jobs):
+        expired_query = Mock()
+        expired_query.select.return_value = expired_query
+        expired_query.lt.return_value = expired_query
+        expired_query.execute.return_value = Mock(data=expired_jobs)
+
+        active_query = Mock()
+        active_query.select.return_value = active_query
+        active_query.gte.return_value = active_query
+        active_query.execute.return_value = Mock(data=live_jobs)
+
+        delete_query = Mock()
+        delete_query.in_.return_value = delete_query
+        delete_query.execute.return_value = Mock(data=[])
+
+        delete_builder = Mock()
+        delete_builder.delete.return_value = delete_query
+
+        table = Mock()
+        table.side_effect = [
+            expired_query,
+            active_query,
+            delete_builder,
+        ]
+        self.storage.supabase.table = table
+
+        return delete_query
+
+    def test_expired_transcribe_preserves_source_used_by_live_render(self):
+        shared_source = "user-1/sources/upload-1/video.mp4"
+        expired_output = "user-1/outputs/transcribe-1/transcript.srt"
+
+        delete_query = self._configure_queries(
+            [
+                {
+                    "id": "transcribe-1",
+                    "source_path": shared_source,
+                    "output_path": expired_output,
+                }
+            ],
+            [{"source_path": shared_source}],
+        )
+
+        with patch.object(self.storage.os.path, "isdir", return_value=False):
+            deleted_count = self.storage.delete_expired(
+                local_dir=self.temp_dir.name
+            )
+
+        self.assertEqual(deleted_count, 1)
+        self.storage._delete_storage_paths.assert_called_once_with(
+            [expired_output]
+        )
+        delete_query.in_.assert_called_once_with("id", ["transcribe-1"])
+
+    def test_expired_source_is_deleted_when_no_live_job_references_it(self):
+        expired_source = "user-1/sources/upload-2/video.mp4"
+
+        self._configure_queries(
+            [
+                {
+                    "id": "transcribe-2",
+                    "source_path": expired_source,
+                    "output_path": None,
+                }
+            ],
+            [],
+        )
+
+        with patch.object(self.storage.os.path, "isdir", return_value=False):
+            deleted_count = self.storage.delete_expired(
+                local_dir=self.temp_dir.name
+            )
+
+        self.assertEqual(deleted_count, 1)
+        self.storage._delete_storage_paths.assert_called_once_with(
+            [expired_source]
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
