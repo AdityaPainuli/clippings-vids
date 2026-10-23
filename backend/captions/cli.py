@@ -206,35 +206,50 @@ def main():
             print(f"  ... {len(cuts) - 40} more")
         return
 
-    if cuts:
-        applied = [c for c in cuts if c.auto]
-        result = tighten.apply_cuts(transcript["words"], applied, info["duration"])
-        transcript["words"] = result["words"]      # captions re-timed to the cut
+    applied = [c for c in cuts if c.auto]
 
-        if args.export in ("edl", "fcpxml"):
-            # The point of a timeline export is that the media is never
-            # touched — the NLE relinks the original and applies these cuts.
-            name = os.path.basename(args.video)
-            if args.export == "edl":
-                out = timeline.export_edl(result["kept"], info["fps"], name,
-                                          args.output or f"{base}.edl")
-            else:
-                out = timeline.export_fcpxml(
-                    result["kept"], info["fps"], info["width"], info["height"],
-                    args.video, info["duration"],
-                    args.output or f"{base}.fcpxml",
-                    name=os.path.splitext(name)[0],
-                    audio=render.probe_audio(args.video),
-                    # Cuts we flagged but did not make become markers, so the
-                    # editor can find them instead of rewatching for them.
-                    markers=[c for c in cuts if not c.auto])
-            # These captions are timed to the cut timeline and mean nothing
-            # against the uncut source, so they ship with it.
-            srt = render.export_srt(transcript["words"], f"{base}_tightened.srt",
-                                    style.words_per_line, text_key=text_key)
-            print(f"done: {out}")
-            print(f"  captions for that timeline: {srt}")
-            return
+    if args.export in ("edl", "fcpxml"):
+        # A timeline is still the right answer when there is nothing to cut:
+        # the user asked for an edit decision list, not a flattened render.
+        # Export the whole clip as one kept span instead of falling through
+        # to the burned path below.
+        if applied:
+            result = tighten.apply_cuts(transcript["words"], applied,
+                                        info["duration"])
+            transcript["words"] = result["words"]  # captions re-timed to the cut
+            kept, timeline_duration = result["kept"], result["duration"]
+        else:
+            kept = [(0.0, info["duration"])] if info["duration"] > 0 else []
+            timeline_duration = info["duration"]
+
+        # The point of a timeline export is that the media is never touched —
+        # the NLE relinks the original and applies these cuts.
+        name = os.path.basename(args.video)
+        if args.export == "edl":
+            out = timeline.export_edl(kept, info["fps"], name,
+                                      args.output or f"{base}.edl")
+        else:
+            out = timeline.export_fcpxml(
+                kept, info["fps"], info["width"], info["height"],
+                args.video, timeline_duration,
+                args.output or f"{base}.fcpxml",
+                name=os.path.splitext(name)[0],
+                audio=render.probe_audio(args.video),
+                # Cuts we flagged but did not make become markers, so the
+                # editor can find them instead of rewatching for them.
+                markers=[c for c in cuts if not c.auto])
+        # These captions are timed to the cut timeline and mean nothing
+        # against the uncut source, so they ship with it.
+        srt = render.export_srt(transcript["words"], f"{base}_tightened.srt",
+                                style.words_per_line, text_key=text_key)
+        print(f"done: {out}")
+        print(f"  captions for that timeline: {srt}")
+        return
+
+    if cuts:
+        result = tighten.apply_cuts(transcript["words"], applied,
+                                    info["duration"])
+        transcript["words"] = result["words"]      # captions re-timed to the cut
 
         # Only a burned MP4 needs the media physically cut. `ass` and `srt`
         # need nothing but the re-timed words, and `overlay` draws on a blank
