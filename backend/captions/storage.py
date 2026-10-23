@@ -156,23 +156,59 @@ def _delete_storage_paths(paths: list):
 
 # ── Retention cleanup ────────────────────────────────────────────────────────
 
+
 def delete_expired(local_dir: str = "captions_output") -> int:
     """
-    Remove storage objects + job rows past expires_at, and any leftover
-    local files older than the retention window. Returns rows deleted.
+    Remove expired job rows and their storage objects, preserving source
+    files still referenced by non-expired jobs. Also removes old local
+    files. Returns the number of expired rows deleted.
     """
     now = datetime.now(timezone.utc).isoformat()
-    res = (supabase.table("caption_jobs")
-           .select("id, source_path, output_path")
-           .lt("expires_at", now).execute())
+
+    res = (
+        supabase.table("caption_jobs")
+        .select("id, source_path, output_path")
+        .lt("expires_at", now)
+        .execute()
+    )
     rows = res.data or []
 
-    paths = [p for r in rows for p in (r.get("source_path"), r.get("output_path")) if p]
-    _delete_storage_paths(paths)
     if rows:
-        supabase.table("caption_jobs").delete().in_("id", [r["id"] for r in rows]).execute()
+        # Find sources still needed by jobs that have not expired.
+        active_res = (
+            supabase.table("caption_jobs")
+            .select("source_path")
+            .gte("expires_at", now)
+            .execute()
+        )
+        active_sources = {
+            row["source_path"]
+            for row in (active_res.data or [])
+            if row.get("source_path")
+        }
 
-    # Local temp/render files past retention
+        # Expired outputs can be removed, but shared sources must survive.
+        paths = {
+            row["output_path"]
+            for row in rows
+            if row.get("output_path")
+        }
+        paths.update(
+            row["source_path"]
+            for row in rows
+            if row.get("source_path")
+            and row["source_path"] not in active_sources
+        )
+
+        _delete_storage_paths(list(paths))
+
+        supabase.table("caption_jobs").delete().in_(
+            "id", [row["id"] for row in rows]
+        ).execute()
+    else:
+        paths = set()
+
+    # Local temp/render files past retention.
     if os.path.isdir(local_dir):
         cutoff = time.time() - RETENTION_SECONDS
         for fname in os.listdir(local_dir):
@@ -184,5 +220,9 @@ def delete_expired(local_dir: str = "captions_output") -> int:
                 pass
 
     if rows:
-        print(f"[captions cleanup] {len(rows)} expired job(s), {len(paths)} storage object(s) removed")
+        print(
+            f"[captions cleanup] {len(rows)} expired job(s), "
+            f"{len(paths)} storage object(s) removed"
+        )
+
     return len(rows)
