@@ -14,6 +14,7 @@ All backends return the same shape:
 import os
 import subprocess
 import tempfile
+import threading
 
 MLX_MODEL = os.getenv("CAPTIONS_MLX_MODEL", "mlx-community/whisper-large-v3-turbo")
 
@@ -26,6 +27,11 @@ def _cpu_model_name() -> str:
 
 _fw_model_cache = None      # (name, model)
 _cpu_model_cache = None     # (name, model)
+# Loading a model is hundreds of MB of allocation. Two uploads arriving close
+# together must not both construct one and exhaust memory, so the load itself
+# is serialized rather than just the cache check.
+_fw_model_lock = threading.Lock()
+_cpu_model_lock = threading.Lock()
 
 
 # Extracting 16 kHz mono runs far faster than realtime, so one second of
@@ -110,14 +116,15 @@ def _faster_whisper_model():
     """Cached per model name; picks CUDA float16 when available, else int8 CPU."""
     global _fw_model_cache
     name = _cpu_model_name()
-    if _fw_model_cache is None or _fw_model_cache[0] != name:
-        from faster_whisper import WhisperModel
-        try:
-            model = WhisperModel(name, device="cuda", compute_type="float16")
-        except Exception:
-            model = WhisperModel(name, device="cpu", compute_type="int8")
-        _fw_model_cache = (name, model)
-    return _fw_model_cache[1]
+    with _fw_model_lock:
+        if _fw_model_cache is None or _fw_model_cache[0] != name:
+            from faster_whisper import WhisperModel
+            try:
+                model = WhisperModel(name, device="cuda", compute_type="float16")
+            except Exception:
+                model = WhisperModel(name, device="cpu", compute_type="int8")
+            _fw_model_cache = (name, model)
+        return _fw_model_cache[1]
 
 
 def _transcribe_faster_whisper(audio: str, language: str | None) -> dict | None:
@@ -150,9 +157,11 @@ def _transcribe_openai_whisper(audio: str, language: str | None) -> dict:
     global _cpu_model_cache
     import whisper
     name = _cpu_model_name()
-    if _cpu_model_cache is None or _cpu_model_cache[0] != name:
-        _cpu_model_cache = (name, whisper.load_model(name))
-    result = _cpu_model_cache[1].transcribe(
+    with _cpu_model_lock:
+        if _cpu_model_cache is None or _cpu_model_cache[0] != name:
+            _cpu_model_cache = (name, whisper.load_model(name))
+        model = _cpu_model_cache[1]
+    result = model.transcribe(
         audio,
         word_timestamps=True,
         language=language,
