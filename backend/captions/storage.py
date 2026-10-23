@@ -194,26 +194,63 @@ def _list_prefix(prefix: str = "") -> list:
 
 # ── Retention cleanup ────────────────────────────────────────────────────────
 
+
 def delete_expired(local_dir: str = "captions_output") -> int:
     """
-    Remove storage objects + job rows past expires_at, and any leftover
-    local files older than the retention window. Returns rows deleted.
+    Remove expired job rows and their storage objects, preserving source
+    files still referenced by non-expired jobs. Also removes old local
+    files and orphaned uploads. Returns the number of expired rows deleted.
     """
     now = datetime.now(timezone.utc).isoformat()
-    res = (supabase.table("caption_jobs")
-           .select("id, source_path, output_path")
-           .lt("expires_at", now).execute())
+
+    res = (
+        supabase.table("caption_jobs")
+        .select("id, source_path, output_path")
+        .lt("expires_at", now)
+        .execute()
+    )
     rows = res.data or []
-
-    paths = [p for r in rows for p in (r.get("source_path"), r.get("output_path")) if p]
-    # Keep the rows if storage delete failed so the next run retries; once a
-    # row is gone nothing points at its output any more.
+    paths = set()
     deleted = 0
-    if rows and _delete_storage_paths(paths):
-        supabase.table("caption_jobs").delete().in_("id", [r["id"] for r in rows]).execute()
-        deleted = len(rows)
 
-    # Local temp/render files past retention
+    if rows:
+        # Sources referenced by non-expired jobs must be preserved.
+        active_res = (
+            supabase.table("caption_jobs")
+            .select("source_path")
+            .gte("expires_at", now)
+            .execute()
+        )
+        active_sources = {
+            row["source_path"]
+            for row in (active_res.data or [])
+            if row.get("source_path")
+        }
+
+        # Outputs belong to expired jobs; sources may be shared by live jobs.
+        paths = {
+            row["output_path"]
+            for row in rows
+            if row.get("output_path")
+        }
+        paths.update(
+            row["source_path"]
+            for row in rows
+            if row.get("source_path")
+            and row["source_path"] not in active_sources
+        )
+
+        # Keep expired rows if storage deletion fails so cleanup can retry.
+        if _delete_storage_paths(list(paths)):
+            (
+                supabase.table("caption_jobs")
+                .delete()
+                .in_("id", [row["id"] for row in rows])
+                .execute()
+            )
+            deleted = len(rows)
+
+    # Local temp/render files past retention.
     if os.path.isdir(local_dir):
         cutoff = time.time() - RETENTION_SECONDS
         for fname in os.listdir(local_dir):
@@ -224,8 +261,7 @@ def delete_expired(local_dir: str = "captions_output") -> int:
             except OSError:
                 pass
 
-    # Last, and contained: a slow or failing storage listing must not stop
-    # the local cleanup above or abort the caller's cleanup loop.
+    # Clean up old uploaded sources that were never attached to a job.
     try:
         orphans = _delete_orphaned_sources()
     except requests.RequestException as e:
@@ -233,19 +269,20 @@ def delete_expired(local_dir: str = "captions_output") -> int:
         orphans = 0
 
     if deleted:
-        print(f"[captions cleanup] {deleted} expired job(s), {len(paths)} storage object(s) removed")
+        print(
+            f"[captions cleanup] {deleted} expired job(s), "
+            f"{len(paths)} storage object(s) removed"
+        )
     if orphans:
         print(f"[captions cleanup] {orphans} orphaned upload(s) removed")
+
     return deleted
 
 
 def _delete_orphaned_sources() -> int:
     """
-    Sources uploaded via a signed URL but never attached to a job have no
-    caption_jobs row, so the row-driven pass above never sees them. Scan
-    {user_id}/sources/ and drop anything past retention that no remaining job
-    references. Runs after expired rows are gone, so any row left is live.
-    Returns objects deleted.
+    Delete old uploaded sources that have no remaining caption job reference.
+    Returns the number of orphaned objects deleted.
     """
     cutoff = time.time() - RETENTION_SECONDS
     candidates = []
@@ -254,27 +291,38 @@ def _delete_orphaned_sources() -> int:
         user_id = user_folder.get("name", "")
         if not user_id:
             continue
+
         for job_folder in _list_prefix(f"{user_id}/sources"):
             prefix = f"{user_id}/sources/{job_folder.get('name', '')}"
-            for f in _list_prefix(prefix):
-                raw_ts = f.get("created_at") or f.get("updated_at", "")
+            for item in _list_prefix(prefix):
+                raw_ts = item.get("created_at") or item.get("updated_at", "")
                 try:
                     dt = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
                 except (ValueError, AttributeError):
                     continue
+
                 if dt.timestamp() < cutoff:
-                    candidates.append(f"{prefix}/{f['name']}")
+                    candidates.append(f"{prefix}/{item['name']}")
 
     if not candidates:
         return 0
 
     referenced = set()
     for i in range(0, len(candidates), 100):
-        res = (supabase.table("caption_jobs").select("source_path")
-               .in_("source_path", candidates[i : i + 100]).execute())
-        referenced.update(r["source_path"] for r in res.data or [])
+        res = (
+            supabase.table("caption_jobs")
+            .select("source_path")
+            .in_("source_path", candidates[i : i + 100])
+            .execute()
+        )
+        referenced.update(
+            row["source_path"]
+            for row in (res.data or [])
+            if row.get("source_path")
+        )
 
-    orphans = [p for p in candidates if p not in referenced]
+    orphans = [path for path in candidates if path not in referenced]
     if not orphans or not _delete_storage_paths(orphans):
         return 0
+
     return len(orphans)
