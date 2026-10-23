@@ -13,14 +13,46 @@ import json
 import os
 import subprocess
 
+# Probes answer in milliseconds on a healthy file. The timeout is only there
+# so a network mount or a corrupt container cannot pin a worker forever.
+_PROBE_TIMEOUT = 30
+
+# Rendering is the one step that can legitimately outrun realtime on a slow
+# machine, so its budget scales with the work instead of using a short fixed
+# number. The floor covers short clips with expensive filters, the ceiling
+# stops a bogus duration from becoming an eight-hour hang.
+_RENDER_FLOOR = 300
+_RENDER_PER_SECOND = 3.0
+_RENDER_MAX = 6 * 3600
+
+
+def _render_timeout(duration: float) -> float:
+    """Generous, duration-scaled budget for an ffmpeg encode."""
+    try:
+        seconds = float(duration)
+    except (TypeError, ValueError):
+        return _RENDER_MAX
+    if seconds <= 0 or seconds != seconds:          # NaN is not a duration
+        return _RENDER_MAX
+    return min(max(_RENDER_FLOOR, seconds * _RENDER_PER_SECOND), _RENDER_MAX)
+
+
+def _run(cmd: list, timeout: float, label: str):
+    """Run ffmpeg/ffprobe and turn a hang into a message worth reading."""
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"{label} timed out after {timeout:.0f}s") from None
+
 
 def probe_video(video_path: str) -> dict:
     """Return {"width", "height", "duration", "fps"} via ffprobe."""
-    r = subprocess.run(
+    r = _run(
         ["ffprobe", "-v", "error", "-select_streams", "v:0",
          "-show_entries", "stream=width,height,r_frame_rate",
          "-show_entries", "format=duration", "-of", "json", video_path],
-        capture_output=True, text=True,
+        _PROBE_TIMEOUT, "ffprobe",
     )
     if r.returncode != 0:
         raise RuntimeError(f"ffprobe failed: {r.stderr[-300:]}")
@@ -46,10 +78,10 @@ def probe_audio(video_path: str) -> dict:
     trusts on relink — must not guess. A file with no audio stream reports
     has_audio False rather than a channel count of zero dressed up as mono.
     """
-    r = subprocess.run(
+    r = _run(
         ["ffprobe", "-v", "error", "-select_streams", "a:0",
          "-show_entries", "stream=channels,sample_rate", "-of", "json", video_path],
-        capture_output=True, text=True,
+        _PROBE_TIMEOUT, "ffprobe",
     )
     if r.returncode != 0:
         return {"has_audio": False, "channels": None, "sample_rate": None}
@@ -115,15 +147,24 @@ def _ass_filter(ass_path: str, extra: str = "") -> str:
     return spec
 
 
-def burn_video(video_path: str, ass_path: str, out_path: str, crf: int = 20) -> str:
-    """Render captions into the video (single re-encode, audio copied)."""
+def burn_video(video_path: str, ass_path: str, out_path: str, crf: int = 20,
+               duration: float | None = None) -> str:
+    """Render captions into the video (single re-encode, audio copied).
+
+    `duration` is the source length when the caller already knows it. Without
+    it the probe below supplies one; the encode budget is derived from that,
+    because a fixed timeout either strands long videos or lets a stalled
+    process run for hours.
+    """
+    if duration is None:
+        duration = probe_video(video_path)["duration"]
     cmd = [
         "ffmpeg", "-y", "-i", video_path,
         "-vf", _ass_filter(ass_path),
         "-c:v", "libx264", "-preset", "fast", "-crf", str(crf),
         "-c:a", "copy", out_path,
     ]
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = _run(cmd, _render_timeout(duration), "Burn")
     if r.returncode != 0:
         raise RuntimeError(f"Burn failed: {r.stderr[-400:]}")
     return out_path
@@ -145,7 +186,7 @@ def render_overlay(ass_path: str, out_path: str, width: int, height: int,
         "-vf", _ass_filter(ass_path, ":alpha=1"),
         "-c:v", "qtrle", out_path,
     ]
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = _run(cmd, _render_timeout(duration), "Overlay render")
     if r.returncode != 0:
         raise RuntimeError(f"Overlay render failed: {r.stderr[-400:]}")
     return out_path
@@ -203,7 +244,7 @@ def render_cut(video_path: str, keep: list, out_path: str,
         cmd += ["-map", "[aout]", "-c:a", "aac"]
     cmd.append(out_path)
 
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = _run(cmd, _render_timeout(sum(e - s for s, e in keep)), "Cut render")
     if r.returncode != 0:
         raise RuntimeError(f"Cut render failed: {r.stderr[-400:]}")
     return out_path

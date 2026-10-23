@@ -210,7 +210,9 @@ def _render_task(job_id: str, user_id: str, email: str, source_path: Optional[st
             if not local_source:
                 raise RuntimeError("burned export requires an uploaded video")
             out = render.burn_video(
-                local_source, ass_path, os.path.join(WORK_DIR, f"{job_id}_subtitled.mp4"))
+                local_source, ass_path,
+                os.path.join(WORK_DIR, f"{job_id}_subtitled.mp4"),
+                duration=info["duration"])
 
         # Push the finished file to storage; fall back to serving the local
         # copy if the upload fails (e.g. file exceeds the plan's size limit).

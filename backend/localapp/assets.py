@@ -457,7 +457,11 @@ def download_ffmpeg(progress: dict):
 
     # Sanity check both binaries actually run
     for name in (f"ffmpeg{suffix}", f"ffprobe{suffix}"):
-        r = subprocess.run([str(BIN_DIR / name), "-version"], capture_output=True)
+        try:
+            r = subprocess.run([str(BIN_DIR / name), "-version"],
+                               capture_output=True, timeout=30)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"Downloaded {name} did not respond to -version")
         if r.returncode != 0:
             raise RuntimeError(f"Downloaded {name} failed to run")
 

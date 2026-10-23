@@ -281,8 +281,9 @@ def detect(words: list, media_path: str | None = None, silences: list | None = N
     if silences is None and media_path:
         try:
             silences = [(c.start, c.end) for c in
-                        tighten.detect_silences_from_audio(media_path,
-                                                           tighten.TightenConfig())]
+                        tighten.detect_silences_from_audio(
+                            media_path, tighten.TightenConfig(),
+                            duration=words[-1]["end"] if words else None)]
         except Exception:                                   # noqa: BLE001
             silences = None
 

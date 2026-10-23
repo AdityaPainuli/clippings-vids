@@ -489,7 +489,8 @@ def _render_worker(job_id: str, export: str, style: styles.CaptionStyle,
                                         info["width"], info["height"],
                                         info["duration"], info["fps"])
         else:
-            out = render.burn_video(source, ass_path, f"{base}_subtitled.mp4")
+            out = render.burn_video(source, ass_path, f"{base}_subtitled.mp4",
+                                    duration=info["duration"])
 
         ext = os.path.splitext(out)[1]
         suffix = {"burned": "_captioned", "overlay": "_overlay"}.get(export, "")
