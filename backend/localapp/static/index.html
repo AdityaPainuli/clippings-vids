@@ -483,7 +483,7 @@ async function upload(file) {
     const res = await fetch("/api/transcribe", { method: "POST", body: fd });
     if (!res.ok) throw new Error((await res.json()).detail || "Upload failed");
     jobId = (await res.json()).job_id;
-    poll(jobId, onTranscribed);
+    poll(jobId, onTranscribed, null, "transcribe");
   } catch (err) { setStatus(err.message, "error"); }
 }
 
@@ -496,18 +496,23 @@ const STAGE_TEXT = {
   "finding-retakes": "Looking for retakes…",
 };
 
-function poll(id, onReady, onFail) {
+function poll(id, onReady, onFail, op) {
   const t = setInterval(async () => {
     try {
       const res = await fetch(`/api/jobs/${id}`);
       if (!res.ok) throw new Error("Job lost — restart the app and retry");
       const job = await res.json();
-      if (job.status === "failed") {
-        clearInterval(t); setStatus(job.error || "Failed", "error");
+      // Operations on one upload finish independently. Reading a shared
+      // status let retakes finish a render poll early, or a finished render
+      // make a retake poll report that nothing was found.
+      const state = (op && job.ops && job.ops[op])
+        || { status: job.status, error: job.error };
+      if (state.status === "failed") {
+        clearInterval(t); setStatus(state.error || "Failed", "error");
         if (onFail) onFail(job); return;
       }
-      if (job.status === "ready") { clearInterval(t); onReady(job); return; }
-      setStatus(STAGE_TEXT[job.status] || job.status);
+      if (state.status === "ready") { clearInterval(t); onReady(job); return; }
+      setStatus(STAGE_TEXT[state.status] || state.status);
     } catch (err) {
       clearInterval(t); setStatus(err.message, "error");
       if (onFail) onFail(null);
@@ -1211,7 +1216,7 @@ $("r-find").onclick = async () => {
         status.textContent = notes.join(" ");
         status.classList.remove("hidden");
       }
-    }, () => { btn.disabled = false; btn.textContent = "Find retakes"; });
+    }, () => { btn.disabled = false; btn.textContent = "Find retakes"; }, "retakes");
   } catch (err) {
     btn.disabled = false; btn.textContent = "Find retakes";
     status.textContent = err.message;
@@ -1266,7 +1271,7 @@ document.querySelectorAll(".exports button").forEach(btn => {
           a.textContent = `⬇ ${name}`;
           downloads.appendChild(a);
         }
-      }, enableButtons);
+      }, enableButtons, "render");
     } catch (err) {
       setStatus(err.message, "error");
       enableButtons();

@@ -168,6 +168,24 @@ def _job(job_id: str) -> dict:
     return job
 
 
+def _set_op(job: dict, name: str, status: str, error=None):
+    """
+    Record one operation's state without touching the others.
+
+    Transcription, retake detection and rendering can overlap on the same
+    upload. A single job-wide status made whichever worker finished first end
+    the other's poll, which read as "no retakes" or "export finished" while
+    the second operation was still running.
+    """
+    op = job.setdefault("ops", {}).setdefault(name, {})
+    op["status"] = status
+    op["error"] = str(error)[:500] if error else None
+
+
+def _op_status(job: dict, name: str):
+    return ((job.get("ops") or {}).get(name) or {}).get("status")
+
+
 # ── First-run setup ──────────────────────────────────────────────────────────
 
 @app.get("/api/setup/status")
@@ -203,15 +221,19 @@ def _transcribe_worker(job_id: str, video_path: str, language: Optional[str],
                        hinglish: bool):
     job = jobs[job_id]
     try:
-        job["status"] = "transcribing"
+        _set_op(job, "transcribe", "transcribing")
+        job["status"] = "transcribing"          # kept for older API consumers
         result = transcribe.transcribe_video(video_path, language=language)
         if hinglish:
+            _set_op(job, "transcribe", "romanizing")
             job["status"] = "romanizing"
             result["words"] = romanize.romanize_words(result["words"])
         job["transcript"] = result
         job["video_info"] = render.probe_video(video_path)
+        _set_op(job, "transcribe", "ready")
         job["status"] = "ready"
     except Exception as e:
+        _set_op(job, "transcribe", "failed", e)
         job["status"] = "failed"
         job["error"] = str(e)[:500]
 
@@ -232,7 +254,9 @@ async def transcribe_endpoint(
             f.write(chunk)
 
     jobs[job_id] = {"status": "queued", "video_path": str(video_path),
-                    "filename": file.filename, "outputs": {}}
+                    "filename": file.filename, "outputs": {},
+                    "ops": {"transcribe": {"status": "queued",
+                                           "error": None}}}
     threading.Thread(target=_transcribe_worker,
                      args=(job_id, str(video_path), language, hinglish),
                      daemon=True).start()
@@ -351,13 +375,11 @@ async def set_api_key(provider: str = Form(...), key: str = Form("")):
 def _retake_worker(job_id: str, words: list):
     job = jobs[job_id]
     try:
-        job["status"] = "finding-retakes"
-        job.pop("error", None)
+        _set_op(job, "retakes", "finding-retakes")
         job["retakes"] = retakes.detect(words, media_path=job["video_path"])
-        job["status"] = "ready"
+        _set_op(job, "retakes", "ready")
     except Exception as e:
-        job["status"] = "failed"
-        job["error"] = str(e)[:500]
+        _set_op(job, "retakes", "failed", e)
 
 
 @app.post("/api/retakes", dependencies=WRITE)
@@ -376,6 +398,9 @@ async def retakes_endpoint(job_id: str = Form(...),
     job = _job(job_id)
     if not job.get("transcript"):
         raise HTTPException(status_code=409, detail="Transcribe first")
+    if _op_status(job, "retakes") == "finding-retakes":
+        raise HTTPException(status_code=409,
+                            detail="Retake detection is already running")
     if not llm.available():
         raise HTTPException(
             status_code=409,
@@ -421,8 +446,7 @@ def _render_worker(job_id: str, export: str, style: styles.CaptionStyle,
                    markers: list | None = None):
     job = jobs[job_id]
     try:
-        job["status"] = "rendering"
-        job.pop("error", None)      # a retry must not report the last failure
+        _set_op(job, "render", "rendering")
         info = job["video_info"]
         base = WORK_DIR / job_id
         stem = os.path.splitext(job.get("filename") or "video")[0]
@@ -471,7 +495,7 @@ def _render_worker(job_id: str, export: str, style: styles.CaptionStyle,
                                                  job["video_path"]))
             ext = os.path.splitext(out)[1]
             job["outputs"][export] = {"path": out, "name": f"{stem}_tighten{ext}"}
-            job["status"] = "ready"
+            _set_op(job, "render", "ready")
             return
 
         ass_path = f"{base}.ass"
@@ -494,10 +518,9 @@ def _render_worker(job_id: str, export: str, style: styles.CaptionStyle,
         ext = os.path.splitext(out)[1]
         suffix = {"burned": "_captioned", "overlay": "_overlay"}.get(export, "")
         job["outputs"][export] = {"path": out, "name": f"{stem}{suffix}{ext}"}
-        job["status"] = "ready"
+        _set_op(job, "render", "ready")
     except Exception as e:
-        job["status"] = "failed"
-        job["error"] = str(e)[:500]
+        _set_op(job, "render", "failed", e)
 
 
 @app.post("/api/render", dependencies=WRITE)
@@ -513,6 +536,9 @@ async def render_endpoint(
     job = _job(job_id)
     if not job.get("transcript"):
         raise HTTPException(status_code=409, detail="Transcribe first")
+    if _op_status(job, "render") == "rendering":
+        raise HTTPException(status_code=409,
+                            detail="A render is already running for this clip")
 
     try:
         style_data = json.loads(style_json)
@@ -577,6 +603,7 @@ async def job_status(job_id: str):
         "video_info": job.get("video_info"),
         "outputs": {k: v["name"] for k, v in job["outputs"].items()},
         "retakes": _retakes_payload(job),
+        "ops": job.get("ops") or {},
     }
 
 
