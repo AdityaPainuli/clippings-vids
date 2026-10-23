@@ -206,11 +206,18 @@ uvicorn main:app --reload   # http://localhost:8000
 # frontend
 cd frontend
 npm install && npm run dev  # http://localhost:3000
+
+# or build for production with a deployed backend:
+NEXT_PUBLIC_API_URL=https://api.example.com npm run build
 ```
 
-The frontend has the backend URL hardcoded as `http://localhost:8000`, so a
-deployment anywhere else needs a code change. It only covers the clipper;
-there is no captions UI in the web app yet.
+The frontend connects to the backend via `NEXT_PUBLIC_API_URL`, which defaults
+to `http://localhost:8000`. For a deployed backend, configure `NEXT_PUBLIC_API_URL`
+(e.g., `NEXT_PUBLIC_API_URL=https://api.yourdomain.com`). Because Next.js inlines
+`NEXT_PUBLIC_*` environment variables into client bundles at build time, the
+configured value must be available in the build environment when running `npm run build`
+(or set in `frontend/.env.production` / `frontend/.env.local`). It only covers the
+clipper; there is no captions UI in the web app yet.
 
 Supabase, one time:
 
@@ -233,6 +240,12 @@ Environment (backend reads `backend/.env`):
 | `CAPTION_FONT`, `CAPTION_FONTSIZE`, `CAPTION_COLOR`, `CAPTION_HIGHLIGHT`, `CAPTION_WORDS`, `CAPTION_MARGIN_V`, ... | clipper caption defaults (see `clipper.py`) |
 | `CAPTIONS_CPU_MODEL`, `CAPTIONS_MLX_MODEL`, `CAPTIONS_FONTS_DIR` | Whisper model names and font dir for the caption engine |
 | `ANTHROPIC_API_KEY`, `BOLCAP_ANTHROPIC_MODEL`, `BOLCAP_GEMINI_MODEL` | retake detection model (CLI and desktop app) |
+
+Frontend environment (`frontend/.env.local` or build-time environment variable):
+
+| Variable | Purpose |
+|---|---|
+| `NEXT_PUBLIC_API_URL` | Backend API base URL. Defaults to `http://localhost:8000`. Must be present at build time (`npm run build`) because Next.js inlines `NEXT_PUBLIC_*` variables into the production bundle. Example: `NEXT_PUBLIC_API_URL=https://api.yourdomain.com` |
 
 Known gaps in the hosted stack are tracked in [ROADMAP.md](ROADMAP.md).
 
