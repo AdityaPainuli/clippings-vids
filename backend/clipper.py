@@ -18,9 +18,30 @@ from url_policy import check_media_url
 load_dotenv()
 
 
+# ---------------------------------------------------------------------------
+# Configuration exceptions
+# ---------------------------------------------------------------------------
+
+class MissingAPIKeyError(RuntimeError):
+    """
+    Raised when GOOGLE_API_KEY is absent or empty at clip-analysis time.
+
+    Inherits from RuntimeError so it is caught by the broad
+    ``except Exception`` handlers in main.py's job-processing pipeline,
+    causing the job to be marked as ``failed`` with this message rather
+    than silently producing a fake clip.
+    """
+
+
 GENAI_API_KEY = os.getenv("GOOGLE_API_KEY")
 if GENAI_API_KEY:
     genai.configure(api_key=GENAI_API_KEY)
+else:
+    print(
+        "[clipper] WARNING: GOOGLE_API_KEY is not set. "
+        "Video analysis (analyze_video) will raise MissingAPIKeyError "
+        "until the key is configured."
+    )
 
 # ---------------------------------------------------------------------------
 # Clip style definitions — user picks one to bias Gemini's selection
@@ -349,7 +370,10 @@ def analyze_video(video_path, user_instructions=None, info=None, clip_style="aut
     max_clip_length:  maximum clip duration in seconds (None = default 60)
     """
     if not GENAI_API_KEY:
-        return [{"start_time": 0, "end_time": 10, "description": "Short clip (API Key missing)"}]
+        raise MissingAPIKeyError(
+            "GOOGLE_API_KEY is not configured. "
+            "Set the GOOGLE_API_KEY environment variable to enable video analysis."
+        )
 
     # Apply defaults
     min_len = max(5, min(min_clip_length or 20, 120))
