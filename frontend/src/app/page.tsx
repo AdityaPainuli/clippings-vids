@@ -40,7 +40,6 @@ export default function Home() {
   const [minLength, setMinLength] = useState<number>(20);
   const [maxLength, setMaxLength] = useState<number>(60);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("");
   const [statusDetail, setStatusDetail] = useState<string>("");
   const [clips, setClips] = useState<Clip[]>([]);
@@ -69,12 +68,12 @@ export default function Home() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const stopPolling = () => {
+  const stopPolling = useCallback(() => {
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
     }
-  };
+  }, []);
 
   useEffect(() => {
     const storedToken = localStorage.getItem("clipwave_access_token");
@@ -91,18 +90,17 @@ export default function Home() {
       eventSourceRef.current?.close();
       stopPolling();
     };
-  }, []);
+  }, [stopPolling]);
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     localStorage.removeItem("clipwave_access_token");
     localStorage.removeItem("clipwave_user_email");
     setToken(null);
     setUserEmail(null);
     setClips([]);
-    setJobId(null);
     eventSourceRef.current?.close();
     stopPolling();
-  };
+  }, [stopPolling]);
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,10 +137,10 @@ export default function Home() {
         setAuthError("Signup successful! You can now log in.");
         setAuthMode("login");
       }
-    } catch (err: any) {
-      setAuthError(err.message);
-    } finally {
-      setIsAuthLoading(false);
+    } catch (err: unknown) {
+      setAuthError(
+        err instanceof Error ? err.message : "Authentication failed."
+      );
     }
   };
 
@@ -151,6 +149,53 @@ export default function Home() {
     setAuthError(null);
     setShowAuthModal(true);
   };
+
+  // Fallback polling (in case SSE fails)
+  const startPolling = useCallback((jobId: string, authToken: string) => {
+    stopPolling();
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch(`http://localhost:8000/status/${jobId}`, {
+          headers: { "Authorization": `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          if (response.status === 401 || response.status === 403) {
+            handleLogout();
+            throw new Error("Session expired. Please log in again.");
+          }
+          throw new Error(data.detail || "Failed to fetch status");
+        }
+
+        setStatus(data.status);
+
+        if (data.status === "completed") {
+          setClips(data.results);
+          if (data.warnings) setWarning(data.warnings);
+          setIsProcessing(false);
+          clearInterval(interval);
+        } else if (data.status === "failed") {
+          setError(data.error || "Processing failed");
+          setIsProcessing(false);
+          clearInterval(interval);
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+
+        console.error("Polling error:", err);
+        setError(message);
+
+        if (message.includes("Session expired")) {
+          setIsProcessing(false);
+          clearInterval(interval);
+        }
+      }
+
+    }, 2000);
+
+    pollIntervalRef.current = interval;
+  }, [handleLogout, stopPolling]);
 
   // Connect to SSE stream for a job.
   // The bearer JWT never goes in the URL — we exchange it for a one-time
@@ -188,12 +233,10 @@ export default function Home() {
           setClips(data.results || []);
           if (data.warnings) setWarning(data.warnings);
           setIsProcessing(false);
-          setJobId(null);
           es.close();
         } else if (data.status === "failed") {
           setError(data.error || "Processing failed");
           setIsProcessing(false);
-          setJobId(null);
           es.close();
         }
       } catch {
@@ -207,53 +250,7 @@ export default function Home() {
       console.warn("SSE connection lost, falling back to polling");
       startPolling(jobId, authToken);
     };
-  }, []);
-
-  // Fallback polling (in case SSE fails)
-  const startPolling = useCallback((jobId: string, authToken: string) => {
-    stopPolling();
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch(`http://localhost:8000/status/${jobId}`, {
-          headers: { "Authorization": `Bearer ${authToken}` }
-        });
-        const data = await response.json();
-
-        if (!response.ok) {
-          if (response.status === 401 || response.status === 403) {
-            handleLogout();
-            throw new Error("Session expired. Please log in again.");
-          }
-          throw new Error(data.detail || "Failed to fetch status");
-        }
-
-        setStatus(data.status);
-
-        if (data.status === "completed") {
-          setClips(data.results);
-          if (data.warnings) setWarning(data.warnings);
-          setIsProcessing(false);
-          setJobId(null);
-          clearInterval(interval);
-        } else if (data.status === "failed") {
-          setError(data.error || "Processing failed");
-          setIsProcessing(false);
-          setJobId(null);
-          clearInterval(interval);
-        }
-      } catch (err: any) {
-        console.error("Polling error:", err);
-        setError(err.message);
-        if (err.message.includes("Session expired")) {
-          setIsProcessing(false);
-          setJobId(null);
-          clearInterval(interval);
-        }
-      }
-    }, 2000);
-
-    pollIntervalRef.current = interval;
-  }, []);
+  }, [startPolling, stopPolling]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -300,7 +297,6 @@ export default function Home() {
         throw new Error(data.detail || "Failed to start processing");
       }
 
-      setJobId(data.job_id);
 
       // If cached, results are already in the response
       if (data.status === "completed") {
@@ -318,13 +314,14 @@ export default function Home() {
         }
         setClips(statusData.results || []);
         setIsProcessing(false);
-        setJobId(null);
-      } else {
+          } else {
         // Connect to SSE stream
         connectSSE(data.job_id, token);
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : "Failed to process request."
+      );
       setIsProcessing(false);
     }
   };
@@ -734,7 +731,7 @@ export default function Home() {
                   </div>
                   {clip.hook && (
                     <p style={{ fontSize: '0.8rem', color: 'var(--secondary)', fontStyle: 'italic', marginBottom: '0.3rem' }}>
-                      "{clip.hook}"
+                      &quot;{clip.hook}&quot;
                     </p>
                   )}
                   <p style={{ fontSize: '0.9rem' }}>{clip.description}</p>
