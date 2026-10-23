@@ -280,9 +280,14 @@ def detect(words: list, media_path: str | None = None, silences: list | None = N
 
     if silences is None and media_path:
         try:
+            # Retakes need the pause as measured, not the span that is safe to
+            # cut. keep_padding trims 0.12s from each end for the cutter, and
+            # applying MIN_PAUSE to that shrunk span demanded a 0.69s pause
+            # before it counted as a phrase boundary.
             silences = [(c.start, c.end) for c in
-                        tighten.detect_silences_from_audio(media_path,
-                                                           tighten.TightenConfig())]
+                        tighten.detect_silences_from_audio(
+                            media_path,
+                            tighten.TightenConfig(keep_padding=0))]
         except Exception:                                   # noqa: BLE001
             silences = None
 
