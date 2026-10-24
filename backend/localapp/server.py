@@ -125,8 +125,36 @@ async def block_unsupported_platform(request: Request, call_next):
     return await call_next(request)
 
 
+def _host_name(name: str, port: int) -> str:
+    return f"[{name}]:{port}" if ":" in name else f"{name}:{port}"
+
+
+def _allowed_hosts() -> set:
+    """
+    Host headers this server answers to.
+
+    Loopback binding does not stop DNS rebinding: a page can resolve its own
+    name to 127.0.0.1, and the browser then sends that name in Host while the
+    request still reaches us. Reads were not Origin-checked, so the page could
+    read setup status and job data. The configured LAN host is included only
+    when the user explicitly opted into LAN exposure.
+    """
+    names = {HOST, "127.0.0.1", "localhost"}
+    return {_host_name(h, PORT) for h in names}
+
+
 def _allowed_origins() -> set:
-    return {f"http://{h}:{PORT}" for h in (HOST, "127.0.0.1", "localhost")}
+    return {f"http://{_host_name(h, PORT)}"
+            for h in (HOST, "127.0.0.1", "localhost")}
+
+
+@app.middleware("http")
+async def block_foreign_host(request: Request, call_next):
+    host = request.headers.get("host", "").lower()
+    if host not in _allowed_hosts():
+        return JSONResponse(status_code=403,
+                            content={"detail": "Host header is not allowed"})
+    return await call_next(request)
 
 
 def same_origin(request: Request):
