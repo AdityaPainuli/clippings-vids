@@ -48,6 +48,24 @@ MODEL_CHOICES = {
 # Allowed for CI/testing but not shown in the UI
 _HIDDEN_MODELS = {"tiny"}
 
+# Commit a model download to one snapshot. huggingface_hub resolves `main`
+# when no revision is given, so a force-push or a compromised repo would
+# silently change the bytes setup installs. These are the current HEAD shas of
+# the Systran CTranslate2 repos; bump them deliberately, with a checksum run.
+MODEL_REVISIONS = {
+    "tiny": "d90ca5fe260221311c53c58e660288d3deb8d356",
+    "small": "536b0662742c02347bc0e980a01041f333bce120",
+    "medium": "08e178d48790749d25932bbc082711ddcfdfbc4f",
+    "large-v3": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+}
+
+
+def _model_revision(model: str) -> str:
+    revision = MODEL_REVISIONS.get(model)
+    if not revision:
+        raise RuntimeError(f"No pinned revision for Whisper model {model!r}")
+    return revision
+
 # Pin a month-end autobuild. BtbN deletes daily builds after about two weeks
 # but keeps the last build of each month for about two years; a daily pin
 # (2026-08-18) 404'd within two months and broke first-run setup.
@@ -469,7 +487,10 @@ def _model_total_bytes(model: str) -> int:
         from faster_whisper.utils import _MODELS
         from huggingface_hub import HfApi
         repo = _MODELS.get(model, f"Systran/faster-whisper-{model}")
-        info = HfApi().model_info(repo, files_metadata=True)
+        # Same revision as the download: the total must describe the snapshot
+        # that will actually be installed, not whatever main points at now.
+        info = HfApi().model_info(repo, revision=_model_revision(model),
+                                  files_metadata=True)
         return sum(s.size or 0 for s in info.siblings)
     except Exception:
         return 0
@@ -499,7 +520,8 @@ def download_whisper_model(model: str, progress: dict):
     watcher.start()
     try:
         from faster_whisper import download_model
-        download_model(model, cache_dir=str(MODEL_DIR))
+        download_model(model, cache_dir=str(MODEL_DIR),
+                       revision=_model_revision(model))
     finally:
         stop.set()
         watcher.join(timeout=2)
