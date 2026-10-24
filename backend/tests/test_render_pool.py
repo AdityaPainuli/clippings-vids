@@ -144,6 +144,20 @@ class ProcessVideoRenderStatusTest(unittest.TestCase):
         self.assertIn("clipping", seen)
         self.assertLess(seen.index("queued"), seen.index("clipping"))
 
+    def test_late_render_callback_does_not_undo_a_later_status(self):
+        _install_main_import_stubs()
+        main = importlib.import_module("main")
+        main.jobs.clear()
+        main._sse_subscribers.clear()
+        main.jobs["job-1"] = {"status": "uploading", "user_id": "user-1"}
+        events = asyncio.Queue()
+        main._sse_subscribers["job-1"] = [events]
+
+        main._mark_render_started("job-1", 2)
+
+        self.assertEqual(main.jobs["job-1"]["status"], "uploading")
+        self.assertTrue(events.empty())
+
 
 if __name__ == "__main__":
     unittest.main()
