@@ -31,7 +31,7 @@ class ProbeVideoFieldsTest(unittest.TestCase):
         self.assertEqual(info["duration"], 2.5)
 
     def test_missing_or_invalid_width_is_named(self):
-        for value in (_MISSING, "N/A", 0, -1, True):
+        for value in (_MISSING, "N/A", 0, -1, True, float("inf")):
             with self.subTest(value=value):
                 with self.assertRaisesRegex(RuntimeError, "width"):
                     self._probe({"width": value}, {"duration": "1.0"})

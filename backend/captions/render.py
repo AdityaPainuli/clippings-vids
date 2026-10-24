@@ -18,7 +18,7 @@ import subprocess
 def _positive_int(value, field: str) -> int:
     try:
         number = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise RuntimeError(f"ffprobe did not report a valid {field}")
     if isinstance(value, bool) or number <= 0:
         raise RuntimeError(f"ffprobe did not report a valid {field}")
