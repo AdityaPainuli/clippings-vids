@@ -53,6 +53,11 @@ _CH = {"cch": "chh", "ch": "ch", "c": "ch"}
 _PREFIXED = (("अ", "समान"), ("अ", "समर्थ"), ("अ", "समय"), ("अ", "सहाय"),
              ("अ", "सहज"), ("अ", "सफल"), ("ना", "समझ"))
 
+# Verb endings whose stem-final schwa always drops. The syllable scan cannot
+# see this boundary: मां-ग-ना and ज़िं-द-गी have the same shape, but the first
+# is a verb stem plus suffix and the second keeps its medial schwa.
+_VERB_SUFFIXES = ("ना", "ता", "ती", "ते")
+
 
 def _is_consonant(ch: str) -> bool:
     return "\u0915" <= ch <= "\u0939" or "\u0958" <= ch <= "\u095f"
@@ -79,6 +84,10 @@ def _drop_schwas(run: str) -> str:
     for prefix, stem in _PREFIXED:
         if run.startswith(prefix + stem):
             return _drop_schwas(prefix) + _drop_schwas(run[len(prefix):])
+    for suffix in _VERB_SUFFIXES:
+        if run.endswith(suffix) and len(run) > len(suffix):
+            stem = run[:-len(suffix)]
+            return _drop_schwas(stem) + _drop_schwas(suffix)
     # [text, vowel]: vowel is "a" for the inherent schwa, "v" for an open
     # written vowel, "n" for a syllable closed by anusvara/visarga, "" after
     # a virama
