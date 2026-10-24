@@ -462,14 +462,52 @@ def download_ffmpeg(progress: dict):
             raise RuntimeError(f"Downloaded {name} failed to run")
 
 
+def _model_repo(model: str) -> str:
+    """The Hugging Face repo for a faster-whisper model name."""
+    try:
+        from faster_whisper.utils import _MODELS
+    except ImportError:
+        return f"Systran/faster-whisper-{model}"
+    return _MODELS.get(model, f"Systran/faster-whisper-{model}")
+
+
+def _model_cache_dir(model: str) -> Path:
+    """Where huggingface_hub stores the cache for this model's repo."""
+    repo = _model_repo(model).replace("/", "--")
+    return MODEL_DIR / f"models--{repo}"
+
+
+def _model_downloaded_bytes(model: str) -> int:
+    """
+    Bytes present for the target repo, and only real files.
+
+    HF keeps the payload in `blobs/` and points `snapshots/` at it with
+    symlinks. Walking the whole cache counted already-installed models, then
+    counted each blob twice through its snapshot link.
+    """
+    blobs = _model_cache_dir(model) / "blobs"
+    if not blobs.is_dir():
+        return 0
+    total = 0
+    try:
+        for f in blobs.iterdir():
+            if f.is_symlink() or not f.is_file():
+                continue
+            try:
+                total += f.stat().st_size
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return total
+
+
 def _model_total_bytes(model: str) -> int:
     """Total download size from the HF API; 0 when unavailable (offline check
     happens in the download itself)."""
     try:
-        from faster_whisper.utils import _MODELS
         from huggingface_hub import HfApi
-        repo = _MODELS.get(model, f"Systran/faster-whisper-{model}")
-        info = HfApi().model_info(repo, files_metadata=True)
+        info = HfApi().model_info(_model_repo(model), files_metadata=True)
         return sum(s.size or 0 for s in info.siblings)
     except Exception:
         return 0
@@ -489,8 +527,7 @@ def download_whisper_model(model: str, progress: dict):
     def _watch():
         while not stop.is_set():
             try:
-                progress["done_bytes"] = sum(
-                    f.stat().st_size for f in MODEL_DIR.rglob("*") if f.is_file())
+                progress["done_bytes"] = _model_downloaded_bytes(model)
             except OSError:
                 pass
             time.sleep(0.5)
