@@ -41,8 +41,8 @@ def load_transcript(path: str) -> dict:
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
-    except OSError as exc:
-        reason = exc.strerror or str(exc)
+    except (OSError, UnicodeDecodeError) as exc:
+        reason = getattr(exc, "strerror", None) or str(exc)
         raise TranscriptError(f"could not read transcript {path}: {reason}")
     except json.JSONDecodeError as exc:
         raise TranscriptError(

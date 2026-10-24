@@ -44,6 +44,13 @@ class LoadTranscriptTest(unittest.TestCase):
         self.assertIn("line 1", message)
         self.assertIn("column", message)
 
+    def test_invalid_utf8_is_reported_as_unreadable(self):
+        path = self.dir / "binary.json"
+        path.write_bytes(b"\xff\xfe{\x00")
+        with self.assertRaisesRegex(cli.TranscriptError,
+                                    "could not read transcript"):
+            cli.load_transcript(str(path))
+
     def test_top_level_must_be_an_object(self):
         with self.assertRaisesRegex(cli.TranscriptError, "JSON object"):
             cli.load_transcript(self._write("list.json", []))
