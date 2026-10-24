@@ -230,8 +230,14 @@ def main():
                     markers=[c for c in cuts if not c.auto])
             # These captions are timed to the cut timeline and mean nothing
             # against the uncut source, so they ship with it.
-            srt = render.export_srt(transcript["words"], f"{base}_tightened.srt",
-                                    style.words_per_line, text_key=text_key)
+            try:
+                srt = render.export_srt(transcript["words"],
+                                        f"{base}_tightened.srt",
+                                        style.words_per_line,
+                                        text_key=text_key)
+            except ValueError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 2
             print(f"done: {out}")
             print(f"  captions for that timeline: {srt}")
             return
@@ -260,8 +266,13 @@ def main():
         print(f"done: {ass_path}")
         return
     if args.export == "srt":
-        out = render.export_srt(transcript["words"], args.output or f"{base}.srt",
-                                style.words_per_line, text_key=text_key)
+        try:
+            out = render.export_srt(
+                transcript["words"], args.output or f"{base}.srt",
+                style.words_per_line, text_key=text_key)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
     elif args.export == "overlay":
         print("Rendering alpha overlay...")
         out = render.render_overlay(ass_path, args.output or f"{base}_overlay.mov",

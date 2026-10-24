@@ -81,6 +81,10 @@ def export_srt(words: list, out_path: str, words_per_line: int = 3,
     """Plain SRT (no styling) — universal NLE/player import."""
     entries = []
     display = [w for w in words if (w.get(text_key) or w.get("text") or "").strip()]
+    if not display:
+        # Fail before open(): an empty export must not truncate an existing
+        # subtitle file or be reported as a successful render.
+        raise ValueError("no captions to export")
     for i in range(0, len(display), words_per_line):
         chunk = display[i : i + words_per_line]
         text = " ".join((w.get(text_key) or w.get("text") or "") for w in chunk)
