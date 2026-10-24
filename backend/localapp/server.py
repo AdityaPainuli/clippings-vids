@@ -3,14 +3,16 @@ Bolcap local server — localhost-only API around the captions engine.
 
 Jobs live in memory (single user, single process). The uploaded source
 video stays on disk per job so transcribe → style → export never
-re-uploads. Work dir defaults to ~/.bolcap/work and is wiped per job on
-completion of the final export download.
+re-uploads. Work files live under $BOLCAP_HOME/work (or BOLCAP_WORK_DIR)
+and are swept after BOLCAP_WORK_TTL_DAYS, so re-exports keep working
+inside the window without the directory growing forever.
 """
 
 import asyncio
 import json
 import os
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Dict, Literal, Optional
@@ -31,16 +33,23 @@ HOST = os.getenv("BOLCAP_HOST", "127.0.0.1")
 if HOST not in ("127.0.0.1", "localhost", "::1") and os.getenv("BOLCAP_ALLOW_LAN") != "1":
     HOST = "127.0.0.1"
 PORT = int(os.getenv("BOLCAP_PORT", "8756"))
-WORK_DIR = Path(os.getenv("BOLCAP_WORK_DIR", Path.home() / ".bolcap" / "work"))
+
+
+def _work_dir() -> Path:
+    """BOLCAP_WORK_DIR, else the same home the models and config use."""
+    return Path(os.getenv("BOLCAP_WORK_DIR", assets.BOLCAP_HOME / "work"))
+
+
+WORK_DIR = _work_dir()
 WORK_DIR.mkdir(parents=True, exist_ok=True)
 
-# Sweep work files older than this on startup — re-exports stay possible
-# within the window, disk doesn't grow forever (single-user local app).
+# Re-exports stay possible inside this window, and the periodic sweep keeps
+# disk bounded even when the app is never restarted.
 WORK_TTL_DAYS = float(os.getenv("BOLCAP_WORK_TTL_DAYS", "3"))
+WORK_SWEEP_SECONDS = float(os.getenv("BOLCAP_WORK_SWEEP_SECONDS", "3600"))
 
 
 def _sweep_stale_work():
-    import time
     cutoff = time.time() - WORK_TTL_DAYS * 86400
     removed = 0
     for f in WORK_DIR.iterdir():
@@ -54,7 +63,16 @@ def _sweep_stale_work():
         print(f"[bolcap] removed {removed} work file(s) older than {WORK_TTL_DAYS:g} days")
 
 
+def _sweep_forever(stop: threading.Event, interval: float | None = None):
+    """Repeat the stale-work sweep until `stop` is set."""
+    wait = WORK_SWEEP_SECONDS if interval is None else interval
+    while not stop.wait(wait):
+        _sweep_stale_work()
+
+
 _sweep_stale_work()
+threading.Thread(target=_sweep_forever, args=(threading.Event(),),
+                 daemon=True).start()
 
 STATIC_DIR = Path(__file__).parent / "static"
 
