@@ -11,7 +11,7 @@ import time
 import hashlib
 import clipper
 from url_policy import check_media_url, UnsafeURLError
-from supabase_client import supabase, new_auth_client, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips
+from supabase_client import supabase, new_auth_client, upload_clip_to_storage, delete_old_clips, get_signed_url, get_user_clips, delete_clip_records
 from captions.api import router as captions_router
 
 
@@ -70,6 +70,16 @@ def _notify_job(job_id: str, event_data: dict):
             queue.put_nowait(event_data)
         except asyncio.QueueFull:
             pass
+
+
+def _evict_cached_clips(cache_key: Optional[str], paths: list):
+    """Drop cached results that point at deleted storage objects."""
+    if cache_key:
+        _clip_cache.pop(cache_key, None)
+    deleted = set(paths)
+    for key, clips in list(_clip_cache.items()):
+        if any(c.get("storage_path") in deleted for c in clips):
+            _clip_cache.pop(key, None)
 
 # ─────────────────────────────────────────────
 # Auth — validate Supabase JWT on protected routes
@@ -403,6 +413,7 @@ async def process_url(
             "created_at": time.time(),
             "user_id":    user_id,
             "cached":     True,
+            "cache_key":  cache_key,
         }
         return {"job_id": job_id, "status": "completed", "cached": True}
 
@@ -415,6 +426,7 @@ async def process_url(
         "created_at": time.time(),
         "user_id":    user_id,
         "cached":     False,
+        "cache_key":  cache_key,
     }
     background_tasks.add_task(
         download_and_process, job_id, url, instructions, user_id, cache_key,
@@ -590,23 +602,30 @@ async def my_clips(user: dict = Depends(get_current_user)):
 
 @app.delete("/clips/{job_id}")
 async def delete_clips(job_id: str, user: dict = Depends(get_current_user)):
-    """Manually delete a job's clips from Supabase Storage."""
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
-    job = jobs[job_id]
-    if job.get("user_id") != user["user_id"]:
+    """Delete a job's clips and metadata for the current user."""
+    job = jobs.get(job_id)
+    if job and job.get("user_id") != user["user_id"]:
         raise HTTPException(status_code=403, detail="Not your job")
 
     loop = asyncio.get_event_loop()
-    deleted = 0
-    from supabase_client import _delete_paths
-    paths = [c["storage_path"] for c in (job.get("results") or []) if c.get("storage_path")]
-    if paths:
-        await loop.run_in_executor(None, _delete_paths, paths)
-        deleted = len(paths)
+    paths = await loop.run_in_executor(
+        None, delete_clip_records, job_id, user["user_id"])
 
+    # An in-memory job can outlive its metadata row if upload failed halfway;
+    # keep the old storage cleanup path for that case.
+    if not paths and job:
+        from supabase_client import _delete_paths
+        paths = [c["storage_path"] for c in (job.get("results") or [])
+                 if c.get("storage_path")]
+        if paths:
+            await loop.run_in_executor(None, _delete_paths, paths)
+
+    if not job and not paths:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    _evict_cached_clips(job.get("cache_key") if job else None, paths)
     jobs.pop(job_id, None)
-    return {"deleted_clips": deleted}
+    return {"deleted_clips": len(paths)}
 
 
 @app.get("/storage-stats")

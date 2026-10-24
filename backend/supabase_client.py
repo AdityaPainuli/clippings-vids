@@ -202,6 +202,37 @@ def _delete_paths(paths: list) -> None:
         )
 
 
+def delete_clip_records(job_id: str, user_id: str) -> list:
+    """
+    Delete one job's clips for one user, using clip_metadata as the source.
+
+    Returns the storage paths so callers can evict any cached job results.
+    The in-memory job store is only a convenience: it is gone after a restart
+    or TTL purge, while the rows and objects still need deleting.
+    """
+    rows = (
+        supabase.table("clip_metadata")
+        .select("storage_path")
+        .eq("user_id", user_id)
+        .eq("job_id", job_id)
+        .execute()
+        .data
+    ) or []
+    paths = [row["storage_path"] for row in rows if row.get("storage_path")]
+
+    if paths:
+        _delete_paths(paths)
+    if rows:
+        (
+            supabase.table("clip_metadata")
+            .delete()
+            .eq("user_id", user_id)
+            .eq("job_id", job_id)
+            .execute()
+        )
+    return paths
+
+
 def delete_old_clips() -> int:
     """
     Scan all files in the bucket via REST and delete anything older than
