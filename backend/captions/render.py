@@ -10,15 +10,33 @@ Editors get to choose how captions leave the system:
 """
 
 import json
+import math
 import os
 import subprocess
+
+
+def _parse_fps(value) -> float | None:
+    """A positive finite num/den rate, or None when ffprobe gave junk."""
+    if not isinstance(value, str):
+        return None
+    try:
+        num, den = (float(part) for part in value.split("/", 1))
+    except (ValueError, TypeError):
+        return None
+    if (not math.isfinite(num) or not math.isfinite(den)
+            or num <= 0 or den <= 0):
+        return None
+    fps = num / den
+    if not math.isfinite(fps) or fps <= 0:
+        return None
+    return round(fps, 3)
 
 
 def probe_video(video_path: str) -> dict:
     """Return {"width", "height", "duration", "fps"} via ffprobe."""
     r = subprocess.run(
         ["ffprobe", "-v", "error", "-select_streams", "v:0",
-         "-show_entries", "stream=width,height,r_frame_rate",
+         "-show_entries", "stream=width,height,r_frame_rate,avg_frame_rate",
          "-show_entries", "format=duration", "-of", "json", video_path],
         capture_output=True, text=True,
     )
@@ -28,12 +46,14 @@ def probe_video(video_path: str) -> dict:
     if not data.get("streams"):
         raise RuntimeError("No video stream found — unsupported or corrupt file")
     stream = data["streams"][0]
-    num, den = stream["r_frame_rate"].split("/")
+    fps = (_parse_fps(stream.get("r_frame_rate"))
+           or _parse_fps(stream.get("avg_frame_rate"))
+           or 30.0)
     return {
         "width": int(stream["width"]),
         "height": int(stream["height"]),
         "duration": float(data["format"]["duration"]),
-        "fps": round(int(num) / int(den), 3),
+        "fps": fps,
     }
 
 
