@@ -26,7 +26,10 @@ def _parse_fps(value) -> float | None:
     if (not math.isfinite(num) or not math.isfinite(den)
             or num <= 0 or den <= 0):
         return None
-    return round(num / den, 3)
+    fps = num / den
+    if not math.isfinite(fps) or fps <= 0:
+        return None
+    return round(fps, 3)
 
 
 def probe_video(video_path: str) -> dict:

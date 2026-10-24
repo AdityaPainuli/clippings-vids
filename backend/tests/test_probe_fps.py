@@ -41,6 +41,7 @@ class ProbeFrameRateTest(unittest.TestCase):
             {"r_frame_rate": "abc/1"},
             {"r_frame_rate": "1/2/3"},
             {"r_frame_rate": "nan/1"},
+            {"r_frame_rate": "1e308/1e-308"},
             {},
         ]
         for stream in cases:
