@@ -113,13 +113,16 @@ CAPTION_MARGIN_V     = CAPTION_PRESETS["default"]["margin_v"]
 # Download
 # ---------------------------------------------------------------------------
 
-def download_video(url, output_path="downloads"):
+def download_video(url, output_path="downloads", job_id=None):
     # Fail before yt-dlp opens any connection to a non-public host.
     url = check_media_url(url)
     os.makedirs(output_path, exist_ok=True)
+    # Two jobs for the same URL must not share a file: whichever finishes
+    # first removes its source, which used to break the other job mid-render.
+    owner = job_id or uuid.uuid4().hex
     ydl_opts = {
         'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best',
-        'outtmpl': os.path.join(output_path, '%(id)s.%(ext)s'),
+        'outtmpl': os.path.join(output_path, f'{owner}_%(id)s.%(ext)s'),
         'writeautomaticsub': True,
         'subtitlesformat': 'vtt',
         'quiet': True,

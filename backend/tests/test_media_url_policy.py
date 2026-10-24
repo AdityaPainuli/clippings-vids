@@ -140,6 +140,30 @@ class DownloadVideoGateTest(unittest.TestCase):
         self.assertEqual(opts["allowed_extractors"], ["youtube.*", "twitch.*", "instagram.*"])
         ydl.extract_info.assert_called_once_with("https://youtu.be/dQw4w9WgXcQ", download=True)
 
+    def _templates_for(self, *job_ids):
+        ytdl = mock.MagicMock()
+        ydl = ytdl.YoutubeDL.return_value.__enter__.return_value
+        ydl.extract_info.return_value = {"id": "abc"}
+        ydl.prepare_filename.return_value = "unused/abc.mp4"
+        with mock.patch.object(self.clipper, "yt_dlp", ytdl), \
+             mock.patch.object(self.clipper.os, "makedirs"), \
+             _resolves_to("142.250.183.110"):
+            for job_id in job_ids:
+                self.clipper.download_video(
+                    "https://youtu.be/dQw4w9WgXcQ", "unused", job_id)
+        return [call.args[0]["outtmpl"]
+                for call in ytdl.YoutubeDL.call_args_list]
+
+    def test_job_id_separates_concurrent_downloads(self):
+        first, second = self._templates_for("job-a", "job-b")
+        self.assertNotEqual(first, second)
+        self.assertIn("job-a_%(id)s.%(ext)s", first)
+        self.assertIn("job-b_%(id)s.%(ext)s", second)
+
+    def test_direct_calls_without_a_job_id_still_get_unique_names(self):
+        first, second = self._templates_for(None, None)
+        self.assertNotEqual(first, second)
+
 
 class ProcessUrlRouteTest(unittest.TestCase):
     """/process-url answers 400 instead of queueing a job that fetches internally."""

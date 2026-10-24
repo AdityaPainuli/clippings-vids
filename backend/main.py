@@ -287,7 +287,7 @@ async def download_and_process(
         jobs[job_id]["status"] = "downloading"
         _notify_job(job_id, {"status": "downloading", "detail": "Downloading video..."})
         video_path, info = await loop.run_in_executor(
-            None, clipper.download_video, url, UPLOAD_DIR
+            None, clipper.download_video, url, UPLOAD_DIR, job_id
         )
         jobs[job_id]["video_path"] = video_path
         _notify_job(job_id, {"status": "downloading", "detail": "Download complete"})
