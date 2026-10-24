@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { API_BASE_URL } from "@/lib/api";
 import "../globals.css";
 
 interface PastClip {
@@ -43,7 +44,7 @@ export default function MyClips() {
       }
 
       try {
-        const response = await fetch("http://localhost:8000/my-clips", {
+        const response = await fetch(`${API_BASE_URL}/my-clips`, {
           headers: {
             "Authorization": `Bearer ${token}`
           }
