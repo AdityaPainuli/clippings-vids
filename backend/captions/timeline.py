@@ -193,7 +193,7 @@ def _file_url(path: str) -> str:
 
 
 def build_fcpxml(keep: list, fps: float, width: int, height: int,
-                 video_path: str, duration: float,
+                 video_path: str | None, duration: float,
                  name: str = "Bolcap Tighten",
                  markers: list | None = None,
                  clip_name: str | None = None,
@@ -205,6 +205,11 @@ def build_fcpxml(keep: list, fps: float, width: int, height: int,
     path goes stale. It is separate from `video_path` because the app works on
     its own copy of the upload: pointing the timeline at a working file whose
     *name* is the user's original means a relink is one click, not a hunt.
+
+    Pass `video_path=None` when no durable path exists. The asset keeps
+    `clip_name` but no `<media-rep>`, so the NLE imports it as offline media
+    and relinks by name. The desktop app uses this: its upload copy is swept
+    after a few days, and embedding that path guarantees a broken project.
 
     `markers` is an optional list of Cut-like objects (start, reason, text) for
     spans we flagged but did not remove, dropped onto the timeline where the
@@ -223,7 +228,7 @@ def build_fcpxml(keep: list, fps: float, width: int, height: int,
     tc_format = "DF" if drop else "NDF"
     total_src = int(round(duration * exact_fps(fps)))
     total_rec = events[-1][3]
-    clip = _xml_escape(clip_name or os.path.basename(video_path))
+    clip = _xml_escape(clip_name or os.path.basename(video_path or "video"))
 
     has_audio = True if audio is None else bool(audio.get("has_audio"))
     channels = (audio or {}).get("channels")
@@ -249,7 +254,12 @@ def build_fcpxml(keep: list, fps: float, width: int, height: int,
         f'    <asset id="r2" name="{clip}" start="0s"'
         f' duration="{_rational(total_src, fps)}" format="r1"'
         f' hasVideo="1" hasAudio="{1 if has_audio else 0}"{audio_attrs}>',
-        f'      <media-rep kind="original-media" src="{_xml_escape(_file_url(video_path))}"/>',
+    ]
+    if video_path:
+        out.append(
+            f'      <media-rep kind="original-media"'
+            f' src="{_xml_escape(_file_url(video_path))}"/>')
+    out += [
         "    </asset>",
         "  </resources>",
         "  <library>",
@@ -290,7 +300,7 @@ def build_fcpxml(keep: list, fps: float, width: int, height: int,
 
 
 def export_fcpxml(keep: list, fps: float, width: int, height: int,
-                  video_path: str, duration: float, out_path: str,
+                  video_path: str | None, duration: float, out_path: str,
                   name: str = "Bolcap Tighten", markers: list | None = None,
                   clip_name: str | None = None, audio: dict | None = None) -> str:
     with open(out_path, "w", encoding="utf-8") as f:
