@@ -32,6 +32,46 @@ def parse_length(text: str) -> float:
     return seconds
 
 
+class TranscriptError(ValueError):
+    """A saved transcript could not be read or does not have the expected shape."""
+
+
+def load_transcript(path: str) -> dict:
+    """Read and validate a transcript saved by transcribe_video()."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, UnicodeDecodeError) as exc:
+        reason = getattr(exc, "strerror", None) or str(exc)
+        raise TranscriptError(f"could not read transcript {path}: {reason}")
+    except json.JSONDecodeError as exc:
+        raise TranscriptError(
+            f"{path} is not valid JSON at line {exc.lineno}, "
+            f"column {exc.colno}: {exc.msg}")
+
+    if not isinstance(data, dict):
+        raise TranscriptError(f"{path} must contain a JSON object")
+    words = data.get("words")
+    if not isinstance(words, list):
+        raise TranscriptError(f"{path} is missing a 'words' list")
+
+    for i, word in enumerate(words):
+        if not isinstance(word, dict):
+            raise TranscriptError(f"{path}: word {i} is not an object")
+        if not isinstance(word.get("text"), str):
+            raise TranscriptError(f"{path}: word {i} is missing a string 'text'")
+        for field in ("start", "end"):
+            value = word.get(field)
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value)):
+                raise TranscriptError(
+                    f"{path}: word {i} has a non-numeric or non-finite '{field}'")
+        if word["start"] > word["end"]:
+            raise TranscriptError(
+                f"{path}: word {i} starts after it ends")
+    return data
+
+
 def parse_min_gap(value: str) -> float:
     """Validate the minimum silence gap in seconds."""
     try:
@@ -105,8 +145,11 @@ def main():
         return 2
 
     if args.transcript:
-        with open(args.transcript, encoding="utf-8") as f:
-            transcript = json.load(f)
+        try:
+            transcript = load_transcript(args.transcript)
+        except TranscriptError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
     else:
         print("Transcribing...")
         transcript = transcribe.transcribe_video(args.video, language=args.language)
