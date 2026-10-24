@@ -45,6 +45,20 @@ RETAINED_SCHWA = {
     "असफल": "asaphal", "नासमझ": "nasamajh",
 }
 
+# Anusvara closes the stem syllable, so the syllable rule cannot drop the
+# stem-final schwa. Splitting the verb suffix exposes the boundary.
+ANUSVARA_VERB_SUFFIX = {
+    "मांगना": "mangna", "बांधना": "bandhna",
+    "रंगना": "rangna", "हंसना": "hansna",
+    "मांगता": "mangta", "मांगती": "mangti", "बांधते": "bandhte",
+}
+
+# Nouns that end in the same letters must not move.
+NOUNS_ENDING_IN_SUFFIX = {
+    "जनता": "janta", "सपना": "sapna", "देवता": "devta",
+    "ज़िंदगी": "zindagi", "बंदर": "bandar", "संगीत": "sangit",
+}
+
 
 class RuleRomanizeTest(unittest.TestCase):
     def assertRomanizes(self, cases):
@@ -66,6 +80,12 @@ class RuleRomanizeTest(unittest.TestCase):
 
     def test_pronounced_schwa_is_kept(self):
         self.assertRomanizes(RETAINED_SCHWA)
+
+    def test_anusvara_stem_drops_schwa_before_a_verb_suffix(self):
+        self.assertRomanizes(ANUSVARA_VERB_SUFFIX)
+
+    def test_nouns_ending_in_verb_suffix_letters_do_not_move(self):
+        self.assertRomanizes(NOUNS_ENDING_IN_SUFFIX)
 
     def test_kept_schwa_does_not_block_other_deletions(self):
         self.assertRomanizes({"लखपति": "lakhpati", "असमानता": "asamanta"})
