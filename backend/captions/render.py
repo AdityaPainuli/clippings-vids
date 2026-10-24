@@ -10,8 +10,29 @@ Editors get to choose how captions leave the system:
 """
 
 import json
+import math
 import os
 import subprocess
+
+
+def _positive_int(value, field: str) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise RuntimeError(f"ffprobe did not report a valid {field}")
+    if isinstance(value, bool) or number <= 0:
+        raise RuntimeError(f"ffprobe did not report a valid {field}")
+    return number
+
+
+def _positive_duration(value) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise RuntimeError("ffprobe did not report a valid duration")
+    if not math.isfinite(number) or number <= 0:
+        raise RuntimeError("ffprobe did not report a valid duration")
+    return number
 
 
 def probe_video(video_path: str) -> dict:
@@ -30,9 +51,9 @@ def probe_video(video_path: str) -> dict:
     stream = data["streams"][0]
     num, den = stream["r_frame_rate"].split("/")
     return {
-        "width": int(stream["width"]),
-        "height": int(stream["height"]),
-        "duration": float(data["format"]["duration"]),
+        "width": _positive_int(stream.get("width"), "width"),
+        "height": _positive_int(stream.get("height"), "height"),
+        "duration": _positive_duration((data.get("format") or {}).get("duration")),
         "fps": round(int(num) / int(den), 3),
     }
 
