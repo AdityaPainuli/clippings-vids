@@ -417,25 +417,55 @@ async function checkSetup() {
 }
 
 $("setup-btn").onclick = async () => {
-  $("setup-btn").disabled = true;
+  const btn = $("setup-btn");
+  const progress = $("setup-progress");
+  const progressText = $("setup-progress-text");
+  btn.disabled = true;
+  progress.classList.remove("hidden");
+  progressText.textContent = "Starting setup...";
   const fd = new FormData();
   fd.append("model", chosenModel);
-  await fetch("/api/setup/run", { method: "POST", body: fd });
-  $("setup-progress").classList.remove("hidden");
+  try {
+    const res = await fetch("/api/setup/run", { method: "POST", body: fd });
+    if (!res.ok) {
+      let detail = "Setup could not start";
+      try {
+        const body = await res.json();
+        detail = body.detail || detail;
+      } catch (_) {
+        // A proxy or crash can answer with HTML; keep the generic message.
+      }
+      throw new Error(detail);
+    }
+  } catch (err) {
+    btn.disabled = false;
+    progressText.textContent =
+      "Could not start setup: " + err.message + " - try again";
+    return;
+  }
   const t = setInterval(async () => {
-    const s = await (await fetch("/api/setup/status")).json();
-    const p = s.progress || {};
-    if (p.status === "failed") {
-      clearInterval(t); $("setup-btn").disabled = false;
-      $("setup-progress-text").textContent = "Failed: " + (p.error || "unknown") + " — try again";
-      return;
+    try {
+      const res = await fetch("/api/setup/status");
+      if (!res.ok) throw new Error("status request failed");
+      const s = await res.json();
+      const p = s.progress || {};
+      if (p.status === "failed") {
+        clearInterval(t); btn.disabled = false;
+        progressText.textContent = "Failed: " + (p.error || "unknown") + " - try again";
+        return;
+      }
+      if (p.status === "ready") { clearInterval(t); checkSetup(); return; }
+      let text = p.step === "ffmpeg" ? "Downloading ffmpeg" : `Downloading model (${chosenModel})`;
+      if (p.total_bytes > 0) {
+        text += ` - ${(p.done_bytes / 1048576).toFixed(0)} / ${(p.total_bytes / 1048576).toFixed(0)} MB`;
+      }
+      progressText.textContent = text + "...";
+    } catch (err) {
+      clearInterval(t);
+      btn.disabled = false;
+      progressText.textContent =
+        "Could not read setup progress: " + err.message + " - try again";
     }
-    if (p.status === "ready") { clearInterval(t); checkSetup(); return; }
-    let text = p.step === "ffmpeg" ? "Downloading ffmpeg" : `Downloading model (${chosenModel})`;
-    if (p.total_bytes > 0) {
-      text += ` — ${(p.done_bytes / 1048576).toFixed(0)} / ${(p.total_bytes / 1048576).toFixed(0)} MB`;
-    }
-    $("setup-progress-text").textContent = text + "…";
   }, 1000);
 };
 
