@@ -461,8 +461,11 @@ def _render_worker(job_id: str, export: str, style: styles.CaptionStyle,
                                           job.get("filename") or "video",
                                           f"{base}.edl", title=stem.upper()[:40])
             else:
+                # The upload copy is swept after a few days. Passing its path
+                # would make every exported project go offline; without a
+                # media-rep the NLE relinks by the original clip name.
                 out = timeline.export_fcpxml(kept, src_info["fps"], src_info["width"],
-                                             src_info["height"], job["video_path"],
+                                             src_info["height"], None,
                                              src_info["duration"], f"{base}.fcpxml",
                                              name=stem, markers=marker_objs,
                                              clip_name=os.path.basename(
