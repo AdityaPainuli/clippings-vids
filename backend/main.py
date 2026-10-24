@@ -71,6 +71,19 @@ def _notify_job(job_id: str, event_data: dict):
         except asyncio.QueueFull:
             pass
 
+
+def _mark_render_started(job_id: str, total_clips: int):
+    """Move a job from queued to clipping, unless it already moved on."""
+    job = jobs.get(job_id)
+    if not job or job.get("status") != "queued":
+        return
+    job["status"] = "clipping"
+    _notify_job(job_id, {
+        "status": "clipping",
+        "detail": f"Rendering {total_clips} clips...",
+        "total_clips": total_clips,
+    })
+
 # ─────────────────────────────────────────────
 # Auth — validate Supabase JWT on protected routes
 # ─────────────────────────────────────────────
@@ -178,11 +191,19 @@ async def process_video_task(
         _notify_job(job_id, {"status": "analyzing", "detail": f"Found {len(clips_metadata)} potential clips"})
 
         # ── 2. Render clips locally ───────────────────────────────────────────
-        jobs[job_id]["status"] = "clipping"
-        _notify_job(job_id, {"status": "clipping", "detail": f"Rendering {len(clips_metadata)} clips...", "total_clips": len(clips_metadata)})
+        jobs[job_id]["status"] = "queued"
+        _notify_job(job_id, {
+            "status": "queued",
+            "detail": "Waiting for a render slot...",
+            "total_clips": len(clips_metadata),
+        })
+
+        def _render_started():
+            _mark_render_started(job_id, len(clips_metadata))
+
         clips, render_failures = await loop.run_in_executor(
             None, clipper.create_clips, video_path, clips_metadata, OUTPUT_DIR,
-            captions, caption_style
+            captions, caption_style, _render_started
         )
 
         # ── 3. Upload each clip to Supabase Storage ───────────────────────────

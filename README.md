@@ -227,6 +227,7 @@ Environment (backend reads `backend/.env`):
 | `GOOGLE_API_KEY` | Gemini clip analysis and LLM romanization. Without it the clipper returns a placeholder 0-10s clip |
 | `CLIP_TTL_SECONDS` | clip lifetime and signed URL expiry, default 21600 (6h) |
 | `CLEANUP_INTERVAL`, `JOB_TTL_SECONDS` | cleanup loop period (1800) and in-memory job lifetime (7200) |
+| `CLIP_RENDER_WORKERS` | maximum render worker processes shared by all jobs, default 4 |
 | `CAPTION_RETENTION_SECONDS` | caption file/job lifetime, default 172800 (48h) |
 | `CAPTION_STALE_SECONDS` | orphaned caption job timeout, default 1800 |
 | `RESEND_API_KEY`, `CAPTION_FROM_EMAIL`, `APP_URL` | completion emails (optional, skipped if unset) |
