@@ -74,6 +74,8 @@ def _install_main_import_stubs():
     supabase_client.delete_old_clips = lambda: 0
     supabase_client.get_signed_url = lambda path: "https://example.test/clip.mp4"
     supabase_client.get_user_clips = lambda user_id: []
+    supabase_client.delete_clip_records = lambda job_id, user_id: []
+    supabase_client._delete_paths = lambda paths: None
     sys.modules["supabase_client"] = supabase_client
 
     captions = types.ModuleType("captions")
