@@ -178,11 +178,26 @@ async def process_video_task(
         _notify_job(job_id, {"status": "analyzing", "detail": f"Found {len(clips_metadata)} potential clips"})
 
         # ── 2. Render clips locally ───────────────────────────────────────────
-        jobs[job_id]["status"] = "clipping"
-        _notify_job(job_id, {"status": "clipping", "detail": f"Rendering {len(clips_metadata)} clips...", "total_clips": len(clips_metadata)})
+        jobs[job_id]["status"] = "queued"
+        _notify_job(job_id, {
+            "status": "queued",
+            "detail": "Waiting for a render slot...",
+            "total_clips": len(clips_metadata),
+        })
+
+        def _render_started():
+            if job_id not in jobs:
+                return
+            jobs[job_id]["status"] = "clipping"
+            _notify_job(job_id, {
+                "status": "clipping",
+                "detail": f"Rendering {len(clips_metadata)} clips...",
+                "total_clips": len(clips_metadata),
+            })
+
         clips, render_failures = await loop.run_in_executor(
             None, clipper.create_clips, video_path, clips_metadata, OUTPUT_DIR,
-            captions, caption_style
+            captions, caption_style, _render_started
         )
 
         # ── 3. Upload each clip to Supabase Storage ───────────────────────────

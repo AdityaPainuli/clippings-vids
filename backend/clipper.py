@@ -8,6 +8,7 @@ import base64
 import subprocess
 import tempfile
 import re
+import threading
 import time as _time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -936,12 +937,41 @@ def _render_single_clip(args):
 
 MAX_RENDER_ATTEMPTS = 2
 
+# One pool for every job, not one per job: five concurrent submissions used
+# to create up to twenty worker processes, each able to load Whisper.
+RENDER_WORKERS = max(1, int(os.getenv("CLIP_RENDER_WORKERS", "4")))
+_RENDER_POOL = None
+_RENDER_POOL_LOCK = threading.Lock()
+
+
+def _get_render_pool():
+    global _RENDER_POOL
+    with _RENDER_POOL_LOCK:
+        if _RENDER_POOL is None:
+            _RENDER_POOL = ProcessPoolExecutor(max_workers=RENDER_WORKERS)
+        return _RENDER_POOL
+
+
+def _watch_render_start(futures, on_start):
+    """Call on_start once one of these tasks is running (or already done)."""
+    while True:
+        if any(f.running() for f in futures):
+            break
+        if all(f.done() for f in futures):
+            break
+        _time.sleep(0.05)
+    try:
+        on_start()
+    except Exception:
+        pass
+
 
 def create_clips(video_path, clips_metadata, output_dir="output", captions=True,
-                  caption_style="default"):
+                  caption_style="default", on_start=None):
     """
-    Render clips in parallel. Returns (created_files, failed_clips) tuple.
-    Partial results are returned even if some clips fail.
+    Render clips in a shared bounded pool. Returns (created_files,
+    failed_clips). Partial results are returned even if some clips fail.
+    `on_start` runs once when the first task leaves the queue.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -980,46 +1010,49 @@ def create_clips(video_path, clips_metadata, output_dir="output", captions=True,
             "captions":       captions,
         }
 
-    n_workers = min(len(tasks), 4)
-    print(f"Rendering {len(tasks)} clip(s) in parallel ({n_workers} workers), "
+    print(f"Rendering {len(tasks)} clip(s) in the shared pool "
+          f"({RENDER_WORKERS} workers max), "
           f"captions={'on' if captions else 'off'}, caption_style={caption_style}...")
 
     created_files = []
     failed_clips = []
 
-    with ProcessPoolExecutor(max_workers=n_workers) as executor:
-        # First pass
-        futures = {executor.submit(_render_single_clip, t): t for t in tasks}
-        retry_tasks = []
+    executor = _get_render_pool()
+    # First pass
+    futures = {executor.submit(_render_single_clip, t): t for t in tasks}
+    if on_start:
+        threading.Thread(target=_watch_render_start,
+                         args=(list(futures), on_start), daemon=True).start()
+    retry_tasks = []
 
-        for future in as_completed(futures):
+    for future in as_completed(futures):
+        output_path, err = future.result()
+        if err:
+            original_task = futures[future]
+            retry_tasks.append(original_task)
+            print(f"  x Failed {os.path.basename(output_path)} (attempt 1): {err}")
+        else:
+            print(f"  + Done:   {os.path.basename(output_path)}")
+            created_files.append(meta_map[output_path])
+
+    # Retry failed clips once
+    if retry_tasks:
+        print(f"  Retrying {len(retry_tasks)} failed clip(s)...")
+        retry_futures = {executor.submit(_render_single_clip, t): t for t in retry_tasks}
+        for future in as_completed(retry_futures):
             output_path, err = future.result()
             if err:
-                original_task = futures[future]
-                retry_tasks.append(original_task)
-                print(f"  x Failed {os.path.basename(output_path)} (attempt 1): {err}")
+                task = retry_futures[future]
+                failed_clips.append({
+                    "filename":   os.path.basename(task[3]),
+                    "error":      err,
+                    "start_time": task[1],
+                    "end_time":   task[2],
+                })
+                print(f"  x Failed {os.path.basename(output_path)} (attempt 2, giving up): {err}")
             else:
-                print(f"  + Done:   {os.path.basename(output_path)}")
+                print(f"  + Done (retry): {os.path.basename(output_path)}")
                 created_files.append(meta_map[output_path])
-
-        # Retry failed clips once
-        if retry_tasks:
-            print(f"  Retrying {len(retry_tasks)} failed clip(s)...")
-            retry_futures = {executor.submit(_render_single_clip, t): t for t in retry_tasks}
-            for future in as_completed(retry_futures):
-                output_path, err = future.result()
-                if err:
-                    task = retry_futures[future]
-                    failed_clips.append({
-                        "filename":   os.path.basename(task[3]),
-                        "error":      err,
-                        "start_time": task[1],
-                        "end_time":   task[2],
-                    })
-                    print(f"  x Failed {os.path.basename(output_path)} (attempt 2, giving up): {err}")
-                else:
-                    print(f"  + Done (retry): {os.path.basename(output_path)}")
-                    created_files.append(meta_map[output_path])
 
     order = {t[3]: idx for idx, t in enumerate(tasks)}
     created_files.sort(key=lambda c: order.get(os.path.join(output_dir, c["filename"]), 999))
