@@ -111,15 +111,16 @@ def _transcription_refusal() -> str | None:
 
 
 @app.middleware("http")
-async def block_unsupported_platform(request: Request, call_next):
+async def block_unready_requests(request: Request, call_next):
     """
     Turn work away before the body is read.
 
     An in-endpoint check is too late: FastAPI parses the multipart body — the
     whole upload — before the handler runs, so "reject before the upload" only
     holds if the refusal happens out here. Requests that arrive before the
-    probe finishes wait for it rather than being waved through, which is what
-    a bare `is False` check did.
+    platform probe finishes wait for it rather than being waved through, which
+    is what a bare `is False` check did. The same gate checks the active model
+    marker so a missing model does not spool a video either.
     """
     if request.method == "POST" and request.url.path in GATED_PATHS:
         if not platform_ready.is_set():
