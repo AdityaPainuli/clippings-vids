@@ -8,6 +8,7 @@ import unittest
 from unittest import mock
 
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from captions import transcribe
 from localapp import assets, server
 
@@ -35,15 +36,37 @@ class TranscribeEndpointGuardTest(unittest.TestCase):
     def test_refuses_before_reading_the_upload(self):
         upload = mock.Mock()
         upload.filename = "clip.mp4"
+        installed = mock.Mock(return_value=False)
         with mock.patch.object(assets, "ffmpeg_ready", return_value=True), \
-                mock.patch.object(assets, "transcription_ready", return_value=False), \
+                mock.patch.object(assets, "_mlx_available", return_value=False), \
+                mock.patch.object(assets, "model_installed", installed), \
                 mock.patch.object(assets, "active_model", return_value="medium"):
             with self.assertRaises(HTTPException) as ctx:
                 asyncio.run(server.transcribe_endpoint(
                     file=upload, language=None, hinglish=True))
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertIn("medium", ctx.exception.detail)
+        installed.assert_called_once_with("medium")
         upload.read.assert_not_called()
+
+    def test_multipart_request_is_refused_by_the_middleware(self):
+        ready = threading.Event()
+        ready.set()
+        with mock.patch.object(server, "platform_ready", ready), \
+                mock.patch.object(server, "platform_check",
+                                  {"ok": True, "detail": None}), \
+                mock.patch.object(assets, "ffmpeg_ready", return_value=True), \
+                mock.patch.object(assets, "_mlx_available", return_value=False), \
+                mock.patch.object(assets, "model_installed", return_value=False), \
+                mock.patch.object(assets, "active_model", return_value="medium"):
+            response = TestClient(server.app).post(
+                "/api/transcribe",
+                files={"file": ("clip.mp4", b"not a video", "video/mp4")},
+                data={"hinglish": "true"},
+            )
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("medium", response.json()["detail"])
+        self.assertEqual(server.jobs, {})
 
 
 class ModelCacheLockTest(unittest.TestCase):

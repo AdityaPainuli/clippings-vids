@@ -100,6 +100,16 @@ threading.Thread(target=_run_preflight, daemon=True).start()
 GATED_PATHS = {"/api/transcribe", "/api/setup/run"}
 
 
+def _transcription_refusal() -> str | None:
+    """The reason a transcription cannot start, or None when it can."""
+    if not assets.ffmpeg_ready():
+        return "ffmpeg/ffprobe not set up yet — run first-run setup"
+    if not assets.transcription_ready():
+        return (f"Whisper model '{assets.active_model()}' is not installed "
+                f"yet — finish first-run setup before uploading")
+    return None
+
+
 @app.middleware("http")
 async def block_unsupported_platform(request: Request, call_next):
     """
@@ -122,6 +132,10 @@ async def block_unsupported_platform(request: Request, call_next):
         if platform_check.get("ok") is False:
             return JSONResponse(status_code=409,
                                 content={"detail": platform_check["detail"]})
+        if request.url.path == "/api/transcribe":
+            detail = _transcription_refusal()
+            if detail:
+                return JSONResponse(status_code=409, content={"detail": detail})
     return await call_next(request)
 
 
@@ -222,14 +236,9 @@ async def transcribe_endpoint(
     language: Optional[str] = Form(None),
     hinglish: bool = Form(True),
 ):
-    if not assets.ffmpeg_ready():
-        raise HTTPException(status_code=409,
-                            detail="ffmpeg/ffprobe not set up yet — run first-run setup")
-    if not assets.transcription_ready():
-        raise HTTPException(
-            status_code=409,
-            detail=f"Whisper model '{assets.active_model()}' is not installed "
-                   f"yet — finish first-run setup before uploading")
+    detail = _transcription_refusal()
+    if detail:
+        raise HTTPException(status_code=409, detail=detail)
     job_id = uuid.uuid4().hex[:12]
     video_path = WORK_DIR / f"{job_id}_{os.path.basename(file.filename or 'video.mp4')}"
     with open(video_path, "wb") as f:
