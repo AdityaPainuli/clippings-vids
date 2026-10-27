@@ -197,18 +197,13 @@ def _list_prefix(prefix: str = "") -> list:
 
 def delete_expired(local_dir: str = "captions_output") -> int:
     """
-    Remove expired job rows and their storage objects, preserving source
-    files still referenced by non-expired jobs. Also removes old local
-    files and orphaned uploads. Returns the number of expired rows deleted.
+    Remove storage objects + job rows past expires_at, and any leftover
+    local files older than the retention window. Returns rows deleted.
     """
     now = datetime.now(timezone.utc).isoformat()
-
-    res = (
-        supabase.table("caption_jobs")
-        .select("id, source_path, output_path")
-        .lt("expires_at", now)
-        .execute()
-    )
+    res = (supabase.table("caption_jobs")
+           .select("id, source_path, output_path")
+           .lt("expires_at", now).execute())
     rows = res.data or []
 
     paths = []
@@ -244,7 +239,8 @@ def delete_expired(local_dir: str = "captions_output") -> int:
             if row.get("output_path")
         ]
         paths.extend(candidate_sources - active_sources)
-        # Keep expired rows if storage deletion fails so cleanup can retry.
+        # Keep the rows if storage delete failed so the next run retries;
+        # once a row is gone nothing points at its output any more.
         if _delete_storage_paths(paths):
             (
                 supabase.table("caption_jobs")
@@ -265,7 +261,8 @@ def delete_expired(local_dir: str = "captions_output") -> int:
             except OSError:
                 pass
 
-    # Clean up old uploaded sources that were never attached to a job.
+    # Last, and contained: a slow or failing storage listing must not stop
+    # the local cleanup above or abort the caller's cleanup loop.
     try:
         orphans = _delete_orphaned_sources()
     except requests.RequestException as e:
