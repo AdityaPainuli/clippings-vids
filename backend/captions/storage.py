@@ -210,38 +210,42 @@ def delete_expired(local_dir: str = "captions_output") -> int:
         .execute()
     )
     rows = res.data or []
-    paths = set()
+
+    paths = []
     deleted = 0
 
     if rows:
         # Sources referenced by non-expired jobs must be preserved.
-        active_res = (
-            supabase.table("caption_jobs")
-            .select("source_path")
-            .gte("expires_at", now)
-            .execute()
-        )
-        active_sources = {
+        candidate_sources = {
             row["source_path"]
-            for row in (active_res.data or [])
+            for row in rows
             if row.get("source_path")
         }
 
+        active_sources = set()
+        if candidate_sources:
+            active_res = (
+                supabase.table("caption_jobs")
+                .select("source_path")
+                .in_("source_path", list(candidate_sources))
+                .gte("expires_at", now)
+                .execute()
+            )
+            active_sources = {
+                row["source_path"]
+                for row in (active_res.data or [])
+                if row.get("source_path")
+            }
+
         # Outputs belong to expired jobs; sources may be shared by live jobs.
-        paths = {
+        paths = [
             row["output_path"]
             for row in rows
             if row.get("output_path")
-        }
-        paths.update(
-            row["source_path"]
-            for row in rows
-            if row.get("source_path")
-            and row["source_path"] not in active_sources
-        )
-
+        ]
+        paths.extend(candidate_sources - active_sources)
         # Keep expired rows if storage deletion fails so cleanup can retry.
-        if _delete_storage_paths(list(paths)):
+        if _delete_storage_paths(paths):
             (
                 supabase.table("caption_jobs")
                 .delete()

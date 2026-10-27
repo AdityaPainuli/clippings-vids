@@ -6,6 +6,7 @@ import types
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
+from datetime import datetime, timedelta, timezone
 
 
 class CaptionStorageRetentionTests(unittest.TestCase):
@@ -63,8 +64,43 @@ class CaptionStorageRetentionTests(unittest.TestCase):
 
         active_query = Mock()
         active_query.select.return_value = active_query
-        active_query.gte.return_value = active_query
-        active_query.execute.return_value = Mock(data=live_jobs)
+
+        active_filter = {
+            "column": None,
+            "values": None,
+            "expires_column": None,
+            "expires_value": None,
+        }
+
+        def filter_active_sources(column, values):
+            active_filter["column"] = column
+            active_filter["values"] = list(values)
+            return active_query
+
+        def filter_expiry(column, value):
+            active_filter["expires_column"] = column
+            active_filter["expires_value"] = value
+            return active_query
+
+        active_query.in_.side_effect = filter_active_sources
+        active_query.gte.side_effect = filter_expiry
+
+        def execute_active_query():
+            # Fail if either required query filter is omitted.
+            assert active_filter["values"] is not None
+            assert active_filter["expires_column"] == "expires_at"
+            assert active_filter["expires_value"] is not None
+
+            live_page = [
+                job for job in live_jobs
+                if job.get(active_filter["column"])
+                in active_filter["values"]
+                and job.get("expires_at", "")
+                >= active_filter["expires_value"]
+            ]
+            return Mock(data=live_page)
+
+        active_query.execute.side_effect = execute_active_query
 
         delete_query = Mock()
         delete_query.in_.return_value = delete_query
@@ -83,10 +119,13 @@ class CaptionStorageRetentionTests(unittest.TestCase):
 
         return delete_query
 
+
     def test_expired_transcribe_preserves_source_used_by_live_render(self):
         shared_source = "user-1/sources/upload-1/video.mp4"
         expired_output = "user-1/outputs/transcribe-1/transcript.srt"
-
+        live_expiry = (
+            datetime.now(timezone.utc) + timedelta(hours=1)
+        ).isoformat()
         delete_query = self._configure_queries(
             [
                 {
@@ -95,7 +134,7 @@ class CaptionStorageRetentionTests(unittest.TestCase):
                     "output_path": expired_output,
                 }
             ],
-            [{"source_path": shared_source}],
+            [{"source_path": shared_source, "expires_at": live_expiry}],
         )
 
         with patch.object(self.storage.os.path, "isdir", return_value=False):
@@ -131,6 +170,46 @@ class CaptionStorageRetentionTests(unittest.TestCase):
         self.assertEqual(deleted_count, 1)
         self.storage._delete_storage_paths.assert_called_once_with(
             [expired_source]
+        )
+
+    def test_shared_source_is_preserved_beyond_unfiltered_page_limit(self):
+        shared_source = "user-1/sources/upload-1/video.mp4"
+        expired_output = "user-1/outputs/transcribe-1/transcript.srt"
+
+        live_expiry = (
+            datetime.now(timezone.utc) + timedelta(hours=1)
+        ).isoformat()
+
+        live_jobs = [
+            {
+                "source_path": f"user-1/sources/other-{i}/video.mp4",
+                "expires_at": live_expiry,
+            }
+            for i in range(1000)
+        ]
+        live_jobs.append({
+            "source_path": shared_source,
+            "expires_at": live_expiry,
+        })
+        self._configure_queries(
+            [
+                {
+                    "id": "transcribe-1",
+                    "source_path": shared_source,
+                    "output_path": expired_output,
+                }
+            ],
+            live_jobs,
+        )
+
+        with patch.object(self.storage.os.path, "isdir", return_value=False):
+            deleted_count = self.storage.delete_expired(
+                local_dir=self.temp_dir.name
+            )
+
+        self.assertEqual(deleted_count, 1)
+        self.storage._delete_storage_paths.assert_called_once_with(
+            [expired_output]
         )
 
 
