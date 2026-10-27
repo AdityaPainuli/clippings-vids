@@ -141,6 +141,8 @@ export default function Home() {
       setAuthError(
         err instanceof Error ? err.message : "Authentication failed."
       );
+    } finally {
+      setIsAuthLoading(false);
     }
   };
 
