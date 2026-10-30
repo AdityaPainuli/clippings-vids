@@ -43,6 +43,10 @@ class FakeQuery:
         self.op = "select_expired"
         return self
 
+    def gte(self, *_):
+        self.op = "select_live"
+        return self
+
     def in_(self, column, values):
         self.in_values = (column, list(values))
         return self
@@ -50,13 +54,26 @@ class FakeQuery:
     def execute(self):
         if self.op == "select_expired":
             return types.SimpleNamespace(data=list(self.db.expired))
+
+        if self.op == "select_live":
+            return types.SimpleNamespace(
+                data=[
+                    {"source_path": p}
+                    for p in self.db.live_sources
+                ]
+            )
+
         if self.op == "delete":
             self.db.deleted_ids.extend(self.in_values[1])
             return types.SimpleNamespace(data=[])
-        column, values = self.in_values
-        hits = [{"source_path": p} for p in values if p in self.db.live_sources]
-        return types.SimpleNamespace(data=hits)
 
+        column, values = self.in_values
+        hits = [
+            {"source_path": p}
+            for p in values
+            if p in self.db.live_sources
+        ]
+        return types.SimpleNamespace(data=hits)
 
 class FakeDB:
     def __init__(self, expired=(), live_sources=()):
