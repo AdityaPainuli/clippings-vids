@@ -19,7 +19,7 @@ interface PastClip {
   expires_at: string;
   expires_in_seconds: number;
   expires_in_human: string;
-  size_mb: number;
+  size_bytes: number | null;
 }
 
 interface MyClipsResponse {
@@ -172,10 +172,12 @@ export default function MyClips() {
                           {clip.expires_in_human}
                         </span>
                       </p>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Size:</span>
-                        <span>{clip.size_mb} MB</span>
-                      </p>
+                      {clip.size_bytes != null && (
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Size:</span>
+                          <span>{(clip.size_bytes / (1024 * 1024)).toFixed(1)} MB</span>
+                        </p>
+                      )}
                     </div>
 
                     <a
