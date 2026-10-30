@@ -10,12 +10,14 @@ import tempfile
 import re
 import time as _time
 from concurrent.futures import ProcessPoolExecutor, as_completed
-
+import threading
 from dotenv import load_dotenv
 
 from url_policy import check_media_url
 
 load_dotenv()
+CLIP_RENDER_WORKERS = max(1, int(os.getenv("CLIP_RENDER_WORKERS", "4")))
+_RENDER_POOL_SEMAPHORE = threading.BoundedSemaphore(1)
 
 
 GENAI_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -938,7 +940,7 @@ MAX_RENDER_ATTEMPTS = 2
 
 
 def create_clips(video_path, clips_metadata, output_dir="output", captions=True,
-                  caption_style="default"):
+                 caption_style="default", on_start=None):
     """
     Render clips in parallel. Returns (created_files, failed_clips) tuple.
     Partial results are returned even if some clips fail.
@@ -980,16 +982,18 @@ def create_clips(video_path, clips_metadata, output_dir="output", captions=True,
             "captions":       captions,
         }
 
-    n_workers = min(len(tasks), 4)
+    n_workers = min(len(tasks), CLIP_RENDER_WORKERS)
     print(f"Rendering {len(tasks)} clip(s) in parallel ({n_workers} workers), "
           f"captions={'on' if captions else 'off'}, caption_style={caption_style}...")
 
     created_files = []
     failed_clips = []
 
-    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+    with _RENDER_POOL_SEMAPHORE, ProcessPoolExecutor(max_workers=n_workers) as executor:
         # First pass
         futures = {executor.submit(_render_single_clip, t): t for t in tasks}
+        if on_start is not None:
+            on_start()
         retry_tasks = []
 
         for future in as_completed(futures):

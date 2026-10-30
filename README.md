@@ -228,6 +228,7 @@ Environment (backend reads `backend/.env`):
 | `CLIP_TTL_SECONDS` | clip lifetime and signed URL expiry, default 21600 (6h) |
 | `CLEANUP_INTERVAL`, `JOB_TTL_SECONDS` | cleanup loop period (1800) and in-memory job lifetime (7200) |
 | `CAPTION_RETENTION_SECONDS` | caption file/job lifetime, default 172800 (48h) |
+| `CLIP_RENDER_WORKERS` | Maximum worker processes per clip-render pool; default 4, minimum 1. A process-local semaphore allows only one render pool at a time per backend process. |
 | `CAPTION_STALE_SECONDS` | orphaned caption job timeout, default 1800 |
 | `RESEND_API_KEY`, `CAPTION_FROM_EMAIL`, `APP_URL` | completion emails (optional, skipped if unset) |
 | `CAPTION_FONT`, `CAPTION_FONTSIZE`, `CAPTION_COLOR`, `CAPTION_HIGHLIGHT`, `CAPTION_WORDS`, `CAPTION_MARGIN_V`, ... | clipper caption defaults (see `clipper.py`) |
