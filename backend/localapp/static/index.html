@@ -394,7 +394,10 @@ async function checkSetup() {
   chosenModel = chosenModel || s.default_model;
   llmProvider = s.llm || null;
   apiKeys = s.api_keys || {};
-  const modelReady = Object.values(s.models).some(Boolean) || s.mlx;
+  // A different installed model does not satisfy the active model: the
+  // transcribe endpoint checks exactly this marker. Looking at any model here
+  // hid setup and left every upload with a 409 the user could not resolve.
+  const modelReady = s.mlx || s.models[s.default_model];
   if (!s.ffmpeg_needed && modelReady) {
     hide("setup-card"); show("drop"); show("lang-field"); return true;
   }

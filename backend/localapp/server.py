@@ -100,16 +100,27 @@ threading.Thread(target=_run_preflight, daemon=True).start()
 GATED_PATHS = {"/api/transcribe", "/api/setup/run"}
 
 
+def _transcription_refusal() -> str | None:
+    """The reason a transcription cannot start, or None when it can."""
+    if not assets.ffmpeg_ready():
+        return "ffmpeg/ffprobe not set up yet — run first-run setup"
+    if not assets.transcription_ready():
+        return (f"Whisper model '{assets.active_model()}' is not installed "
+                f"yet — finish first-run setup before uploading")
+    return None
+
+
 @app.middleware("http")
-async def block_unsupported_platform(request: Request, call_next):
+async def block_unready_requests(request: Request, call_next):
     """
     Turn work away before the body is read.
 
     An in-endpoint check is too late: FastAPI parses the multipart body — the
     whole upload — before the handler runs, so "reject before the upload" only
     holds if the refusal happens out here. Requests that arrive before the
-    probe finishes wait for it rather than being waved through, which is what
-    a bare `is False` check did.
+    platform probe finishes wait for it rather than being waved through, which
+    is what a bare `is False` check did. The same gate checks the active model
+    marker so a missing model does not spool a video either.
     """
     if request.method == "POST" and request.url.path in GATED_PATHS:
         if not platform_ready.is_set():
@@ -122,6 +133,10 @@ async def block_unsupported_platform(request: Request, call_next):
         if platform_check.get("ok") is False:
             return JSONResponse(status_code=409,
                                 content={"detail": platform_check["detail"]})
+        if request.url.path == "/api/transcribe":
+            detail = _transcription_refusal()
+            if detail:
+                return JSONResponse(status_code=409, content={"detail": detail})
     return await call_next(request)
 
 
@@ -222,9 +237,9 @@ async def transcribe_endpoint(
     language: Optional[str] = Form(None),
     hinglish: bool = Form(True),
 ):
-    if not assets.ffmpeg_ready():
-        raise HTTPException(status_code=409,
-                            detail="ffmpeg/ffprobe not set up yet — run first-run setup")
+    detail = _transcription_refusal()
+    if detail:
+        raise HTTPException(status_code=409, detail=detail)
     job_id = uuid.uuid4().hex[:12]
     video_path = WORK_DIR / f"{job_id}_{os.path.basename(file.filename or 'video.mp4')}"
     with open(video_path, "wb") as f:
