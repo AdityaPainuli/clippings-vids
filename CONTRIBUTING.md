@@ -5,9 +5,12 @@ tripped people up on this repo, not generic open source advice.
 
 ## Before you write code
 
-**Claim the issue first.** Comment on it and wait for a reply. Several people
-have lost a weekend to a fix that was already open as a PR. Check the issue's
-comments and the open PR list before you start.
+**How issues get claimed.** An issue is yours once I assign it to you, or once
+you open a PR with a correct fix. A comment saying you'd like to work on it
+reserves nothing, and it never outranks someone who already did the work. So
+you don't need to wait for a reply before starting. Do check the open PR list
+first, though: if a PR for the issue is already open, a second one has to be
+clearly better to get merged.
 
 **One issue per PR.** If you found three unrelated problems, that is three PRs.
 A PR touching nine files across the backend and frontend will be closed and
