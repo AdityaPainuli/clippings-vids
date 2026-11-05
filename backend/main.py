@@ -121,55 +121,52 @@ def _safe_remove(path: str) -> None:
 
 def _collect_vtt_files(video_path: str) -> List[str]:
     """
-    Return all .vtt subtitle files and other subtitle artifacts that yt-dlp or
-    processing may have written alongside *video_path*.
-    yt-dlp names them ``<stem>.<lang>.vtt`` so we glob for ``<stem>.*.vtt``
-    and ``<stem>.vtt`` next to the video file.
+    Return all .vtt subtitle files that yt-dlp may have written alongside
+    *video_path*. yt-dlp names them ``<stem>.<lang>.vtt`` so we glob for
+    ``<stem>.*.vtt`` and ``<stem>.vtt`` next to the video file.
     """
     base = os.path.splitext(video_path)[0]
     matched = glob.glob(f"{base}.*.vtt") + glob.glob(f"{base}.vtt")
-    matched.extend(glob.glob(f"{base}.*.srt") + glob.glob(f"{base}.srt"))
-    matched.extend(glob.glob(f"{base}.*.ass") + glob.glob(f"{base}.ass"))
     return list(set(matched))
 
 
-def _clean_source_video_and_artifacts(video_path: str) -> None:
-    """Remove a source video and any download/subtitle artifacts associated with it."""
+def _clean_source_video_and_artifacts(video_path: str, active_files: Optional[set] = None) -> None:
+    """Remove a source video and its related .vtt and .part artifacts unless active elsewhere."""
     if not video_path:
         return
-    _safe_remove(video_path)
-    _safe_remove(f"{video_path}.part")
-    _safe_remove(f"{video_path}.ytdl")
+    active = active_files or set()
     base = os.path.splitext(video_path)[0]
-    _safe_remove(f"{base}.part")
-    _safe_remove(f"{base}.ytdl")
-    for p in glob.glob(f"{base}.*.part"):
-        _safe_remove(p)
-    for p in glob.glob(f"{base}.*.ytdl"):
-        _safe_remove(p)
-    for artifact in _collect_vtt_files(video_path):
-        _safe_remove(artifact)
+    candidates = [
+        video_path,
+        f"{video_path}.part",
+        f"{base}.part",
+    ]
+    candidates.extend(glob.glob(f"{base}.*.part"))
+    candidates.extend(_collect_vtt_files(video_path))
+
+    for path in set(candidates):
+        if os.path.abspath(path) not in active:
+            _safe_remove(path)
 
 
-def _active_job_files() -> set:
+def _active_job_files(exclude_job_id: Optional[str] = None) -> set:
     """
     Return the set of absolute file paths that belong to currently-active
-    (non-terminal) jobs. Used by the sweep to avoid touching live files.
+    (non-terminal) jobs, optionally excluding exclude_job_id.
+    Used by cleanup and sweep to avoid touching live files.
     """
     active = set()
-    for job in jobs.values():
+    for jid, job in list(jobs.items()):
+        if jid == exclude_job_id:
+            continue
         if job.get("status") not in ("completed", "failed"):
             vp = job.get("video_path")
             if vp:
                 active.add(os.path.abspath(vp))
                 active.add(os.path.abspath(f"{vp}.part"))
-                active.add(os.path.abspath(f"{vp}.ytdl"))
                 base = os.path.splitext(vp)[0]
                 active.add(os.path.abspath(f"{base}.part"))
-                active.add(os.path.abspath(f"{base}.ytdl"))
                 for p in glob.glob(f"{base}.*.part"):
-                    active.add(os.path.abspath(p))
-                for p in glob.glob(f"{base}.*.ytdl"):
                     active.add(os.path.abspath(p))
                 for vtt in _collect_vtt_files(vp):
                     active.add(os.path.abspath(vtt))
@@ -276,10 +273,9 @@ async def process_video_task(
 ):
     loop = asyncio.get_event_loop()
 
-    # Track every local path created for this job so finally-cleanup is
-    # exhaustive even when the job fails partway through.
-    all_clip_paths: List[str] = []
-    local_clip_paths: List[str] = []
+    # Track every local clip path created for this job so finally-cleanup
+    # can remove failed renders, failed uploads, and partial outputs.
+    clip_paths: List[str] = []
     if job_id in jobs:
         jobs[job_id]["video_path"] = video_path
 
@@ -308,13 +304,14 @@ async def process_video_task(
             captions, caption_style
         )
 
-        # Record the local paths of every rendered clip so finally can clean them up
+        # Track both successful renders and failed renders for cleanup
         for clip in clips:
-            cp = os.path.join(OUTPUT_DIR, clip["filename"])
-            local_clip_paths.append(cp)
-            all_clip_paths.append(cp)
+            clip_paths.append(os.path.join(OUTPUT_DIR, clip["filename"]))
+        for fail in render_failures:
+            if isinstance(fail, dict) and "filename" in fail:
+                clip_paths.append(os.path.join(OUTPUT_DIR, fail["filename"]))
         if job_id in jobs:
-            jobs[job_id]["clip_paths"] = list(local_clip_paths)
+            jobs[job_id]["clip_paths"] = list(clip_paths)
 
         # ── 3. Upload each clip to Supabase Storage ───────────────────────────
         jobs[job_id]["status"] = "uploading"
@@ -355,19 +352,19 @@ async def process_video_task(
                     "clip_type":      clip.get("clip_type", ""),
                 })
 
-                # Upload succeeded — remove the local copy and intermediate files immediately
+                # Upload succeeded — remove local clip and intermediate files immediately
                 _safe_remove(local_path)
                 _safe_remove(local_path.replace(".mp4", "_raw.mp4"))
                 _safe_remove(local_path.replace(".mp4", ".ass"))
-                # Mark as gone so the active set updates
-                local_clip_paths[:] = [p for p in local_clip_paths if p != local_path]
+                if local_path in clip_paths:
+                    clip_paths.remove(local_path)
                 if job_id in jobs:
-                    jobs[job_id]["clip_paths"] = list(local_clip_paths)
+                    jobs[job_id]["clip_paths"] = list(clip_paths)
 
             except Exception as e:
                 upload_errors.append({"filename": clip["filename"], "error": str(e)})
                 print(f"  [upload] Failed to upload {clip['filename']}: {e}")
-                # Local file stays in local_clip_paths → finally will remove it
+                # Local file stays in clip_paths → finally will remove it
 
         # ── 4. Determine final status (partial results supported) ─────────────
         total_requested = len(clips_metadata)
@@ -403,13 +400,14 @@ async def process_video_task(
         # ── Per-job cleanup — runs on success, exception, and upload failure ──
         # Cleanup errors are isolated so they never hide or overwrite the original exception.
         try:
-            # 1. Remove source video and any download/subtitle artifacts
-            _clean_source_video_and_artifacts(video_path)
+            # 1. Protect shared downloads: only delete source video and its
+            #    artifacts if no other live job is referencing them.
+            active_other = _active_job_files(exclude_job_id=job_id)
+            _clean_source_video_and_artifacts(video_path, active_files=active_other)
 
-            # 2. Remove any rendered clip files that did not get successfully
-            #    removed after upload (failed uploads, partial jobs, etc.),
-            #    including intermediate _raw and .ass files for all created clips.
-            for clip_path in set(all_clip_paths + local_clip_paths):
+            # 2. Remove any remaining clip files belonging to this job
+            #    (failed renders, failed uploads, etc.), including _raw and .ass.
+            for clip_path in list(clip_paths):
                 _safe_remove(clip_path)
                 _safe_remove(clip_path.replace(".mp4", "_raw.mp4"))
                 _safe_remove(clip_path.replace(".mp4", ".ass"))
@@ -432,7 +430,6 @@ async def download_and_process(
 ):
     loop = asyncio.get_event_loop()
     video_path: Optional[str] = None
-    before_files = set(os.listdir(UPLOAD_DIR)) if os.path.isdir(UPLOAD_DIR) else set()
     try:
         jobs[job_id]["status"] = "downloading"
         _notify_job(job_id, {"status": "downloading", "detail": "Downloading video..."})
@@ -449,20 +446,13 @@ async def download_and_process(
         jobs[job_id]["status"] = "failed"
         jobs[job_id]["error"]  = str(e)
         _notify_job(job_id, {"status": "failed", "error": str(e)})
-        # If the download itself failed (video_path may be None or partial),
-        # clean up whatever was written. process_video_task's finally handles
-        # cleanup when the download succeeded, so only act here when
-        # process_video_task was never called (i.e. download raised).
+        # If download or handoff failed and video_path is known for this job,
+        # clean it up unless another active job is sharing it.
+        target_path = video_path or jobs.get(job_id, {}).get("video_path")
         try:
-            if video_path is not None:
-                _clean_source_video_and_artifacts(video_path)
-            after_files = set(os.listdir(UPLOAD_DIR)) if os.path.isdir(UPLOAD_DIR) else set()
-            new_files = after_files - before_files
-            active = _active_job_files()
-            for fname in new_files:
-                fpath = os.path.join(UPLOAD_DIR, fname)
-                if os.path.abspath(fpath) not in active:
-                    _safe_remove(fpath)
+            if target_path is not None:
+                active_other = _active_job_files(exclude_job_id=job_id)
+                _clean_source_video_and_artifacts(target_path, active_files=active_other)
         except Exception as cleanup_err:
             print(f"[job {job_id}] download cleanup error (ignored): {cleanup_err}")
 
