@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.extend([BACKEND_DIR, os.path.dirname(os.path.abspath(__file__))])
 
-for mod in ("google", "google.generativeai", "moviepy", "yt_dlp"):
+for mod in ("google", "google.generativeai", "moviepy", "yt_dlp", "dotenv"):
     sys.modules.setdefault(mod, MagicMock())
 
 from test_main_job_race import _install_main_import_stubs
