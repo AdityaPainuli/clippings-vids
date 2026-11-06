@@ -24,6 +24,7 @@ from pydantic import ValidationError
 from captions import (engine, llm, render, retakes, romanize, styles, tighten,
                       timeline, transcribe)
 from . import assets
+from .hostcheck import host_allowed
 
 # Loopback only — there is no auth. LAN exposure requires the explicit
 # opt-in AND is still the user's own risk (documented, not recommended).
@@ -124,6 +125,21 @@ async def block_unsupported_platform(request: Request, call_next):
                                 content={"detail": platform_check["detail"]})
     return await call_next(request)
 
+
+
+@app.middleware("http")
+async def reject_foreign_host(request: Request, call_next):
+    """
+    Answer only requests addressed to this server.
+
+    Registered after `block_unsupported_platform`, so it runs first. A
+    DNS-rebinding page reaches 127.0.0.1 under its own hostname; refusing that
+    `Host` keeps it from reading `/api/setup/status` or a job, which the Origin
+    check on writes does not cover (see `hostcheck`).
+    """
+    if not host_allowed(request.headers.get("host"), HOST, PORT):
+        return JSONResponse(status_code=403, content={"detail": "Unknown host refused"})
+    return await call_next(request)
 
 def _allowed_origins() -> set:
     return {f"http://{h}:{PORT}" for h in (HOST, "127.0.0.1", "localhost")}
