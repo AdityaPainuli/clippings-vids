@@ -3,6 +3,12 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { API_BASE_URL } from "@/lib/api";
+import {
+  authenticatedFetch,
+  clearTokens,
+  getAccessToken,
+  getRefreshToken,
+} from "@/lib/auth.mjs";
 import "../globals.css";
 
 interface PastClip {
@@ -37,34 +43,46 @@ export default function MyClips() {
 
   useEffect(() => {
     const fetchClips = async () => {
-      const token = localStorage.getItem("clipwave_access_token");
+      const accessToken = getAccessToken();
+      const refreshToken = getRefreshToken();
 
-      if (!token) {
+      if (!accessToken && !refreshToken) {
         setError("You must be logged in to view your clips.");
         setLoading(false);
         return;
       }
 
       try {
-        const response = await fetch(`${API_BASE_URL}/my-clips`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        const response = await authenticatedFetch(
+          `${API_BASE_URL}/my-clips`,
+          {},
+          { apiBaseUrl: API_BASE_URL }
+        );
 
         if (!response.ok) {
-          if (response.status === 401 || response.status === 403) {
-            localStorage.removeItem("clipwave_access_token");
+          let detail = "";
+
+          try {
+            const errorData = await response.json();
+            detail = errorData.detail || "";
+          } catch {
+            // Response did not contain valid JSON.
+          }
+
+          if (response.status === 401) {
+            clearTokens();
             localStorage.removeItem("clipwave_user_email");
             setError(
               "Session expired. Please return to the homepage to log in."
             );
+          } else if (response.status === 403) {
+            setError(detail || "You are not authorized to view these clips.");
           } else {
-            throw new Error("Failed to fetch past clips.");
+            throw new Error(detail || "Failed to fetch past clips.");
           }
+
           return;
         }
-
 
         const data: MyClipsResponse = await response.json();
         setClipsData(data);
