@@ -239,6 +239,40 @@ def delete_old_clips() -> int:
     return len(to_delete)
 
 
+def delete_job_clips(user_id: str, job_id: str, known_paths=()) -> list:
+    """
+    Delete one job's clips for `user_id`: the storage objects and their
+    clip_metadata rows. clip_metadata is the source of truth, so this works
+    after the in-memory job is gone. `known_paths` adds storage paths the
+    caller already holds (a cached job's results live under the original
+    job's folder); paths outside the user's own folder are ignored.
+    Returns the storage paths deleted.
+    """
+    rows = (
+        supabase.table("clip_metadata")
+        .select("storage_path")
+        .eq("user_id", user_id)
+        .eq("job_id", job_id)
+        .execute()
+        .data
+    ) or []
+    paths = [r["storage_path"] for r in rows if r.get("storage_path")]
+    own = f"{user_id}/"
+    paths += [p for p in known_paths if p and p.startswith(own) and p not in paths]
+    if not paths:
+        return []
+
+    _delete_paths(paths)
+    (
+        supabase.table("clip_metadata")
+        .delete()
+        .eq("user_id", user_id)
+        .in_("storage_path", paths)
+        .execute()
+    )
+    return paths
+
+
 def delete_user_clips(user_id: str) -> int:
     """Delete ALL clips for a user (e.g. on account deletion)."""
     job_folders = _list_prefix(user_id)
