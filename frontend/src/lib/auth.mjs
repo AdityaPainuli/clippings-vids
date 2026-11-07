@@ -1,9 +1,15 @@
-
 const ACCESS_TOKEN_KEY = "clipwave_access_token";
 const REFRESH_TOKEN_KEY = "clipwave_refresh_token";
 
-// One refresh operation per browser storage instance.
 const refreshPromises = new WeakMap();
+const sessionGenerations = new WeakMap();
+
+export class StaleAuthRequestError extends Error {
+  constructor() {
+    super("Authentication session changed while the request was pending.");
+    this.name = "StaleAuthRequestError";
+  }
+}
 
 function getBrowserStorage() {
   if (typeof window === "undefined") {
@@ -11,6 +17,41 @@ function getBrowserStorage() {
   }
 
   return window.localStorage;
+}
+
+export function getSessionGeneration(
+  storage = getBrowserStorage()
+) {
+  return sessionGenerations.get(storage) ?? 0;
+}
+
+export function isSessionGenerationCurrent(
+  generation,
+  storage = getBrowserStorage()
+) {
+  return getSessionGeneration(storage) === generation;
+}
+
+function advanceSessionGeneration(storage) {
+  const next = getSessionGeneration(storage) + 1;
+  sessionGenerations.set(storage, next);
+  return next;
+}
+
+function assertSessionCurrent(storage, generation) {
+  if (getSessionGeneration(storage) !== generation) {
+    throw new StaleAuthRequestError();
+  }
+}
+
+function writeTokens(accessToken, refreshToken, storage) {
+  storage.setItem(ACCESS_TOKEN_KEY, accessToken);
+  storage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+}
+
+function removeTokens(storage) {
+  storage.removeItem(ACCESS_TOKEN_KEY);
+  storage.removeItem(REFRESH_TOKEN_KEY);
 }
 
 export function storeTokens(
@@ -27,8 +68,8 @@ export function storeTokens(
     throw new Error("Both authentication tokens are required.");
   }
 
-  storage.setItem(ACCESS_TOKEN_KEY, accessToken);
-  storage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+  advanceSessionGeneration(storage);
+  writeTokens(accessToken, refreshToken, storage);
 }
 
 export function getAccessToken(storage = getBrowserStorage()) {
@@ -40,15 +81,22 @@ export function getRefreshToken(storage = getBrowserStorage()) {
 }
 
 export function clearTokens(storage = getBrowserStorage()) {
-  storage.removeItem(ACCESS_TOKEN_KEY);
-  storage.removeItem(REFRESH_TOKEN_KEY);
+  advanceSessionGeneration(storage);
+  removeTokens(storage);
 }
 
-async function performRefresh(apiBaseUrl, fetchImpl, storage) {
+async function performRefresh(
+  apiBaseUrl,
+  fetchImpl,
+  storage,
+  generation
+) {
+  assertSessionCurrent(storage, generation);
+
   const refreshToken = getRefreshToken(storage);
 
   if (!refreshToken) {
-    clearTokens(storage);
+    removeTokens(storage);
     return false;
   }
 
@@ -60,14 +108,18 @@ async function performRefresh(apiBaseUrl, fetchImpl, storage) {
     body: formData,
   });
 
-    if (!response.ok) {
-    // Invalid or revoked refresh token: the session cannot be recovered.
-    if ([400, 401, 403].includes(response.status)) {
-      clearTokens(storage);
+  assertSessionCurrent(storage, generation);
+
+  if (getRefreshToken(storage) !== refreshToken) {
+    throw new StaleAuthRequestError();
+  }
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      removeTokens(storage);
       return false;
     }
 
-    // Temporary server errors must not force the user to log out.
     throw new Error(
       `Token refresh failed with status ${response.status}.`
     );
@@ -75,40 +127,61 @@ async function performRefresh(apiBaseUrl, fetchImpl, storage) {
 
   const data = await response.json();
 
+  assertSessionCurrent(storage, generation);
+
+  if (getRefreshToken(storage) !== refreshToken) {
+    throw new StaleAuthRequestError();
+  }
+
   if (
     typeof data.access_token !== "string" ||
     !data.access_token ||
     typeof data.refresh_token !== "string" ||
     !data.refresh_token
   ) {
-    clearTokens(storage);
-    return false;
+    throw new Error("Token refresh returned an invalid response.");
   }
 
-  // Supabase rotates both tokens. Always persist the complete new pair.
-  storeTokens(data.access_token, data.refresh_token, storage);
+  // Token rotation keeps the same login session generation.
+  writeTokens(data.access_token, data.refresh_token, storage);
 
   return true;
 }
 
-function refreshOnce(apiBaseUrl, fetchImpl, storage) {
-  const existingRefresh = refreshPromises.get(storage);
+function refreshOnce(apiBaseUrl, fetchImpl, storage, generation) {
+  let refreshes = refreshPromises.get(storage);
 
-  if (existingRefresh) {
-    return existingRefresh;
+  if (!refreshes) {
+    refreshes = new Map();
+    refreshPromises.set(storage, refreshes);
   }
 
-  const pendingRefresh = performRefresh(
+  const existing = refreshes.get(generation);
+
+  if (existing) {
+    return existing;
+  }
+
+  let pending;
+
+  pending = performRefresh(
     apiBaseUrl,
     fetchImpl,
-    storage
+    storage,
+    generation
   ).finally(() => {
-    refreshPromises.delete(storage);
+    if (refreshes.get(generation) === pending) {
+      refreshes.delete(generation);
+    }
+
+    if (refreshes.size === 0) {
+      refreshPromises.delete(storage);
+    }
   });
 
-  refreshPromises.set(storage, pendingRefresh);
+  refreshes.set(generation, pending);
 
-  return pendingRefresh;
+  return pending;
 }
 
 async function sendWithToken(input, init, token, fetchImpl) {
@@ -145,9 +218,9 @@ export async function authenticatedFetch(
     throw new Error("Fetch implementation is unavailable.");
   }
 
+  const generation = getSessionGeneration(storage);
   const originalToken = getAccessToken(storage);
 
-  // Attempt the original request.
   const firstResponse = await sendWithToken(
     input,
     init,
@@ -155,13 +228,12 @@ export async function authenticatedFetch(
     fetchImpl
   );
 
-  // Only 401 indicates that we should try refreshing.
+  assertSessionCurrent(storage, generation);
+
   if (firstResponse.status !== 401) {
     return firstResponse;
   }
 
-  // Another request may already have refreshed the session.
-  // Reuse its new access token instead of refreshing again.
   const currentToken = getAccessToken(storage);
 
   let canRetry = false;
@@ -169,12 +241,20 @@ export async function authenticatedFetch(
   if (currentToken && currentToken !== originalToken) {
     canRetry = true;
   } else {
-    canRetry = await refreshOnce(
-      apiBaseUrl,
-      fetchImpl,
-      storage
-    );
+    try {
+      canRetry = await refreshOnce(
+        apiBaseUrl,
+        fetchImpl,
+        storage,
+        generation
+      );
+    } catch (error) {
+      assertSessionCurrent(storage, generation);
+      throw error;
+    }
   }
+
+  assertSessionCurrent(storage, generation);
 
   if (!canRetry) {
     return firstResponse;
@@ -186,7 +266,8 @@ export async function authenticatedFetch(
     return firstResponse;
   }
 
-  // Retry the original request exactly once.
+  assertSessionCurrent(storage, generation);
+
   const retryResponse = await sendWithToken(
     input,
     init,
@@ -194,9 +275,10 @@ export async function authenticatedFetch(
     fetchImpl
   );
 
-  // A second 401 means the renewed session is also unusable.
+  assertSessionCurrent(storage, generation);
+
   if (retryResponse.status === 401) {
-    clearTokens(storage);
+    removeTokens(storage);
   }
 
   return retryResponse;

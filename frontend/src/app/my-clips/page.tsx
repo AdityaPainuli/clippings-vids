@@ -8,6 +8,9 @@ import {
   clearTokens,
   getAccessToken,
   getRefreshToken,
+  getSessionGeneration,
+  isSessionGenerationCurrent,
+  StaleAuthRequestError,
 } from "@/lib/auth.mjs";
 import "../globals.css";
 
@@ -42,56 +45,79 @@ export default function MyClips() {
 
 
   useEffect(() => {
+    const generation = getSessionGeneration();
+
     const fetchClips = async () => {
-      const accessToken = getAccessToken();
-      const refreshToken = getRefreshToken();
-
-      if (!accessToken && !refreshToken) {
-        setError("You must be logged in to view your clips.");
-        setLoading(false);
-        return;
-      }
-
       try {
+        const accessToken = getAccessToken();
+        const refreshToken = getRefreshToken();
+
+        if (!accessToken && !refreshToken) {
+          if (isSessionGenerationCurrent(generation)) {
+            setError("You must be logged in to view your clips.");
+            setLoading(false);
+          }
+          return;
+        }
+
         const response = await authenticatedFetch(
           `${API_BASE_URL}/my-clips`,
           {},
           { apiBaseUrl: API_BASE_URL }
         );
 
-        if (!response.ok) {
-          let detail = "";
+        if (!isSessionGenerationCurrent(generation)) return;
 
+        let errorDetail = "";
+
+        if (!response.ok) {
           try {
             const errorData = await response.json();
-            detail = errorData.detail || "";
+            errorDetail = errorData.detail || "";
           } catch {
             // Response did not contain valid JSON.
           }
 
+          if (!isSessionGenerationCurrent(generation)) return;
+
           if (response.status === 401) {
-            clearTokens();
-            localStorage.removeItem("clipwave_user_email");
             setError(
               "Session expired. Please return to the homepage to log in."
             );
+            setLoading(false);
+            clearTokens();
+            localStorage.removeItem("clipwave_user_email");
           } else if (response.status === 403) {
-            setError(detail || "You are not authorized to view these clips.");
+            setError(
+              errorDetail || "You are not authorized to view these clips."
+            );
           } else {
-            throw new Error(detail || "Failed to fetch past clips.");
+            throw new Error(errorDetail || "Failed to fetch past clips.");
           }
 
           return;
         }
 
         const data: MyClipsResponse = await response.json();
+
+        if (!isSessionGenerationCurrent(generation)) return;
+
         setClipsData(data);
       } catch (err: unknown) {
+        if (
+          err instanceof StaleAuthRequestError ||
+          !isSessionGenerationCurrent(generation)
+        ) {
+          return;
+        }
+
         setError(
           err instanceof Error ? err.message : "Failed to fetch past clips."
         );
       } finally {
-        setLoading(false);
+        if (isSessionGenerationCurrent(generation)) {
+          setLoading(false);
+        }
       }
     };
 

@@ -7,6 +7,9 @@ import {
   getAccessToken,
   clearTokens,
   authenticatedFetch,
+  getSessionGeneration,
+  isSessionGenerationCurrent,
+  StaleAuthRequestError,
 } from "@/lib/auth.mjs";
 import "./globals.css";
 
@@ -83,14 +86,14 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-  const storedToken = getAccessToken();
-  const storedEmail = localStorage.getItem("clipwave_user_email");
+    const storedToken = getAccessToken();
+    const storedEmail = localStorage.getItem("clipwave_user_email");
 
-  if (storedToken && storedEmail) {
-    setToken(storedToken);
-    setUserEmail(storedEmail);
-  }
-}, []);
+    if (storedToken && storedEmail) {
+      setToken(storedToken);
+      setUserEmail(storedEmail);
+    }
+  }, []);
 
   // Cleanup SSE + polling on unmount
   useEffect(() => {
@@ -100,12 +103,21 @@ export default function Home() {
     };
   }, [stopPolling]);
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback((expectedGeneration?: number) => {
+    // Ignore logout attempts from an older session.
+    if (
+      expectedGeneration !== undefined &&
+      !isSessionGenerationCurrent(expectedGeneration)
+    ) {
+      return;
+    }
+
     clearTokens();
     localStorage.removeItem("clipwave_user_email");
     setToken(null);
     setUserEmail(null);
     setClips([]);
+    setIsProcessing(false);
     eventSourceRef.current?.close();
     stopPolling();
   }, [stopPolling]);
@@ -161,144 +173,195 @@ export default function Home() {
   };
 
   // Fallback polling (in case SSE fails)
-   const startPolling = useCallback((jobId: string) => {
-  stopPolling();
+  const startPolling = useCallback((jobId: string, generation: number) => {
+    if (!isSessionGenerationCurrent(generation)) return;
 
-  const interval = setInterval(async () => {
-    try {
-      const response = await authenticatedFetch(
-        `${API_BASE_URL}/status/${jobId}`,
-        {},
-        { apiBaseUrl: API_BASE_URL }
-      );
+    stopPolling();
 
-      const data = await response.json();
+    const interval = setInterval(async () => {
+      if (!isSessionGenerationCurrent(generation)) {
+        clearInterval(interval);
+        return;
+      }
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          handleLogout();
-          throw new Error("Session expired. Please log in again.");
-        }
+      try {
+        const response = await authenticatedFetch(
+          `${API_BASE_URL}/status/${jobId}`,
+          {},
+          { apiBaseUrl: API_BASE_URL }
+        );
 
-        if (response.status === 403) {
-          setError(data.detail || "You are not authorized to access this job.");
-          setIsProcessing(false);
+        if (!isSessionGenerationCurrent(generation)) {
           clearInterval(interval);
           return;
         }
 
-        throw new Error(data.detail || "Failed to fetch status");
+        const data = await response.json();
+
+        if (!isSessionGenerationCurrent(generation)) {
+          clearInterval(interval);
+          return;
+        }
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            setError("Session expired. Please log in again.");
+            setIsProcessing(false);
+            handleLogout(generation);
+            return;
+          }
+
+          if (response.status === 403) {
+            setError(data.detail || "You are not authorized to access this job.");
+            setIsProcessing(false);
+            clearInterval(interval);
+            return;
+          }
+
+          throw new Error(data.detail || "Failed to fetch status");
+        }
+
+        setStatus(data.status);
+
+        if (data.status === "completed") {
+          setClips(data.results);
+          if (data.warnings) setWarning(data.warnings);
+          setIsProcessing(false);
+          clearInterval(interval);
+        } else if (data.status === "failed") {
+          setError(data.error || "Processing failed");
+          setIsProcessing(false);
+          clearInterval(interval);
+        }
+      } catch (err: unknown) {
+        if (
+          err instanceof StaleAuthRequestError ||
+          !isSessionGenerationCurrent(generation)
+        ) {
+          clearInterval(interval);
+          return;
+        }
+
+        const message = err instanceof Error ? err.message : String(err);
+
+        console.error("Polling error:", err);
+        setError(message);
+
+        if (message.includes("Session expired")) {
+          setIsProcessing(false);
+          clearInterval(interval);
+        }
       }
+    }, 2000);
 
-      setStatus(data.status);
-
-      if (data.status === "completed") {
-        setClips(data.results);
-        if (data.warnings) setWarning(data.warnings);
-        setIsProcessing(false);
-        clearInterval(interval);
-      } else if (data.status === "failed") {
-        setError(data.error || "Processing failed");
-        setIsProcessing(false);
-        clearInterval(interval);
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-
-      console.error("Polling error:", err);
-      setError(message);
-
-      if (message.includes("Session expired")) {
-        setIsProcessing(false);
-        clearInterval(interval);
-      }
-    }
-  }, 2000);
-
-  pollIntervalRef.current = interval;
-}, [handleLogout, stopPolling]);
-
+    pollIntervalRef.current = interval;
+  }, [handleLogout, stopPolling]);
 
   // Connect to SSE stream for a job.
   // The bearer JWT never goes in the URL — we exchange it for a one-time
   // short-lived stream token first (query strings leak via logs/history).
+  const connectSSE = useCallback(async (jobId: string, generation: number) => {
+    if (!isSessionGenerationCurrent(generation)) return;
 
-  const connectSSE = useCallback(async (jobId: string) => {
-  eventSourceRef.current?.close();
-  stopPolling();
+    eventSourceRef.current?.close();
+    stopPolling();
 
-  let streamToken: string;
+    let streamToken: string;
 
-  try {
-    const tokenRes = await authenticatedFetch(
-      `${API_BASE_URL}/stream-token`,
-      { method: "POST" },
-      { apiBaseUrl: API_BASE_URL }
+    try {
+      const tokenRes = await authenticatedFetch(
+        `${API_BASE_URL}/stream-token`,
+        { method: "POST" },
+        { apiBaseUrl: API_BASE_URL }
+      );
+
+      if (!isSessionGenerationCurrent(generation)) return;
+
+      if (tokenRes.status === 401) {
+        setError("Session expired. Please log in again.");
+        setIsProcessing(false);
+        handleLogout(generation);
+        return;
+      }
+
+      if (tokenRes.status === 403) {
+        setError("You are not authorized to access this stream.");
+        setIsProcessing(false);
+        return;
+      }
+
+      if (!tokenRes.ok) {
+        throw new Error("Stream token request failed");
+      }
+
+      const tokenData = await tokenRes.json();
+
+      if (!isSessionGenerationCurrent(generation)) return;
+
+      streamToken = tokenData.stream_token;
+
+      if (!streamToken) {
+        throw new Error("Invalid stream token response");
+      }
+    } catch (err) {
+      if (
+        err instanceof StaleAuthRequestError ||
+        !isSessionGenerationCurrent(generation)
+      ) {
+        return;
+      }
+
+      console.error("SSE token request failed:", err);
+      // Can't get a stream token — fall back to polling
+      startPolling(jobId, generation);
+      return;
+    }
+
+    if (!isSessionGenerationCurrent(generation)) return;
+
+    const es = new EventSource(
+      `${API_BASE_URL}/stream/${jobId}?token=${encodeURIComponent(streamToken)}`
     );
 
-    if (tokenRes.status === 401) {
-      handleLogout();
-      setError("Session expired. Please log in again.");
-      setIsProcessing(false);
-      return;
-    }
+    eventSourceRef.current = es;
 
-    if (tokenRes.status === 403) {
-      setError("You are not authorized to access this stream.");
-      setIsProcessing(false);
-      return;
-    }
-
-    if (!tokenRes.ok) {
-      throw new Error("Stream token request failed");
-    }
-
-    const tokenData = await tokenRes.json();
-    streamToken = tokenData.stream_token;
-
-    if (!streamToken) {
-      throw new Error("Invalid stream token response");
-    }
-  } catch (err) {
-    console.error("SSE token request failed:", err);
-    startPolling(jobId);
-    return;
-  }
-
-  const es = new EventSource(
-    `${API_BASE_URL}/stream/${jobId}?token=${encodeURIComponent(streamToken)}`
-  );
-
-  eventSourceRef.current = es;
-
-  es.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-
-      setStatus(data.status || "");
-      if (data.detail) setStatusDetail(data.detail);
-
-      if (data.status === "completed") {
-        setClips(data.results || []);
-        if (data.warnings) setWarning(data.warnings);
-        setIsProcessing(false);
+    es.onmessage = (event) => {
+      if (!isSessionGenerationCurrent(generation)) {
         es.close();
-      } else if (data.status === "failed") {
-        setError(data.error || "Processing failed");
-        setIsProcessing(false);
-        es.close();
+        return;
       }
-    } catch {
-      // Ignore heartbeat and malformed messages.
-    }
-  };
 
-  es.onerror = () => {
-    es.close();
-    console.warn("SSE connection lost, falling back to polling");
-    startPolling(jobId);
-  };
-}, [startPolling, stopPolling, handleLogout]);
+      try {
+        const data = JSON.parse(event.data);
+
+        setStatus(data.status || "");
+        if (data.detail) setStatusDetail(data.detail);
+
+        if (data.status === "completed") {
+          setClips(data.results || []);
+          if (data.warnings) setWarning(data.warnings);
+          setIsProcessing(false);
+          es.close();
+        } else if (data.status === "failed") {
+          setError(data.error || "Processing failed");
+          setIsProcessing(false);
+          es.close();
+        }
+      } catch {
+        // ignore parse errors on heartbeats
+      }
+    };
+
+    es.onerror = () => {
+      // SSE failed — fall back to polling
+      es.close();
+
+      if (!isSessionGenerationCurrent(generation)) return;
+
+      console.warn("SSE connection lost, falling back to polling");
+      startPolling(jobId, generation);
+    };
+  }, [startPolling, stopPolling, handleLogout]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -309,6 +372,8 @@ export default function Home() {
       openAuth("login");
       return;
     }
+
+    const generation = getSessionGeneration();
 
     setIsProcessing(true);
     setError(null);
@@ -330,19 +395,24 @@ export default function Home() {
       const response = await authenticatedFetch(
         `${API_BASE_URL}/process-url`,
         {
-
-         method: "POST",
-         body: formData,
+          method: "POST",
+          body: formData,
         },
         { apiBaseUrl: API_BASE_URL }
       );
 
+      if (!isSessionGenerationCurrent(generation)) return;
+
       const data = await response.json();
+
+      if (!isSessionGenerationCurrent(generation)) return;
 
       if (!response.ok) {
         if (response.status === 401) {
-          handleLogout();
-          throw new Error("Session expired. Please log in again.");
+          setError("Session expired. Please log in again.");
+          setIsProcessing(false);
+          handleLogout(generation);
+          return;
         }
 
         if (response.status === 403) {
@@ -352,21 +422,27 @@ export default function Home() {
         throw new Error(data.detail || "Failed to start processing");
       }
 
-      // If cached, results are already available.
+      // If cached, results are already in the response
       if (data.status === "completed") {
-        // Fetch the full status to get the results.
+        // Fetch full status to get results
         const statusRes = await authenticatedFetch(
           `${API_BASE_URL}/status/${data.job_id}`,
           {},
           { apiBaseUrl: API_BASE_URL }
         );
 
+        if (!isSessionGenerationCurrent(generation)) return;
+
         const statusData = await statusRes.json();
+
+        if (!isSessionGenerationCurrent(generation)) return;
 
         if (!statusRes.ok) {
           if (statusRes.status === 401) {
-            handleLogout();
-            throw new Error("Session expired. Please log in again.");
+            setError("Session expired. Please log in again.");
+            setIsProcessing(false);
+            handleLogout(generation);
+            return;
           }
 
           if (statusRes.status === 403) {
@@ -381,10 +457,17 @@ export default function Home() {
         setClips(statusData.results || []);
         setIsProcessing(false);
       } else {
-        // Connect to the SSE stream for the new job.
-        connectSSE(data.job_id);
+        // Connect to SSE stream
+        connectSSE(data.job_id, generation);
       }
     } catch (err: unknown) {
+      if (
+        err instanceof StaleAuthRequestError ||
+        !isSessionGenerationCurrent(generation)
+      ) {
+        return;
+      }
+
       setError(
         err instanceof Error ? err.message : "Failed to process request."
       );
@@ -612,7 +695,7 @@ export default function Home() {
               <span style={{ color: 'var(--text-secondary)', marginRight: '1rem', display: 'flex', alignItems: 'center' }}>
                 {userEmail}
               </span>
-              <button className="btn btn-secondary" onClick={handleLogout}>Logout</button>
+              <button className="btn btn-secondary" onClick={() => handleLogout()}>Logout</button>
             </>
           ) : (
             <>

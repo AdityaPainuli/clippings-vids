@@ -20,6 +20,13 @@ def _session_response():
     )
 
 
+class FakeAuthError(Exception):
+    def __init__(self, code, status):
+        super().__init__(code)
+        self.code = code
+        self.status = status
+
+
 class AuthRoutesUseThrowawayClientTest(unittest.TestCase):
     """Login/signup/refresh must never run on the shared service-role client.
 
@@ -77,6 +84,44 @@ class AuthRoutesUseThrowawayClientTest(unittest.TestCase):
         self.assertEqual(len(self.fresh), 1)
         self.fresh[0].auth.refresh_session.assert_called_once_with("user-refresh")
         self.assert_shared_auth_untouched()
+
+    def assert_refresh_error_status(self, error, expected_status):
+        auth_client = MagicMock(name="auth_client")
+        auth_client.auth.refresh_session.side_effect = error
+        with patch.object(
+            self.main, "new_auth_client", return_value=auth_client
+        ):
+            with self.assertRaises(self.main.HTTPException) as context:
+                asyncio.run(
+                    self.main.refresh_token(refresh_token="user-refresh")
+                )
+        self.assertEqual(context.exception.status_code, expected_status)
+        self.assert_shared_auth_untouched()
+
+    def test_rejected_refresh_token_returns_401(self):
+        self.assert_refresh_error_status(
+            FakeAuthError("refresh_token_not_found", 400), 401
+        )
+
+    def test_invalid_refresh_input_returns_400(self):
+        self.assert_refresh_error_status(
+            FakeAuthError("validation_failed", 400), 400
+        )
+
+    def test_temporary_refresh_failure_returns_503(self):
+        self.assert_refresh_error_status(
+            FakeAuthError("request_timeout", 408), 503
+        )
+
+    def test_upstream_server_failure_returns_503(self):
+        self.assert_refresh_error_status(
+            FakeAuthError("unexpected_failure", 500), 503
+        )
+
+    def test_unexpected_local_failure_returns_500(self):
+        self.assert_refresh_error_status(
+            RuntimeError("Unexpected internal error"), 500
+        )
 
     def test_each_call_gets_its_own_client(self):
         asyncio.run(self.main.login(email="a@example.com", password="pw"))
