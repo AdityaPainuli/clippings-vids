@@ -3,6 +3,15 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { API_BASE_URL } from "@/lib/api";
+import {
+  authenticatedFetch,
+  clearTokens,
+  getAccessToken,
+  getRefreshToken,
+  getSessionGeneration,
+  isSessionGenerationCurrent,
+  StaleAuthRequestError,
+} from "@/lib/auth.mjs";
 import "../globals.css";
 
 interface PastClip {
@@ -36,44 +45,79 @@ export default function MyClips() {
 
 
   useEffect(() => {
+    const generation = getSessionGeneration();
+
     const fetchClips = async () => {
-      const token = localStorage.getItem("clipwave_access_token");
-
-      if (!token) {
-        setError("You must be logged in to view your clips.");
-        setLoading(false);
-        return;
-      }
-
       try {
-        const response = await fetch(`${API_BASE_URL}/my-clips`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        const accessToken = getAccessToken();
+        const refreshToken = getRefreshToken();
 
-        if (!response.ok) {
-          if (response.status === 401 || response.status === 403) {
-            localStorage.removeItem("clipwave_access_token");
-            localStorage.removeItem("clipwave_user_email");
-            setError(
-              "Session expired. Please return to the homepage to log in."
-            );
-          } else {
-            throw new Error("Failed to fetch past clips.");
+        if (!accessToken && !refreshToken) {
+          if (isSessionGenerationCurrent(generation)) {
+            setError("You must be logged in to view your clips.");
+            setLoading(false);
           }
           return;
         }
 
+        const response = await authenticatedFetch(
+          `${API_BASE_URL}/my-clips`,
+          {},
+          { apiBaseUrl: API_BASE_URL }
+        );
+
+        if (!isSessionGenerationCurrent(generation)) return;
+
+        let errorDetail = "";
+
+        if (!response.ok) {
+          try {
+            const errorData = await response.json();
+            errorDetail = errorData.detail || "";
+          } catch {
+            // Response did not contain valid JSON.
+          }
+
+          if (!isSessionGenerationCurrent(generation)) return;
+
+          if (response.status === 401) {
+            setError(
+              "Session expired. Please return to the homepage to log in."
+            );
+            setLoading(false);
+            clearTokens();
+            localStorage.removeItem("clipwave_user_email");
+          } else if (response.status === 403) {
+            setError(
+              errorDetail || "You are not authorized to view these clips."
+            );
+          } else {
+            throw new Error(errorDetail || "Failed to fetch past clips.");
+          }
+
+          return;
+        }
 
         const data: MyClipsResponse = await response.json();
+
+        if (!isSessionGenerationCurrent(generation)) return;
+
         setClipsData(data);
       } catch (err: unknown) {
+        if (
+          err instanceof StaleAuthRequestError ||
+          !isSessionGenerationCurrent(generation)
+        ) {
+          return;
+        }
+
         setError(
           err instanceof Error ? err.message : "Failed to fetch past clips."
         );
       } finally {
-        setLoading(false);
+        if (isSessionGenerationCurrent(generation)) {
+          setLoading(false);
+        }
       }
     };
 
