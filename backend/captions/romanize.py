@@ -258,6 +258,6 @@ def romanize_words(words: list[dict]) -> list[dict]:
         romanized.extend(out)
 
     return [
-        {**w, "hinglish": h}
+        {**w, "hinglish": w.get("hinglish") or h}
         for w, h in zip(words, romanized)
     ]
