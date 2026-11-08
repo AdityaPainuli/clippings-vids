@@ -220,6 +220,7 @@ export async function authenticatedFetch(
 
   const generation = getSessionGeneration(storage);
   const originalToken = getAccessToken(storage);
+  const originalEmail = storage.getItem("clipwave_user_email");
 
   const firstResponse = await sendWithToken(
     input,
@@ -268,6 +269,10 @@ export async function authenticatedFetch(
 
   assertSessionCurrent(storage, generation);
 
+  if (storage.getItem("clipwave_user_email") !== originalEmail) {
+    throw new StaleAuthRequestError();
+  }
+
   const retryResponse = await sendWithToken(
     input,
     init,
@@ -278,6 +283,10 @@ export async function authenticatedFetch(
   assertSessionCurrent(storage, generation);
 
   if (retryResponse.status === 401) {
+    if (getAccessToken(storage) !== newToken) {
+      throw new StaleAuthRequestError();
+    }
+
     removeTokens(storage);
   }
 

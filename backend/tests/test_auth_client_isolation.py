@@ -108,6 +108,16 @@ class AuthRoutesUseThrowawayClientTest(unittest.TestCase):
             FakeAuthError("validation_failed", 400), 400
         )
 
+    def test_unknown_client_error_returns_401(self):
+        self.assert_refresh_error_status(
+            FakeAuthError("user_not_found", 400), 401
+        )
+
+    def test_legacy_auth_error_without_code_returns_401(self):
+        self.assert_refresh_error_status(
+            FakeAuthError(None, 400), 401
+        )
+
     def test_temporary_refresh_failure_returns_503(self):
         self.assert_refresh_error_status(
             FakeAuthError("request_timeout", 408), 503

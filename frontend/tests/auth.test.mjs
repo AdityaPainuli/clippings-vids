@@ -535,3 +535,101 @@ test("does not let an old retry clear a newly logged-in account", async () => {
   assert.equal(getAccessToken(storage), "account-b-access");
   assert.equal(getRefreshToken(storage), "account-b-refresh");
 });
+
+test("does not clear newer tokens when a delayed retry returns 401", async () => {
+  const storage = new MemoryStorage();
+  storeTokens("account-a-access", "account-a-refresh", storage);
+
+  const retryStarted = deferred();
+  const retryResponse = deferred();
+  let protectedRequestCount = 0;
+
+  const fetchMock = async (url) => {
+    if (url.endsWith("/auth/refresh")) {
+      return response(200, {
+        access_token: "account-a-new-access",
+        refresh_token: "account-a-new-refresh",
+      });
+    }
+
+    protectedRequestCount++;
+
+    if (protectedRequestCount === 1) {
+      return response(401);
+    }
+
+    retryStarted.resolve();
+    return retryResponse.promise;
+  };
+
+  const request = authenticatedFetch(
+    `${API_BASE_URL}/protected`,
+    {},
+    { apiBaseUrl: API_BASE_URL, fetchImpl: fetchMock, storage }
+  );
+
+  await retryStarted.promise;
+
+  // Simulate another tab rotating credentials without changing
+  // this tab's in-memory session generation.
+  storage.setItem("clipwave_access_token", "account-a-latest-access");
+  storage.setItem("clipwave_refresh_token", "account-a-latest-refresh");
+
+  retryResponse.resolve(response(401));
+
+  await assert.rejects(
+    request,
+    (error) => error?.name === "StaleAuthRequestError"
+  );
+
+  assert.equal(protectedRequestCount, 2);
+  assert.equal(getAccessToken(storage), "account-a-latest-access");
+  assert.equal(getRefreshToken(storage), "account-a-latest-refresh");
+});
+
+test("does not retry a request after a cross-tab account switch", async () => {
+  const storage = new MemoryStorage();
+  storage.setItem("clipwave_user_email", "account-a@example.com");
+  storeTokens("account-a-access", "account-a-refresh", storage);
+
+  const originalResponse = deferred();
+  let protectedRequestCount = 0;
+  let refreshCount = 0;
+
+  const fetchMock = async (url) => {
+    if (url.endsWith("/auth/refresh")) {
+      refreshCount++;
+      return response(200, {
+        access_token: "unexpected-access",
+        refresh_token: "unexpected-refresh",
+      });
+    }
+
+    protectedRequestCount++;
+    return originalResponse.promise;
+  };
+
+  const request = authenticatedFetch(
+    `${API_BASE_URL}/process-url`,
+    { method: "POST" },
+    { apiBaseUrl: API_BASE_URL, fetchImpl: fetchMock, storage }
+  );
+
+  // Simulate another tab logging into account B.
+  // Direct storage writes intentionally do not advance this tab's generation.
+  storage.setItem("clipwave_user_email", "account-b@example.com");
+  storage.setItem("clipwave_access_token", "account-b-access");
+  storage.setItem("clipwave_refresh_token", "account-b-refresh");
+
+  originalResponse.resolve(response(401));
+
+  await assert.rejects(
+    request,
+    (error) => error?.name === "StaleAuthRequestError"
+  );
+
+  assert.equal(protectedRequestCount, 1);
+  assert.equal(refreshCount, 0);
+  assert.equal(getAccessToken(storage), "account-b-access");
+  assert.equal(getRefreshToken(storage), "account-b-refresh");
+});
