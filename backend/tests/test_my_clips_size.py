@@ -42,13 +42,13 @@ class MyClipsSizeTests(unittest.TestCase):
             sys.modules.pop("supabase_client", None)
         cls.supabase_client = importlib.import_module("supabase_client")
 
-    def _row(self, job_id, filename):
+    def _row(self, job_id, filename, created_at=None):
         return {
             "user_id": "user-1",
             "job_id": job_id,
             "filename": filename,
             "storage_path": f"user-1/{job_id}/{filename}",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": created_at or datetime.now(timezone.utc).isoformat(),
         }
 
     def _supabase_with_rows(self, rows):
@@ -120,6 +120,38 @@ class MyClipsSizeTests(unittest.TestCase):
 
         self.assertEqual(clips, [])
         lister.assert_not_called()
+
+    def test_get_user_clips_falls_back_to_none_when_storage_listing_raises(self):
+        rows = [self._row("job-1", "a.mp4")]
+        with patch.object(self.supabase_client, "supabase", self._supabase_with_rows(rows)), \
+             patch.object(self.supabase_client.requests, "post",
+                          return_value=FakeResponse(data={"signedURL": "https://signed.example/x"})), \
+             patch.object(self.supabase_client, "_list_prefix", side_effect=Exception("storage connection error")):
+            clips = self.supabase_client.get_user_clips("user-1")
+
+        self.assertEqual(len(clips), 1)
+        self.assertIsNone(clips[0]["size_bytes"])
+
+    def test_get_user_clips_skips_storage_listing_for_expired_jobs(self):
+        from datetime import timedelta
+        old_time = (datetime.now(timezone.utc) - timedelta(hours=10)).isoformat()
+        rows = [
+            self._row("expired-job-1", "old1.mp4", created_at=old_time),
+            self._row("expired-job-2", "old2.mp4", created_at=old_time),
+            self._row("live-job", "live.mp4"),
+        ]
+        listing = [{"name": "live.mp4", "metadata": {"size": 1024}}]
+
+        with patch.object(self.supabase_client, "supabase", self._supabase_with_rows(rows)), \
+             patch.object(self.supabase_client.requests, "post",
+                          return_value=FakeResponse(data={"signedURL": "https://signed.example/x"})), \
+             patch.object(self.supabase_client, "_list_prefix", return_value=listing) as lister:
+            clips = self.supabase_client.get_user_clips("user-1")
+
+        self.assertEqual(len(clips), 1)
+        self.assertEqual(clips[0]["job_id"], "live-job")
+        self.assertEqual(clips[0]["size_bytes"], 1024)
+        lister.assert_called_once_with("user-1/live-job")
 
 
 if __name__ == "__main__":

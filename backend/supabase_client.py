@@ -259,11 +259,16 @@ def _clip_sizes(user_id: str, job_ids) -> dict:
     Map storage_path -> size in bytes for the given jobs, read from the storage
     listing (one list call per job). Paths the listing does not report are
     left out, so the caller can tell "unknown" from a real size.
+    Failures per job are caught so storage errors fall back to unknown.
     """
     sizes = {}
     for job_id in job_ids:
         prefix = f"{user_id}/{job_id}"
-        for item in _list_prefix(prefix):
+        try:
+            items = _list_prefix(prefix)
+        except Exception:
+            continue
+        for item in items:
             size = (item.get("metadata") or {}).get("size")
             if isinstance(size, int) and not isinstance(size, bool) and "name" in item:
                 sizes[f"{prefix}/{item['name']}"] = size
@@ -293,7 +298,8 @@ def get_user_clips(user_id: str) -> list:
     if not rows:
         return []
 
-    sizes = _clip_sizes(user_id, {row["job_id"] for row in rows})
+    sizes = {}
+    seen_jobs = set()
 
     clips = []
     for row in rows:
@@ -311,6 +317,11 @@ def get_user_clips(user_id: str) -> list:
         # Skip rows whose files have already passed the TTL
         if expires_in_secs <= 0:
             continue
+
+        job_id = row["job_id"]
+        if job_id not in seen_jobs:
+            seen_jobs.add(job_id)
+            sizes.update(_clip_sizes(user_id, [job_id]))
 
         # ── 2. Generate a fresh signed URL ────────────────────────────────────
         storage_path   = row["storage_path"]
