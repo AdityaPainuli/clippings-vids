@@ -650,23 +650,31 @@ async def my_clips(user: dict = Depends(get_current_user)):
 
 @app.delete("/clips/{job_id}")
 async def delete_clips(job_id: str, user: dict = Depends(get_current_user)):
-    """Manually delete a job's clips from Supabase Storage."""
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
-    job = jobs[job_id]
-    if job.get("user_id") != user["user_id"]:
+    """
+    Delete a job's clips: storage objects, clip_metadata rows and the cached
+    results. Works from clip_metadata, so clips listed by /my-clips can still
+    be deleted after the in-memory job has expired or the server restarted.
+    """
+    user_id = user["user_id"]
+    job = jobs.get(job_id)
+    if job is not None and job.get("user_id") != user_id:
         raise HTTPException(status_code=403, detail="Not your job")
 
+    known = [c["storage_path"] for c in ((job or {}).get("results") or []) if c.get("storage_path")]
+    from supabase_client import delete_job_clips
     loop = asyncio.get_event_loop()
-    deleted = 0
-    from supabase_client import _delete_paths
-    paths = [c["storage_path"] for c in (job.get("results") or []) if c.get("storage_path")]
-    if paths:
-        await loop.run_in_executor(None, _delete_paths, paths)
-        deleted = len(paths)
+    deleted = await loop.run_in_executor(None, delete_job_clips, user_id, job_id, known)
+    if job is None and not deleted:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # A cache hit would otherwise hand back these dead links as a "completed" job.
+    gone = set(deleted)
+    for key in [k for k, results in _clip_cache.items()
+                if any(c.get("storage_path") in gone for c in results)]:
+        _clip_cache.pop(key, None)
 
     jobs.pop(job_id, None)
-    return {"deleted_clips": deleted}
+    return {"deleted_clips": len(deleted)}
 
 
 @app.get("/storage-stats")
