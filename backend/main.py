@@ -341,11 +341,60 @@ async def refresh_token(refresh_token: str = Form(...)):
     try:
         res = new_auth_client().auth.refresh_session(refresh_token)
         return {
-            "access_token":  res.session.access_token,
+            "access_token": res.session.access_token,
             "refresh_token": res.session.refresh_token,
         }
     except Exception as e:
-        raise HTTPException(status_code=401, detail=str(e))
+        error_code = getattr(e, "code", None)
+        error_status = getattr(e, "status", None)
+        error_name = type(e).__name__
+        rejected_token_codes = {
+            "refresh_token_not_found",
+            "refresh_token_already_used",
+            "session_not_found",
+            "session_expired",
+            "invalid_grant",
+        }
+        transient_error_codes = {
+            "request_timeout",
+            "over_request_rate_limit",
+        }
+        transient_error_names = {
+            "AuthRetryableError",
+            "AuthRetryableException",
+            "TimeoutError",
+            "TimeoutException",
+            "ConnectError",
+            "ConnectTimeout",
+            "ReadTimeout",
+            "WriteTimeout",
+            "PoolTimeout",
+            "NetworkError",
+        }
+        if error_code == "validation_failed":
+            status_code = 400
+        elif (
+            error_code in transient_error_codes
+            or error_status in {408, 429}
+            or (
+                isinstance(error_status, int)
+                and 500 <= error_status < 600
+            )
+            or error_name in transient_error_names
+            or isinstance(e, (TimeoutError, ConnectionError))
+        ):
+            status_code = 503
+        elif (
+            error_code in rejected_token_codes
+            or (
+                isinstance(error_status, int)
+                and 400 <= error_status < 500
+            )
+        ):
+            status_code = 401
+        else:
+            status_code = 500
+        raise HTTPException(status_code=status_code, detail=str(e))
 
 
 # ─────────────────────────────────────────────
