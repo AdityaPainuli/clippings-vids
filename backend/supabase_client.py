@@ -254,6 +254,27 @@ def delete_user_clips(user_id: str) -> int:
     return len(to_delete)
 
 
+def _clip_sizes(user_id: str, job_ids) -> dict:
+    """
+    Map storage_path -> size in bytes for the given jobs, read from the storage
+    listing (one list call per job). Paths the listing does not report are
+    left out, so the caller can tell "unknown" from a real size.
+    Failures per job are caught so storage errors fall back to unknown.
+    """
+    sizes = {}
+    for job_id in job_ids:
+        prefix = f"{user_id}/{job_id}"
+        try:
+            items = _list_prefix(prefix)
+        except Exception:
+            continue
+        for item in items:
+            size = (item.get("metadata") or {}).get("size")
+            if isinstance(size, int) and not isinstance(size, bool) and "name" in item:
+                sizes[f"{prefix}/{item['name']}"] = size
+    return sizes
+
+
 def get_user_clips(user_id: str) -> list:
     """
     Fetch clip metadata from DB, then generate fresh signed URLs for each.
@@ -277,6 +298,9 @@ def get_user_clips(user_id: str) -> list:
     if not rows:
         return []
 
+    sizes = {}
+    seen_jobs = set()
+
     clips = []
     for row in rows:
         # Parse created_at to calculate TTL
@@ -293,6 +317,11 @@ def get_user_clips(user_id: str) -> list:
         # Skip rows whose files have already passed the TTL
         if expires_in_secs <= 0:
             continue
+
+        job_id = row["job_id"]
+        if job_id not in seen_jobs:
+            seen_jobs.add(job_id)
+            sizes.update(_clip_sizes(user_id, [job_id]))
 
         # ── 2. Generate a fresh signed URL ────────────────────────────────────
         storage_path   = row["storage_path"]
@@ -323,6 +352,7 @@ def get_user_clips(user_id: str) -> list:
             "expires_at":         expires_at.isoformat(),
             "expires_in_seconds": expires_in_secs,
             "expires_in_human":   _human_ttl(expires_in_secs),
+            "size_bytes":         sizes.get(storage_path),
         })
 
     return clips
