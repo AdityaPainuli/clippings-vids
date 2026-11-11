@@ -318,6 +318,17 @@ def model_installed(model: str) -> bool:
     return (MODEL_DIR / f".{model}.ready").exists()
 
 
+def transcription_ready() -> bool:
+    """
+    Whether a transcription can start without downloading anything.
+
+    mlx-whisper loads its own Apple Silicon model, so an installed CPU model
+    is not required there. Otherwise the active model must have finished
+    setup: its .ready marker is written only after the download completes.
+    """
+    return _mlx_available() or model_installed(active_model())
+
+
 def active_model() -> str:
     return load_config().get("model", DEFAULT_MODEL)
 
