@@ -451,12 +451,14 @@ async def upload_video(
         raise HTTPException(status_code=400, detail="min_clip_length cannot exceed max_clip_length")
 
     await _maybe_cleanup()
+    job_id = str(uuid.uuid4())
+    safe_filename = os.path.basename((file.filename or "video.mp4").replace("\\", "/")) or "video.mp4"
+    file_path = os.path.join(UPLOAD_DIR, f"{job_id}_{safe_filename}")
     try:
-        user_id   = user["user_id"]
-        job_id    = str(uuid.uuid4())
-        file_path = os.path.join(UPLOAD_DIR, f"{job_id}_{file.filename}")
+        user_id = user["user_id"]
         with open(file_path, "wb") as buffer:
-            buffer.write(await file.read())
+            while chunk := await file.read(1024 * 1024):
+                buffer.write(chunk)
 
         jobs[job_id] = {
             "status":     "queued",
@@ -471,7 +473,14 @@ async def upload_video(
         )
         return {"job_id": job_id, "status": "uploaded"}
     except Exception as e:
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await file.close()
 
 
 # The only job fields a client may see. The job dict also holds server-side state
