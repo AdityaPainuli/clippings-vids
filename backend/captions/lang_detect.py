@@ -87,7 +87,7 @@ _TAMIL_LATIN = {
     "aa", "la", "da", "di", "dei", "machan", "mama", "pa",
     "pola", "maari", "mathiri", "theriyum", "therila", "theriyuma",
     "vandhu", "pottu", "vechu", "eduthu",
-    "pakkalaam", "solla", "paaru",
+    "pakkalaam", "solla", "paaru", "poda",
 }
 
 # Core Telugu function/filler words written in Latin (Tenglish).
