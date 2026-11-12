@@ -69,7 +69,7 @@ NONLEXICAL_FILLERS_TA = {
 LEXICAL_FILLERS_TA = {
     # Discourse markers / throat-clearers used as fillers in Tanglish
     "sari", "poda", "paaru", "solla", "aprom", "appuram",
-    "konjam", "romba", "correct",
+    "konjam", "romba",
     # Cross-language English crutches used heavily in Tamil speech
     "like", "actually", "basically", "okay", "ok", "right", "so", "well",
 }
@@ -82,7 +82,7 @@ NONLEXICAL_FILLERS_TE = {
 LEXICAL_FILLERS_TE = {
     # Discourse markers used as fillers in Tenglish
     "ante", "ayithe", "emo", "mari", "chala", "manchidi",
-    "telusaa", "therlusaa", "sare",
+    "telusaa", "thelusaa",
     # English crutches
     "like", "actually", "basically", "okay", "ok", "right", "so", "well",
 }
