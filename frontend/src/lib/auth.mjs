@@ -1,5 +1,6 @@
 const ACCESS_TOKEN_KEY = "clipwave_access_token";
 const REFRESH_TOKEN_KEY = "clipwave_refresh_token";
+const USER_EMAIL_KEY = "clipwave_user_email";
 
 const refreshPromises = new WeakMap();
 const sessionGenerations = new WeakMap();
@@ -19,9 +20,7 @@ function getBrowserStorage() {
   return window.localStorage;
 }
 
-export function getSessionGeneration(
-  storage = getBrowserStorage()
-) {
+export function getSessionGeneration(storage = getBrowserStorage()) {
   return sessionGenerations.get(storage) ?? 0;
 }
 
@@ -39,9 +38,21 @@ function advanceSessionGeneration(storage) {
 }
 
 function assertSessionCurrent(storage, generation) {
-  if (getSessionGeneration(storage) !== generation) {
+  if (!isSessionGenerationCurrent(generation, storage)) {
     throw new StaleAuthRequestError();
   }
+}
+
+// Detect account changes made by other tabs.
+function assertAccountCurrent(storage, originalEmail) {
+  if (storage.getItem(USER_EMAIL_KEY) !== originalEmail) {
+    throw new StaleAuthRequestError();
+  }
+}
+
+function assertAuthCurrent(storage, generation, originalEmail) {
+  assertSessionCurrent(storage, generation);
+  assertAccountCurrent(storage, originalEmail);
 }
 
 function writeTokens(accessToken, refreshToken, storage) {
@@ -89,9 +100,10 @@ async function performRefresh(
   apiBaseUrl,
   fetchImpl,
   storage,
-  generation
+  generation,
+  originalEmail
 ) {
-  assertSessionCurrent(storage, generation);
+  assertAuthCurrent(storage, generation, originalEmail);
 
   const refreshToken = getRefreshToken(storage);
 
@@ -108,7 +120,8 @@ async function performRefresh(
     body: formData,
   });
 
-  assertSessionCurrent(storage, generation);
+  // Check both local session generation and cross-tab identity.
+  assertAuthCurrent(storage, generation, originalEmail);
 
   if (getRefreshToken(storage) !== refreshToken) {
     throw new StaleAuthRequestError();
@@ -127,7 +140,8 @@ async function performRefresh(
 
   const data = await response.json();
 
-  assertSessionCurrent(storage, generation);
+  // Account could have changed while parsing the response.
+  assertAuthCurrent(storage, generation, originalEmail);
 
   if (getRefreshToken(storage) !== refreshToken) {
     throw new StaleAuthRequestError();
@@ -142,13 +156,19 @@ async function performRefresh(
     throw new Error("Token refresh returned an invalid response.");
   }
 
-  // Token rotation keeps the same login session generation.
+  // Preserve the generation for normal token rotation.
   writeTokens(data.access_token, data.refresh_token, storage);
 
   return true;
 }
 
-function refreshOnce(apiBaseUrl, fetchImpl, storage, generation) {
+function refreshOnce(
+  apiBaseUrl,
+  fetchImpl,
+  storage,
+  generation,
+  originalEmail
+) {
   let refreshes = refreshPromises.get(storage);
 
   if (!refreshes) {
@@ -168,7 +188,8 @@ function refreshOnce(apiBaseUrl, fetchImpl, storage, generation) {
     apiBaseUrl,
     fetchImpl,
     storage,
-    generation
+    generation,
+    originalEmail
   ).finally(() => {
     if (refreshes.get(generation) === pending) {
       refreshes.delete(generation);
@@ -220,8 +241,9 @@ export async function authenticatedFetch(
 
   const generation = getSessionGeneration(storage);
   const originalToken = getAccessToken(storage);
-  const originalEmail = storage.getItem("clipwave_user_email");
+  const originalEmail = storage.getItem(USER_EMAIL_KEY);
 
+  // Initial request.
   const firstResponse = await sendWithToken(
     input,
     init,
@@ -229,16 +251,20 @@ export async function authenticatedFetch(
     fetchImpl
   );
 
-  assertSessionCurrent(storage, generation);
+  assertAuthCurrent(storage, generation, originalEmail);
 
   if (firstResponse.status !== 401) {
     return firstResponse;
   }
 
+  // Check identity before attempting any refresh.
+  assertAuthCurrent(storage, generation, originalEmail);
+
   const currentToken = getAccessToken(storage);
 
   let canRetry = false;
 
+  // Another request may already have refreshed the token.
   if (currentToken && currentToken !== originalToken) {
     canRetry = true;
   } else {
@@ -247,15 +273,16 @@ export async function authenticatedFetch(
         apiBaseUrl,
         fetchImpl,
         storage,
-        generation
+        generation,
+        originalEmail
       );
     } catch (error) {
-      assertSessionCurrent(storage, generation);
+      assertAuthCurrent(storage, generation, originalEmail);
       throw error;
     }
   }
 
-  assertSessionCurrent(storage, generation);
+  assertAuthCurrent(storage, generation, originalEmail);
 
   if (!canRetry) {
     return firstResponse;
@@ -267,12 +294,9 @@ export async function authenticatedFetch(
     return firstResponse;
   }
 
-  assertSessionCurrent(storage, generation);
+  assertAuthCurrent(storage, generation, originalEmail);
 
-  if (storage.getItem("clipwave_user_email") !== originalEmail) {
-    throw new StaleAuthRequestError();
-  }
-
+  // Retry exactly once.
   const retryResponse = await sendWithToken(
     input,
     init,
@@ -280,10 +304,15 @@ export async function authenticatedFetch(
     fetchImpl
   );
 
-  assertSessionCurrent(storage, generation);
+  // IMPORTANT:
+  // Check account identity even when the retry succeeds.
+  assertAuthCurrent(storage, generation, originalEmail);
 
   if (retryResponse.status === 401) {
-    if (getAccessToken(storage) !== newToken) {
+    // Never clear credentials belonging to another session.
+    if (
+      getAccessToken(storage) !== newToken
+    ) {
       throw new StaleAuthRequestError();
     }
 
