@@ -169,6 +169,8 @@
   <button class="drop hidden" id="drop" aria-label="Choose a video file to caption">
     <p class="big">Drop a video here or click to choose</p>
     <p>MP4 / MOV · transcribed with Whisper locally</p>
+    <p>With an API key configured, Hindi words that need Hinglish spelling
+      are sent as text to your cloud provider. Audio and video stay local.</p>
   </button>
   <input type="file" id="file" accept="video/*" class="hidden">
 
@@ -288,7 +290,7 @@
         <h2>Retakes</h2>
         <div class="row">
           <p class="warn" style="margin:0;flex:1">
-            Lines you delivered more than once. Unlike everything else here, this
+            Lines you delivered more than once. Finding retakes
             asks a cloud model — your <b>transcript text</b> is sent, never your
             video or audio. Nothing is cut until you say so.
           </p>

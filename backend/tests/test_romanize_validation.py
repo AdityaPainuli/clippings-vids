@@ -1,11 +1,7 @@
-import json
-import os
-import sys
-import types
 import unittest
 from unittest.mock import patch
 
-from captions import romanize
+from captions import llm, romanize
 
 
 class RomanizeValidationTests(unittest.TestCase):
@@ -31,18 +27,13 @@ class RomanizeValidationTests(unittest.TestCase):
             self.assertFalse(romanize._valid_llm_output(["मैं"], ["main ji"]))
 
     def test_llm_chunk_falls_back_on_invalid_semantics(self):
-        class FakeResponse:
-            text = json.dumps(["what", "good"])
-
-        class FakeModel:
-            def generate_content(self, prompt):
-                return FakeResponse()
-
-        fake_genai = types.SimpleNamespace(GenerativeModel=lambda **_: FakeModel())
-        with patch.dict(sys.modules, {"google.generativeai": fake_genai}), \
-                patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}), \
-                patch.object(romanize, "_rule_romanize", side_effect=["main", "achchh"]):
-            self.assertIsNone(romanize._llm_romanize_chunk(["मैं", "अच्छा"]))
+        words = [{"text": "मैं"}, {"text": "अच्छा"}]
+        for reply in ('["what", "good"]', '["main"]', "not JSON", "[" * 2000 + "]" * 2000):
+            with self.subTest(reply=reply), patch.object(llm, "complete", return_value=reply):
+                self.assertEqual(romanize.romanize_words(words), [
+                    {**word, "hinglish": romanize._rule_romanize(word["text"])}
+                    for word in words
+                ])
 
 
 if __name__ == "__main__":
