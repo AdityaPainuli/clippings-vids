@@ -100,9 +100,10 @@ model, about one call per minute of video, and the model only ever *chooses*
 between spans that were already measured — it proposes no timestamps and
 rewrites no text, so a bad answer cannot invent a cut inside a good sentence.
 
-This is the one feature that leaves your machine, and only with a key set.
-Paste one into the Retakes panel in the app, or set it in the environment for
-CLI runs:
+With a key configured, retake analysis and Hinglish romanization send transcript
+text to the selected provider. Audio and video stay local. Without a key,
+Hinglish romanization uses local rules. Paste a key into the Retakes panel in
+the app, or set it in the environment for CLI runs:
 
 ```bash
 export ANTHROPIC_API_KEY=...      # or GOOGLE_API_KEY
