@@ -153,6 +153,12 @@ class MyClipsSizeTests(unittest.TestCase):
         self.assertEqual(clips[0]["size_bytes"], 1024)
         lister.assert_called_once_with("user-1/live-job")
 
+    def test_list_prefix_passes_timeout_10_to_requests_post(self):
+        with patch.object(self.supabase_client.requests, "post", return_value=FakeResponse(data=[])) as mock_post:
+            self.supabase_client._list_prefix("test/prefix")
+        mock_post.assert_called_once()
+        self.assertEqual(mock_post.call_args.kwargs.get("timeout"), 10)
+
 
 if __name__ == "__main__":
     unittest.main()

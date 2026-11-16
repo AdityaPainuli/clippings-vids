@@ -174,6 +174,7 @@ def _list_prefix(prefix: str = "") -> list:
             f"{_STORAGE_URL}/object/list/{BUCKET}",
             headers={**_HEADERS, "Content-Type": "application/json"},
             json={"prefix": prefix, "limit": page_size, "offset": offset},
+            timeout=10,
         )
         if resp.status_code != 200:
             return []
